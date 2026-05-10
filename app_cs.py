@@ -2549,7 +2549,7 @@ def _jst_sign(method, partnerid, token, ts, partnerkey):
     """聚水潭签名算法：MD5(method + partnerid + token + ts + partnerkey)"""
     # sign = MD5(method + partnerid + (key1+value1+key2+value2) + partnerkey)
     # 其中key-value按URL中的传递顺序：token + ts
-    raw = method + partnerid + token + str(ts) + partnerkey
+    raw = method + partnerid + chr(34) + chr(116) + chr(111) + chr(107) + chr(101) + chr(110) + chr(34) + token + chr(34) + chr(116) + chr(115) + chr(34) + str(ts) + partnerkey
     return hashlib.md5(raw.encode('utf-8')).hexdigest()
 
 def _jst_request(method, biz_params=None):
@@ -3104,6 +3104,13 @@ ALIBABA_SHOPS = [
         'app_key': 1452593,
         'app_secret': 'f4UOJ5NO1X',
         'access_token': 'f76816ff-68cf-4a4e-9d08-1f3e28b13f57',
+        'server': 'gw.open.1688.com'
+    },
+    {
+        'shop_name': '亚润包装',
+        'app_key': 1452593,
+        'app_secret': 'f4UOJ5NO1X',
+        'access_token': 'bdb56a38-b85b-410d-acb2-74a04fc20496',
         'server': 'gw.open.1688.com'
     }
 ]
