@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>实时订单测试</title></head>
+<body style="font-family:sans-serif;padding:20px;">
+<h2>📋 实时订单测试</h2>
+<div id="status" style="background:#fff3cd;padding:8px;border-radius:4px;">待加载</div>
+<div style="margin-top:10px;">
+<button onclick="loadOrders()" style="padding:8px 16px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;">📋 加载订单</button>
+</div>
+<div id="orderList" style="margin-top:10px;">
+<div style="color:#999;text-align:center;padding:40px;">点击按钮加载订单</div>
+</div>
+
+<script>
+async function loadOrders() {
+    document.getElementById('orderList').innerHTML = '<div style="text-align:center;padding:40px;color:#999;">⏳ 加载中...</div>';
+    document.getElementById('status').textContent = '加载中...';
+    document.getElementById('status').style.background = '#fff3cd';
+    try {
+        const resp = await fetch('/api/realtime/orders');
+        const data = await resp.json();
+        if (data.success) {
+            document.getElementById('status').textContent = '已加载 ' + data.orders.length + ' 条';
+            document.getElementById('status').style.background = '#d4edda';
+            document.getElementById('status').style.color = '#155724';
+            let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:#f5f5f5;"><th style="padding:8px;text-align:left;">平台</th><th style="padding:8px;text-align:left;">单号</th><th style="padding:8px;text-align:left;">商品</th><th style="padding:8px;text-align:center;">数量</th><th style="padding:8px;text-align:right;">金额</th></tr></thead><tbody>';
+            for (const o of data.orders) {
+                const item = (o.items||[])[0]||{};
+                html += '<tr><td style="padding:8px;border-bottom:1px solid #eee;"><span style="background:#ff6a00;color:#fff;padding:1px 5px;border-radius:3px;font-size:10px;">1688</span></td><td style="padding:8px;border-bottom:1px solid #eee;font-family:monospace;">' + (o.so_id||'').slice(-10) + '</td><td style="padding:8px;border-bottom:1px solid #eee;">' + (item.name||'').slice(0,25) + '</td><td style="padding:8px;border-bottom:1px solid #eee;text-align:center;">' + ((o.items||[]).reduce((s,i)=>s+(i.qty||0),0)) + '</td><td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">¥' + (o.total_amount||0).toFixed(2) + '</td></tr>';
+            }
+            html += '</tbody></table>';
+            document.getElementById('orderList').innerHTML = html;
+        } else {
+            document.getElementById('status').textContent = '加载失败';
+            document.getElementById('status').style.background = '#f8d7da';
+            document.getElementById('orderList').innerHTML = '<div style="color:#e94560;text-align:center;padding:40px;">❌ ' + (data.error||'未知错误') + '</div>';
+        }
+    } catch(e) {
+        document.getElementById('status').textContent = '出错了';
+        document.getElementById('status').style.background = '#f8d7da';
+        document.getElementById('orderList').innerHTML = '<div style="color:#e94560;text-align:center;padding:40px;">❌ ' + e.message + '</div>';
+    }
+}
+</script>
+</body>
+</html>

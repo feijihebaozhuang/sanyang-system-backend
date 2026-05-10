@@ -1,0 +1,100 @@
+[
+  {
+    "customer_service": "张慧平,戴志美",
+    "id": "shop_1688_1",
+    "platform": "1688",
+    "shop_name": "友尚",
+    "sort_order": 1
+  },
+  {
+    "customer_service": "陈贝贝",
+    "id": "shop_1688_2",
+    "platform": "1688",
+    "shop_name": "亚润",
+    "sort_order": 2
+  },
+  {
+    "customer_service": "罗怡",
+    "id": "shop_1688_3",
+    "platform": "1688",
+    "shop_name": "三羊",
+    "sort_order": 3
+  },
+  {
+    "customer_service": "周井梅",
+    "id": "shop_1688_4",
+    "platform": "1688",
+    "shop_name": "正方形",
+    "sort_order": 4
+  },
+  {
+    "customer_service": "周井梅",
+    "id": "shop_1688_5",
+    "platform": "1688",
+    "shop_name": "大鱼",
+    "sort_order": 5
+  },
+  {
+    "customer_service": "戴志美",
+    "id": "shop_1688_6",
+    "platform": "1688",
+    "shop_name": "新鑫星",
+    "sort_order": 6
+  },
+  {
+    "customer_service": "廖思美",
+    "id": "shop_tmall_1",
+    "platform": "tmall",
+    "shop_name": "彩色专卖店",
+    "sort_order": 7
+  },
+  {
+    "customer_service": "廖思美",
+    "id": "shop_tmall_2",
+    "platform": "tmall",
+    "shop_name": "正方形专卖店",
+    "sort_order": 8
+  },
+  {
+    "customer_service": "石梅清",
+    "id": "shop_tmall_3",
+    "platform": "tmall",
+    "shop_name": "止合专卖店",
+    "sort_order": 9
+  },
+  {
+    "customer_service": "石梅清",
+    "id": "shop_tmall_4",
+    "platform": "tmall",
+    "shop_name": "扣底盒专卖店",
+    "sort_order": 10
+  },
+  {
+    "customer_service": "张文杰",
+    "id": "shop_tmall_5",
+    "platform": "tmall",
+    "shop_name": "小批量专卖店",
+    "sort_order": 11
+  },
+  {
+    "customer_service": "张文杰",
+    "id": "shop_taobao_1",
+    "platform": "taobao",
+    "shop_name": "飞机盒品牌店",
+    "sort_order": 12
+  },
+  {
+    "customer_service": "石梅清",
+    "id": "shop_taobao_2",
+    "platform": "taobao",
+    "shop_name": "俊鑫纸品厂",
+    "sort_order": 13
+  },
+  {
+    "customer_service": "张文杰",
+    "id": "shop_taobao_3",
+    "platform": "taobao",
+    "shop_name": "当下家包装",
+    "sort_order": 14
+  }
+]

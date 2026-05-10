@@ -1,0 +1,1651 @@
+{
+  "users": {
+    "admin": {
+      "password": "aaffebecec560fec66e75f24062224ffa4e07696d2ae9a1fee3707c3f8fd9373",
+      "name": "admin",
+      "role": "超级管理员",
+      "employee_name": ""
+    },
+    "manager": {
+      "password": "ed031f9ec196299fada4fa596a61f2139ae41a1b26e5f1fa3a7a61f854f8411b",
+      "name": "邓涛",
+      "role": "管理",
+      "employee_name": "邓涛"
+    },
+    "worker": {
+      "password": "312bba6ac1c4274943d7d3c1f346e8e27310c731e407ce5592d82f0d101fbff1",
+      "name": "李周海",
+      "role": "员工",
+      "employee_name": "李周海"
+    },
+    "sushiting": {
+      "password": "d6094fb9332fdcce9f339d0c0b87046ba6ebb73208668bdfdec8073801705563",
+      "name": "苏世婷",
+      "role": "客服",
+      "employee_name": "苏世婷"
+    },
+    "liaosimei": {
+      "password": "543b229519d24445a4e9c9aca47b8e51a6a4bcc4223a8e414919a9ccc7235887",
+      "name": "廖思美",
+      "role": "客服",
+      "employee_name": "廖思美"
+    },
+    "heshuidan": {
+      "password": "247b7d600e022e599bef2650b54270c70cf4b0f3d810fcfe5860e1a419a9b5e2",
+      "name": "何水单",
+      "role": "客服",
+      "employee_name": "何水单"
+    },
+    "lisijun": {
+      "password": "e68bfefccf2b9cfadbaabacea681c403095df34d4bf42bda3c75628e8b320957",
+      "name": "李四军",
+      "role": "客服",
+      "employee_name": "李四军"
+    },
+    "chenxiancong": {
+      "password": "a11202bcdab3e9135dda622c788955a4f11b91a95cc247bf10407c37938653e2",
+      "name": "陈贤聪",
+      "role": "客服",
+      "employee_name": "陈贤聪"
+    },
+    "zhanghuiping": {
+      "password": "a3edb651751bec457580419adb07300dea804bc61c7e8da78686747784b199f1",
+      "name": "张慧平",
+      "role": "客服",
+      "employee_name": "张慧平"
+    },
+    "chenbeibei": {
+      "password": "6e8c525df2af40941980441a9f69416c4f6fa8179749dc7d7792664cb071c682",
+      "name": "陈贝贝",
+      "role": "客服",
+      "employee_name": "陈贝贝"
+    },
+    "luoyi": {
+      "password": "0fe98f239931d411857364a665e5b7d1471403d5640e19b4980b1b20ebae8a1b",
+      "name": "罗怡",
+      "role": "客服",
+      "employee_name": "罗怡"
+    },
+    "zhoujingmei": {
+      "password": "d3a3a3e327422f36ce55187d8a565e1be0418f290fa81a26de061928e10ed808",
+      "name": "周井梅",
+      "role": "客服",
+      "employee_name": "周井梅"
+    },
+    "daizhimei": {
+      "password": "b6f375d07ff9f558fa635f3ecb0fc9a743467623bd8aaa6cbee86f6587f35132",
+      "name": "戴志美",
+      "role": "客服",
+      "employee_name": "戴志美"
+    },
+    "shimeiqing": {
+      "password": "2c85800264da936d43ad62e8d4cde1e55645c45bd1ae31c9149cb5f86549fdc1",
+      "name": "石梅清",
+      "role": "客服",
+      "employee_name": "石梅清"
+    },
+    "zhangwenjie": {
+      "password": "38e5075375e1bd2378c40426d1b5469a655fce01feb31e213b8a61db13d17ec1",
+      "name": "张文杰",
+      "role": "客服",
+      "employee_name": "张文杰"
+    },
+    "yaobin": {
+      "password": "bb1c51da60b9d4f0e725ab4f4d0363e24dd20bb7841d70d4e9a141afe9a85d77",
+      "name": "姚斌",
+      "role": "管理",
+      "employee_name": "姚斌"
+    },
+    "huangxing": {
+      "password": "0e342aa43c37edcac0512fefcb430d323b2745e90a7bb927569f99d955b1f0b8",
+      "name": "黄兴",
+      "role": "管理",
+      "employee_name": "黄兴"
+    },
+    "longlang": {
+      "password": "06c531b03937c1804485ed02df43d147132fcf0da13d078827379f82418f28f9",
+      "name": "隆浪",
+      "role": "管理",
+      "employee_name": "隆浪"
+    },
+    "jiangyihong": {
+      "password": "25833fc3d64bbb1179e74566ef3ca19820d12ca570313b437a9ffcfde21b3a3a",
+      "name": "蒋义红",
+      "role": "管理",
+      "employee_name": "蒋义红"
+    },
+    "shenqihao": {
+      "password": "a8c2ad2ea43bbe3e6fa6cd6b316b5f74d9ba7e3e3b9dd65d54593c3915ca7b12",
+      "name": "沈齐豪",
+      "role": "管理",
+      "employee_name": "沈齐豪"
+    },
+    "tanhaixia": {
+      "password": "61b044f91e4db2f9ec3268b0f3646e287b893db69d1d0fd552e031a56acf0a51",
+      "name": "覃海霞",
+      "role": "管理",
+      "employee_name": "覃海霞"
+    },
+    "lifangguo": {
+      "password": "113a38e05c7db9228986298b7576e9b1455233eca4a3be344f65f8996905f851",
+      "name": "李方国",
+      "role": "员工",
+      "employee_name": "李方国"
+    },
+    "tangmeizhang": {
+      "password": "b578f5504eb587085072841116aae4c479239be5baadf8036a0a17bee70225de",
+      "name": "唐美章",
+      "role": "员工",
+      "employee_name": "唐美章"
+    },
+    "jiangbaoping": {
+      "password": "6f8c954e7c450181b9023d8b8f19906b4eb1b984af973ce4c30504962f1ccad1",
+      "name": "蒋保平",
+      "role": "员工",
+      "employee_name": "蒋保平"
+    },
+    "chenzhangyuan": {
+      "password": "5cbaeeed85ad7320858b7ef9cda6248428a35fbd89b5e433dfa52202aa659c7d",
+      "name": "陈章远",
+      "role": "员工",
+      "employee_name": "陈章远"
+    },
+    "huangzhenhui": {
+      "password": "deb3c0bc87d671ac1a22e83d90703e7b123e154263963bbe06a9a2fbc3bd88e7",
+      "name": "黄振辉",
+      "role": "员工",
+      "employee_name": "黄振辉"
+    },
+    "wangchengtao": {
+      "password": "1c803ae7704f8ff70ed4807cae90084e24386da8b628bd3fe7852ced3aeec098",
+      "name": "汪成桃",
+      "role": "员工",
+      "employee_name": "汪成桃"
+    },
+    "yixinming": {
+      "password": "f425cdef2a8e1af6cd515d90e176541a7d99b39a5550db1cb0e1953ff119f037",
+      "name": "易新明",
+      "role": "员工",
+      "employee_name": "易新明"
+    },
+    "leishanyan": {
+      "password": "af7fa4e8a728ba21d4722fbb2d74dcf1207f7a2251be73d2d8b08589b5badee7",
+      "name": "雷善炎",
+      "role": "员工",
+      "employee_name": "雷善炎"
+    },
+    "chenhaibin": {
+      "password": "6ea7777c3145ca468791bce6a06e4b139982140f6745c4ac5550946267b8d7e0",
+      "name": "陈海斌",
+      "role": "员工",
+      "employee_name": "陈海斌"
+    },
+    "chenyisheng": {
+      "password": "2f0ed0646b5c04d79cc61e1ba881525ccb6f44878bd8fff8e2cf503393ed43d8",
+      "name": "陈奕升",
+      "role": "员工",
+      "employee_name": "陈奕升"
+    },
+    "jiangxusong": {
+      "password": "283712eede2f7ec42a10c9d51eac6ae03e9a8f46fceef24d12af948a7933c20a",
+      "name": "江旭松",
+      "role": "员工",
+      "employee_name": "江旭松"
+    },
+    "liaojinling": {
+      "password": "d5d85718421e56a69832e364fdcb983f4b02779beeb0ff1e184f21dfe5e2752a",
+      "name": "廖金玲",
+      "role": "员工",
+      "employee_name": "廖金玲"
+    },
+    "chenyong": {
+      "password": "f79ec709d75c0e72facd13d4bf0ac4bc22e644646e7933e8027bff29e1123534",
+      "name": "陈勇",
+      "role": "员工",
+      "employee_name": "陈勇"
+    },
+    "zhangjijie": {
+      "password": "3bfcb115f3b78dfffedb841f5fa402f2ba6688778d39e91e594e00e8f385c828",
+      "name": "张吉杰",
+      "role": "员工",
+      "employee_name": "张吉杰"
+    },
+    "tangxiaoding": {
+      "password": "69f30a665fe912392950c51a4f1423bcac780a1e94e32de5e374291c47ea3501",
+      "name": "唐孝定",
+      "role": "员工",
+      "employee_name": "唐孝定"
+    },
+    "huangheng": {
+      "password": "47c0216fd936da072503df48f3fcd3ae3cde046b913fdc479a7a682e69de52f7",
+      "name": "黄恒",
+      "role": "员工",
+      "employee_name": "黄恒"
+    },
+    "lironghui": {
+      "password": "301778f31387884b0b0445fd271ee2d8d5dff55d17136016339b03a4caa54ff8",
+      "name": "李荣晖",
+      "role": "员工",
+      "employee_name": "李荣晖"
+    },
+    "jiangsenxiang": {
+      "password": "12cce58450fa4af9b51043b0c1277e36f3dbf0df90031d61c3aa4670b2e18995",
+      "name": "蒋森响",
+      "role": "员工",
+      "employee_name": "蒋森响"
+    },
+    "zhouyefu": {
+      "password": "b2c992cdac4b1c57672b8b6ae7fac0df7f04a758fcdaa56ed7dc3a5feeb4c6f2",
+      "name": "周业福",
+      "role": "员工",
+      "employee_name": "周业福"
+    },
+    "chenguiying": {
+      "password": "e441005d3735401e8cd0cfc6d9288eb23bb73d5cd0e71aabc1f6c78afba40704",
+      "name": "陈桂英",
+      "role": "员工",
+      "employee_name": "陈桂英"
+    },
+    "maoliangfen": {
+      "password": "ed3822bfde40146e6c19764410b580d281abbb16b8647f5014642fdb0324dff1",
+      "name": "毛良芬",
+      "role": "员工",
+      "employee_name": "毛良芬"
+    },
+    "chenhuiwen": {
+      "password": "0387deab408228af9e49b7a674c9626c4d74f1ea57bb8b2e09a540a59ce6c8ea",
+      "name": "陈辉文",
+      "role": "员工",
+      "employee_name": "陈辉文"
+    },
+    "wenxiaomei": {
+      "password": "4339703287646250eb498f915f55ec394b3435f7ff890dd2486718a47b0e413c",
+      "name": "文小梅",
+      "role": "员工",
+      "employee_name": "文小梅"
+    },
+    "shuaixingchao": {
+      "password": "c1454ca4bafbd54d38ae3558c0747a7c11aa53552df6a684501259bc898ad8ad",
+      "name": "帅行朝",
+      "role": "员工",
+      "employee_name": "帅行朝"
+    },
+    "huangzhanghua": {
+      "password": "b8b6a411f1f414a38f19d7a796497c2000343f3968d407ec351177051aeecfea",
+      "name": "黄张华",
+      "role": "员工",
+      "employee_name": "黄张华"
+    },
+    "songxiaoguo": {
+      "password": "d589320bdced437393e92ca3745bd3eaa649de6ca05b48897bb1a966683b7a6e",
+      "name": "宋小国",
+      "role": "员工",
+      "employee_name": "宋小国"
+    },
+    "tangzhongqun": {
+      "password": "695dd69cb2acccc2b73ade44e060644e31a30c6857be82badfdc828c9efbea9e",
+      "name": "唐忠群",
+      "role": "员工",
+      "employee_name": "唐忠群"
+    },
+    "jiangrenye": {
+      "password": "466610056c8e5cebbc40b45799597ba91a8181990ef9b14ffa8f1e13df7a0c19",
+      "name": "蒋仁叶",
+      "role": "员工",
+      "employee_name": "蒋仁叶"
+    },
+    "luozhaoquan": {
+      "password": "d35c4c927ad9f2ea70b125fb1ec4533a11b5c7155bcf71635aee3b3236a1b5c0",
+      "name": "罗照权",
+      "role": "员工",
+      "employee_name": "罗照权"
+    },
+    "huangaixiao": {
+      "password": "a227283614e041acf7376c594f5cc81ec0cf5d506b8363a6059bf0641df69b6e",
+      "name": "黄爱小",
+      "role": "员工",
+      "employee_name": "黄爱小"
+    },
+    "longxuelan": {
+      "password": "360258d74e1dd91b96fdfff1ba5ab49b1c0e7bc6e51b8c8edc76d217360eb5f4",
+      "name": "龙雪兰",
+      "role": "员工",
+      "employee_name": "龙雪兰"
+    },
+    "lishuang": {
+      "password": "bf4b7cb635bc14ac4e67cc29ebd749509b49d40529e16a6e2a1d48a0548a9daa",
+      "name": "李双",
+      "role": "员工",
+      "employee_name": "李双"
+    },
+    "jiangjunlin": {
+      "password": "4e95e3f7995e736918b7fa47b18b9c0b1b0d239d4c805323825a42724ecb4332",
+      "name": "蒋军林",
+      "role": "员工",
+      "employee_name": "蒋军林"
+    },
+    "ninghashu": {
+      "password": "59383f4c1c6bbbffe19197f931f5dbf4910a687951943618df761470bccaca1b",
+      "name": "宁哈姝",
+      "role": "员工",
+      "employee_name": "宁哈姝"
+    },
+    "huanghua": {
+      "password": "a91d21a1ab930520aef647d42b188b1a16afb66303c0e0257482886774e61c39",
+      "name": "黄华",
+      "role": "员工",
+      "employee_name": "黄华"
+    },
+    "chenwei": {
+      "password": "5202472e4cda783832dc0059980155844fcd95643f4d45824c8ff344a0278ede",
+      "name": "陈伟",
+      "role": "员工",
+      "employee_name": "陈伟"
+    },
+    "chentao": {
+      "password": "2732158b02895c66b5e847647a156a2dc328a4da32a7f63c68e7eff6f38d8b77",
+      "name": "陈陶",
+      "role": "员工",
+      "employee_name": "陈陶"
+    },
+    "zhoushiguo": {
+      "password": "5491bac8451a0e6722bfb1a2c0349e83087508313bfb5de1a7735fe190027545",
+      "name": "周石国",
+      "role": "员工",
+      "employee_name": "周石国"
+    },
+    "yangjiazhong": {
+      "password": "566c3b5046ecba38f240bcda2132a324206e7b30165162204531c42e1b2ed65d",
+      "name": "杨家忠",
+      "role": "员工",
+      "employee_name": "杨家忠"
+    },
+    "shenqiyan": {
+      "password": "8c1842034671200377807c5dc5f94c1265c7a13b2cd4148a8895b22b9314c3f9",
+      "name": "沈奇严",
+      "role": "员工",
+      "employee_name": "沈奇严"
+    },
+    "yaojianqiao": {
+      "password": "e3aad2640dee6d6e1cdf13caa7f294d929678a91eceb9ef73f999ec36d530c49",
+      "name": "姚建桥",
+      "role": "员工",
+      "employee_name": "姚建桥"
+    },
+    "daixihua": {
+      "password": "2a9f893b7fd636437b0dedcf0b24635391ba385f286f557ae2df4d8b4f287a40",
+      "name": "戴西华",
+      "role": "员工",
+      "employee_name": "戴西华"
+    },
+    "weixiaowang": {
+      "password": "2b2ad8d589ac6f940417a52e9c5d9b6e6c1dbf98af32dbb37c6158f43961b570",
+      "name": "魏小王",
+      "role": "员工",
+      "employee_name": "魏小王"
+    },
+    "huangfang": {
+      "password": "0e6b576d6138a693d9d676a35fcf9a3169a75256aa108400acad6728f132a4c2",
+      "name": "黄芳",
+      "role": "员工",
+      "employee_name": "黄芳"
+    },
+    "yutianfa": {
+      "password": "38b04dc62dc4cb384cad721e90d30272f0de2bb2ad6ce88ca418a77457b813fd",
+      "name": "于天发",
+      "role": "员工",
+      "employee_name": "于天发"
+    },
+    "dengtao": {
+      "password": "914087c18e8ffe0d26bcddf9310e86dd0195317c4b037ec4eba300e6f952d0e6",
+      "name": "邓涛",
+      "role": "管理",
+      "employee_name": "邓涛"
+    },
+    "lizhouhai": {
+      "password": "20a0f99cf156ea797d410dfafbc61c7e0da72f3ed80434f42690a3ed5db07601",
+      "name": "李周海",
+      "role": "员工",
+      "employee_name": "李周海"
+    },
+    "daiyali": {
+      "password": "aaffebecec560fec66e75f24062224ffa4e07696d2ae9a1fee3707c3f8fd9373",
+      "name": "戴雅利",
+      "role": "超级管理员",
+      "employee_name": "戴雅利"
+    },
+    "qinhaixia": {
+      "password": "d6d8e430c7dabcaf4a1ca5b218d3cbe0f8735e6add92bdaceadc1272c86c7732",
+      "name": "覃海霞",
+      "role": "管理",
+      "employee_name": "覃海霞"
+    }
+  },
+  "employee_status": {},
+  "order_extra": {
+    "SC-20260426-001": {
+      "urgent": true
+    },
+    "SC-20260427-001": {
+      "urgent": true
+    },
+    "SC-20260427-002": {
+      "urgent": true
+    },
+    "3299382661720480082": {
+      "urgent": false
+    }
+  },
+  "permission_data": {
+    "processes": [],
+    "positions": [],
+    "employees": [
+      {
+        "name": "戴雅利",
+        "position": "超级管理员"
+      },
+      {
+        "name": "邓涛",
+        "position": "主管"
+      },
+      {
+        "name": "黄兴",
+        "position": "主管"
+      },
+      {
+        "name": "覃海霞",
+        "position": "主管"
+      },
+      {
+        "name": "蒋义红",
+        "position": "主管"
+      },
+      {
+        "name": "沈齐豪",
+        "position": "主管"
+      },
+      {
+        "name": "苏世婷",
+        "position": "客服"
+      },
+      {
+        "name": "廖思美",
+        "position": "客服"
+      },
+      {
+        "name": "张慧平",
+        "position": "客服"
+      },
+      {
+        "name": "陈贝贝",
+        "position": "客服"
+      },
+      {
+        "name": "罗怡",
+        "position": "客服"
+      },
+      {
+        "name": "周井梅",
+        "position": "客服"
+      },
+      {
+        "name": "戴志美",
+        "position": "客服"
+      },
+      {
+        "name": "石梅清",
+        "position": "客服"
+      },
+      {
+        "name": "张文杰",
+        "position": "客服"
+      },
+      {
+        "name": "何水单",
+        "position": "业务员"
+      },
+      {
+        "name": "李四军",
+        "position": "员工"
+      },
+      {
+        "name": "陈贤聪",
+        "position": "业务员"
+      },
+      {
+        "name": "姚斌",
+        "position": "员工"
+      },
+      {
+        "name": "隆浪",
+        "position": "财务"
+      }
+    ],
+    "permissions": {
+      "戴雅利": {
+        "刀模": true,
+        "员工": true,
+        "库存": true,
+        "扫码报工": true,
+        "报价": true,
+        "数据看板": true,
+        "日报表": true,
+        "权限管理": true,
+        "聚水潭": true,
+        "订单生产进度": true,
+        "首页": true,
+        "刀模库": true,
+        "原材料": true,
+        "实时订单": true
+      },
+      "邓涛": {
+        "刀模": true,
+        "员工": true,
+        "库存": true,
+        "扫码报工": true,
+        "数据看板": true,
+        "日报表": true,
+        "订单生产进度": true,
+        "首页": true,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "刀模库": true,
+        "原材料": false,
+        "实时订单": false
+      },
+      "李周海": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "苏世婷": {
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": false,
+        "日报表": false,
+        "数据看板": true,
+        "刀模": true,
+        "库存": true,
+        "聚水潭": true,
+        "员工": true,
+        "权限管理": false,
+        "报价": true,
+        "刀模库": true,
+        "原材料": false,
+        "实时订单": false
+      },
+      "廖思美": {
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": false,
+        "日报表": false,
+        "数据看板": true,
+        "刀模": true,
+        "库存": true,
+        "聚水潭": true,
+        "员工": true,
+        "权限管理": false,
+        "报价": true,
+        "刀模库": true,
+        "原材料": false,
+        "实时订单": false
+      },
+      "何水单": {
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": false,
+        "日报表": false,
+        "数据看板": true,
+        "刀模": true,
+        "库存": true,
+        "聚水潭": true,
+        "员工": true,
+        "权限管理": false,
+        "报价": true,
+        "刀模库": true,
+        "原材料": false,
+        "实时订单": false
+      },
+      "李四军": {
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": false,
+        "日报表": false,
+        "数据看板": false,
+        "刀模": false,
+        "库存": false,
+        "聚水潭": false,
+        "员工": true,
+        "权限管理": false,
+        "报价": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "陈贤聪": {
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": false,
+        "日报表": false,
+        "数据看板": true,
+        "刀模": true,
+        "库存": true,
+        "聚水潭": true,
+        "员工": true,
+        "权限管理": false,
+        "报价": true,
+        "刀模库": true,
+        "原材料": false,
+        "实时订单": false
+      },
+      "张慧平": {
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": false,
+        "日报表": false,
+        "数据看板": true,
+        "刀模": true,
+        "库存": true,
+        "聚水潭": true,
+        "员工": true,
+        "权限管理": false,
+        "报价": true,
+        "刀模库": true,
+        "原材料": false,
+        "实时订单": false
+      },
+      "陈贝贝": {
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": false,
+        "日报表": false,
+        "数据看板": true,
+        "刀模": true,
+        "库存": true,
+        "聚水潭": true,
+        "员工": true,
+        "权限管理": false,
+        "报价": true,
+        "刀模库": true,
+        "原材料": false,
+        "实时订单": false
+      },
+      "罗怡": {
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": false,
+        "日报表": false,
+        "数据看板": true,
+        "刀模": true,
+        "库存": true,
+        "聚水潭": true,
+        "员工": true,
+        "权限管理": false,
+        "报价": true,
+        "刀模库": true,
+        "原材料": false,
+        "实时订单": false
+      },
+      "周井梅": {
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": false,
+        "日报表": false,
+        "数据看板": true,
+        "刀模": true,
+        "库存": true,
+        "聚水潭": true,
+        "员工": true,
+        "权限管理": false,
+        "报价": true,
+        "刀模库": true,
+        "原材料": false,
+        "实时订单": false
+      },
+      "戴志美": {
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": false,
+        "日报表": false,
+        "数据看板": true,
+        "刀模": true,
+        "库存": true,
+        "聚水潭": true,
+        "员工": true,
+        "权限管理": false,
+        "报价": true,
+        "刀模库": true,
+        "原材料": false,
+        "实时订单": false
+      },
+      "石梅清": {
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": false,
+        "日报表": false,
+        "数据看板": true,
+        "刀模": true,
+        "库存": true,
+        "聚水潭": true,
+        "员工": true,
+        "权限管理": false,
+        "报价": true,
+        "刀模库": true,
+        "原材料": false,
+        "实时订单": false
+      },
+      "张文杰": {
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": false,
+        "日报表": false,
+        "数据看板": true,
+        "刀模": true,
+        "库存": true,
+        "聚水潭": true,
+        "员工": true,
+        "权限管理": false,
+        "报价": true,
+        "刀模库": true,
+        "原材料": false,
+        "实时订单": false
+      },
+      "姚斌": {
+        "刀模": true,
+        "刀模库": true,
+        "员工": true,
+        "库存": true,
+        "扫码报工": true,
+        "数据看板": true,
+        "日报表": true,
+        "订单生产进度": true,
+        "首页": true,
+        "报价": true,
+        "权限管理": true,
+        "聚水潭": true,
+        "原材料": false,
+        "实时订单": false
+      },
+      "黄兴": {
+        "刀模": true,
+        "员工": true,
+        "库存": false,
+        "扫码报工": true,
+        "数据看板": true,
+        "日报表": true,
+        "订单生产进度": true,
+        "首页": true,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "隆浪": {
+        "刀模": true,
+        "员工": true,
+        "库存": false,
+        "扫码报工": true,
+        "数据看板": true,
+        "日报表": true,
+        "订单生产进度": true,
+        "首页": true,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "蒋义红": {
+        "刀模": true,
+        "员工": true,
+        "库存": false,
+        "扫码报工": true,
+        "数据看板": true,
+        "日报表": true,
+        "订单生产进度": true,
+        "首页": true,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "沈齐豪": {
+        "刀模": true,
+        "员工": true,
+        "库存": false,
+        "扫码报工": true,
+        "数据看板": true,
+        "日报表": true,
+        "订单生产进度": true,
+        "首页": true,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "覃海霞": {
+        "刀模": true,
+        "员工": true,
+        "库存": true,
+        "扫码报工": true,
+        "数据看板": true,
+        "日报表": true,
+        "订单生产进度": true,
+        "首页": true,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": true,
+        "刀模库": true,
+        "原材料": false,
+        "实时订单": false
+      },
+      "李方国": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "唐美章": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "蒋保平": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "陈章远": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "黄振辉": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "汪成桃": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "易新明": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "雷善炎": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "陈海斌": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "陈奕升": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "江旭松": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "廖金玲": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "陈勇": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "张吉杰": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "唐孝定": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "黄恒": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "李荣晖": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "蒋森响": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "周业福": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "陈桂英": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "毛良芬": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "陈辉文": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "文小梅": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "帅行朝": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "黄张华": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "宋小国": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "唐忠群": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "蒋仁叶": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "罗照权": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "黄爱小": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "龙雪兰": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "李双": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "蒋军林": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "宁哈姝": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "黄华": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "陈伟": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "陈陶": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "周石国": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "杨家忠": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "沈奇严": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "姚建桥": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "戴西华": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "魏小王": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "黄芳": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      },
+      "于天发": {
+        "刀模": false,
+        "库存": false,
+        "数据看板": false,
+        "报价": false,
+        "权限管理": false,
+        "聚水潭": false,
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true,
+        "刀模库": false,
+        "原材料": false,
+        "实时订单": false
+      }
+    },
+    "employee_enabled": {
+      "于天发": false,
+      "何水单": true,
+      "周业福": false,
+      "周井梅": true,
+      "周石国": false,
+      "唐孝定": false,
+      "唐忠群": false,
+      "唐美章": false,
+      "姚建桥": false,
+      "姚斌": true,
+      "宁哈姝": false,
+      "宋小国": false,
+      "帅行朝": false,
+      "廖思美": true,
+      "廖金玲": false,
+      "张吉杰": false,
+      "张慧平": true,
+      "张文杰": true,
+      "戴志美": true,
+      "戴西华": false,
+      "文小梅": false,
+      "易新明": false,
+      "李双": false,
+      "李周海": false,
+      "李四军": true,
+      "李方国": false,
+      "李荣晖": false,
+      "杨家忠": false,
+      "毛良芬": false,
+      "江旭松": false,
+      "汪成桃": false,
+      "沈奇严": false,
+      "沈齐豪": false,
+      "石梅清": true,
+      "罗怡": true,
+      "罗照权": false,
+      "苏世婷": true,
+      "蒋义红": false,
+      "蒋仁叶": false,
+      "蒋保平": false,
+      "蒋军林": false,
+      "蒋森响": false,
+      "覃海霞": true,
+      "邓涛": false,
+      "陈伟": false,
+      "陈勇": false,
+      "陈奕升": false,
+      "陈桂英": false,
+      "陈海斌": false,
+      "陈章远": false,
+      "陈贝贝": true,
+      "陈贤聪": true,
+      "陈辉文": false,
+      "陈陶": false,
+      "隆浪": false,
+      "雷善炎": false,
+      "魏小王": false,
+      "黄兴": false,
+      "黄华": false,
+      "黄张华": false,
+      "黄恒": false,
+      "黄振辉": false,
+      "黄爱小": false,
+      "黄芳": false,
+      "龙雪兰": false
+    }
+  },
+  "resigned_employees": []
+}

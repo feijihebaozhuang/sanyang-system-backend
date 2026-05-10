@@ -1,0 +1,50 @@
+[
+  {
+    "id": "17774973744700",
+    "date": "2026-04-30",
+    "name": "测试纸",
+    "supplier": "测试供应商",
+    "paper_width": "100",
+    "paper_length": "200",
+    "qty": 150,
+    "remark": "测试",
+    "created_at": "2026-04-30 05:16",
+    "updated_at": "2026-04-30 05:16"
+  },
+  {
+    "id": "17775076426941",
+    "date": "",
+    "name": "测试纸板",
+    "supplier": "测试供应商",
+    "paper_width": "100",
+    "paper_length": "120",
+    "qty": 50,
+    "remark": "测试",
+    "created_at": "2026-04-30 08:07",
+    "updated_at": "2026-04-30 08:07"
+  },
+  {
+    "id": "17775081503812",
+    "date": "2026-04-30",
+    "name": "测试纸板",
+    "supplier": "同舟纸板",
+    "paper_width": "100",
+    "paper_length": "120",
+    "qty": 50,
+    "remark": "测试备注",
+    "created_at": "2026-04-30 08:15",
+    "updated_at": "2026-04-30 08:15"
+  },
+  {
+    "id": "17775083724663",
+    "date": "2026-04-30",
+    "name": "特硬 D6D",
+    "supplier": "同舟纸板",
+    "paper_width": "27",
+    "paper_length": "90",
+    "qty": 980,
+    "remark": "",
+    "created_at": "2026-04-30 08:19",
+    "updated_at": "2026-04-30 08:20"
+  }
+]

@@ -1,0 +1,246 @@
+{
+  "materials": {
+    "airbox": {
+      "label": "飞机盒",
+      "price_unit": "千平方英寸",
+      "materials": {
+        "d6d": {
+          "name": "特硬 D6D",
+          "price": 1.35,
+          "gram_weight": 535
+        },
+        "taiwan": {
+          "name": "台湾纸(超硬)",
+          "price": 1.6,
+          "gram_weight": 540
+        },
+        "w7w": {
+          "name": "白色 W7W",
+          "price": 1.5,
+          "gram_weight": 540
+        },
+        "black": {
+          "name": "黑色",
+          "price": 2.2,
+          "gram_weight": 545
+        },
+        "red": {
+          "name": "红色",
+          "price": 2.2,
+          "gram_weight": 545
+        },
+        "q7q": {
+          "name": "优质 Q7Q",
+          "price": 1.1,
+          "gram_weight": 390
+        }
+      }
+    },
+    "koudi": {
+      "label": "扣底盒/双插盒",
+      "price_unit": "千平方英寸",
+      "materials": {
+        "p6d": {
+          "name": "P6D",
+          "price": 1.4,
+          "gram_weight": 525
+        },
+        "white": {
+          "name": "白色 W7W",
+          "price": 1.5,
+          "gram_weight": 540
+        },
+        "black": {
+          "name": "黑色",
+          "price": 2.2,
+          "gram_weight": 555
+        },
+        "red": {
+          "name": "红色",
+          "price": 2.2,
+          "gram_weight": 555
+        },
+        "taiwan": {
+          "name": "台湾纸(超硬)",
+          "price": 1.6,
+          "gram_weight": 540
+        }
+      }
+    },
+    "pe": {
+      "label": "珍珠棉",
+      "price_unit": "元/立方米·毫米",
+      "price": 0.3,
+      "customer_types": {
+        "guangdong_wholesale": {
+          "name": "广东批发客户(货款1000元以上)",
+          "multiplier": 2
+        },
+        "guangdong_retail": {
+          "name": "广东省零售客户",
+          "multiplier": 3
+        },
+        "out_province_retail": {
+          "name": "省外零售客户",
+          "multiplier": 4
+        },
+        "big_client": {
+          "name": "大客户(广东省超5000元)",
+          "multiplier": 1.5
+        }
+      },
+      "freight": {
+        "guangdong": {
+          "first_kg": 10,
+          "renew_per_kg": 0.9
+        },
+        "jiangzhehu": {
+          "first_kg": 15,
+          "renew_per_kg": 1.5
+        },
+        "other": {
+          "first_kg": 20,
+          "renew_per_kg": 2.5
+        }
+      }
+    },
+    "carton": {
+      "label": "纸箱",
+      "price_unit": "千平方英寸",
+      "materials": {
+        "b_keng": {
+          "name": "三层B坑 K7K",
+          "price": 1.3,
+          "gram_weight": 450
+        },
+        "eb_keng": {
+          "name": "五层EB坑 K636K",
+          "price": 1.6,
+          "gram_weight": 620
+        },
+        "bc_keng": {
+          "name": "五层BC坑 K737K",
+          "price": 1.65,
+          "gram_weight": 650
+        }
+      }
+    }
+  },
+  "profit": {
+    "retail_multiplier": 2,
+    "suggestions": {
+      "airbox": [
+        {
+          "qty": 5000,
+          "multiplier": 1.35
+        },
+        {
+          "qty": 3000,
+          "multiplier": 1.5
+        },
+        {
+          "qty": 1000,
+          "multiplier": 1.7
+        },
+        {
+          "qty": 0,
+          "multiplier": 2
+        }
+      ]
+    }
+  },
+  "freight": {
+    "guangdong": {
+      "first_kg": 10,
+      "renew_per_kg": 0.9
+    },
+    "jiangzhehu": {
+      "first_kg": 15,
+      "renew_per_kg": 1.5
+    },
+    "other": {
+      "first_kg": 20,
+      "renew_per_kg": 2.5
+    }
+  },
+  "cardboard_specs": {
+    "danbu_paper_lengths": [
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51,
+      52,
+      53,
+      54,
+      55,
+      56,
+      57,
+      58,
+      59,
+      60,
+      61,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      69,
+      70,
+      71,
+      72,
+      73,
+      74,
+      75,
+      76,
+      77,
+      78,
+      79,
+      80,
+      81,
+      82,
+      83,
+      84,
+      85,
+      86,
+      87,
+      88,
+      89,
+      90
+    ],
+    "danbu_paper_widths": [
+      29,
+      31,
+      33,
+      35,
+      37,
+      39,
+      41,
+      43,
+      45,
+      47,
+      49
+    ],
+    "max_danbu_length_cm": 230
+  }
+}

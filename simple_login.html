@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>三羊包装 · 登录</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,sans-serif;background:linear-gradient(135deg,#0f172a,#1a1a2e);min-height:100vh;display:flex;justify-content:center;align-items:center}
+.login-box{background:#fff;border-radius:16px;padding:40px 32px;width:340px;box-shadow:0 20px 60px rgba(0,0,0,0.3);text-align:center}
+.logo{font-size:56px;margin-bottom:8px}
+h2{font-size:22px;color:#1a1a2e;margin-bottom:4px}
+.subtitle{font-size:13px;color:#999;margin-bottom:28px}
+.form-group{margin-bottom:16px;text-align:left}
+.form-group label{font-size:13px;color:#555;display:block;margin-bottom:6px;font-weight:500}
+.form-group input{width:100%;padding:12px 14px;border:2px solid #e8e8e8;border-radius:10px;font-size:15px;outline:none;transition:border 0.2s}
+.form-group input:focus{border-color:#1677ff}
+.login-btn{width:100%;padding:12px;background:linear-gradient(135deg,#1677ff,#4096ff);color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:600;cursor:pointer;margin-top:4px}
+.login-btn:disabled{opacity:0.6}
+.login-error{color:#e94560;font-size:13px;margin-top:12px;display:none}
+.loading{display:inline-block;width:18px;height:18px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="login-box">
+  <div class="logo">🐑</div>
+  <h2>三羊包装</h2>
+  <div class="subtitle">智能生产管理系统</div>
+  <div class="form-group">
+    <label>账号</label>
+    <input type="text" id="user" placeholder="请输入账号" autocomplete="username">
+  </div>
+  <div class="form-group">
+    <label>密码</label>
+    <input type="password" id="pass" placeholder="请输入密码" autocomplete="current-password">
+  </div>
+  <button class="login-btn" id="btn">登 录</button>
+  <div class="login-error" id="err"></div>
+</div>
+<script>
+(function(){
+  var userEl=document.getElementById('user');
+  var passEl=document.getElementById('pass');
+  var btnEl=document.getElementById('btn');
+  var errEl=document.getElementById('err');
+
+  function doLogin(){
+    var u=userEl.value.trim();
+    var p=passEl.value.trim();
+    if(!u||!p){
+      errEl.textContent='请输入账号和密码';
+      errEl.style.display='block';
+      return;
+    }
+    errEl.style.display='none';
+    btnEl.disabled=true;
+    btnEl.innerHTML='<span class="loading"></span>登录中...';
+
+    var xhr=new XMLHttpRequest();
+    xhr.open('POST','/api/login',true);
+    xhr.setRequestHeader('Content-Type','application/json');
+    xhr.onload=function(){
+      btnEl.disabled=false;
+      btnEl.textContent='登 录';
+      try{
+        var data=JSON.parse(xhr.responseText);
+        if(data.success){
+          // 跳转到主站
+          window.location.href='/';
+        }else{
+          errEl.textContent=data.message||'账号或密码错误';
+          errEl.style.display='block';
+        }
+      }catch(e){
+        errEl.textContent='网络错误，请重试';
+        errEl.style.display='block';
+      }
+    };
+    xhr.onerror=function(){
+      btnEl.disabled=false;
+      btnEl.textContent='登 录';
+      errEl.textContent='无法连接到服务器';
+      errEl.style.display='block';
+    };
+    xhr.send(JSON.stringify({username:u,password:p}));
+  }
+
+  btnEl.onclick=doLogin;
+  userEl.onkeydown=function(e){if(e.key==='Enter'){passEl.focus()}};
+  passEl.onkeydown=function(e){if(e.key==='Enter'){doLogin()}};
+
+  // 自动聚焦
+  userEl.focus();
+})();
+</script>
+</body>
+</html>

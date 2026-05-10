@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>三羊包装 - 登录</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, sans-serif;
+            background: linear-gradient(135deg, #0f172a, #1a1a2e);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .login-box {
+            background: #fff;
+            border-radius: 16px;
+            padding: 40px;
+            width: 360px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            text-align: center;
+        }
+        .logo { font-size: 48px; margin-bottom: 10px; }
+        h2 { color: #1a1a2e; margin-bottom: 24px; }
+        input {
+            width: 100%;
+            padding: 12px 16px;
+            margin: 8px 0;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            box-sizing: border-box;
+            outline: none;
+        }
+        input:focus { border-color: #1a1a2e; }
+        button {
+            width: 100%;
+            padding: 12px;
+            margin-top: 16px;
+            background: #1a1a2e;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        button:hover { background: #e94560; }
+        #error {
+            color: #e94560;
+            margin-top: 12px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-box">
+        <div class="logo">🐑</div>
+        <h2>三羊包装 · 登录</h2>
+        <input type="text" id="user" placeholder="账号" autocomplete="username">
+        <input type="password" id="pass" placeholder="密码" autocomplete="current-password">
+        <button id="loginBtn" onclick="doLogin()">登 录</button>
+        <div id="error"></div>
+    </div>
+    <script>
+    function doLogin() {
+        var u = document.getElementById('user').value.trim();
+        var p = document.getElementById('pass').value.trim();
+        var btn = document.getElementById('loginBtn');
+        var err = document.getElementById('error');
+        if (!u || !p) {
+            err.textContent = '请输入账号和密码';
+            err.style.display = 'block';
+            return;
+        }
+        btn.disabled = true;
+        btn.textContent = '登录中...';
+        err.style.display = 'none';
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/login', true);
+        xhr.setRequestHeader('Content-Type', 'application/json');
+        xhr.onload = function() {
+            var data = JSON.parse(xhr.responseText);
+            if (data.success) {
+                window.location.href = '/';
+            } else {
+                err.textContent = data.message || '登录失败';
+                err.style.display = 'block';
+                btn.disabled = false;
+                btn.textContent = '登 录';
+            }
+        };
+        xhr.onerror = function() {
+            err.textContent = '网络错误，请重试';
+            err.style.display = 'block';
+            btn.disabled = false;
+            btn.textContent = '登 录';
+        };
+        xhr.send(JSON.stringify({username: u, password: p}));
+    }
+    document.getElementById('pass').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') doLogin();
+    });
+    </script>
+</body>
+</html>
