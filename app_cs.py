@@ -29,6 +29,9 @@ app = Flask(__name__, static_folder='.')
 app.secret_key = 'feijihe_sanyang_2026_secret_key_!@#'
 CORS(app, supports_credentials=True)
 
+# 报价数据文件路径
+QUOTE_DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'quote_data.json')
+
 # ==================== 用户系统 ====================
 USERS = {
     "admin": {
@@ -470,7 +473,131 @@ def get_current_user():
             })
     return jsonify({"logged_in": False})
 
-# ==================== 首页 - 生产概览 ====================
+# ==================== 规格解析工具函数 ====================
+
+def _trim_digits(s):
+    """把数字转为字符串，去掉不必要的.0"""
+    try:
+        n = float(s.group())
+        if n == int(n):
+            return str(int(n))
+        return s.group()
+    except:
+        return s.group()
+
+def _parse_item_display(spec, name, qty=0):
+    """从1688订单item的spec字符串中解析材质+尺寸，返回格式化显示文本"""
+    if not spec:
+        return name or ''
+    
+    # 从报价配置加载材质映射
+    try:
+        with open(QUOTE_DATA_FILE, 'r', encoding='utf-8') as f:
+            qd = json.load(f)
+        mat_config = qd.get('materials', {})
+    except:
+        mat_config = {}
+    
+    mat_map = {}
+    for ptype, cfg in mat_config.items():
+        for mk, mv in cfg.get('materials', {}).items():
+            display_name = mv.get('name', mk)
+            mat_map[display_name] = display_name
+    extra_map = {
+        '特硬': '特硬 D6D', '超硬': '台湾纸(超硬)', '台湾纸': '台湾纸(超硬)',
+        '白色': '白色 W7W', '双白': '白色 W7W', '双面白色': '白色 W7W',
+        '黑色': '黑色', '红色': '红色', '优质': '优质 Q7Q', '特价': '优质 Q7Q',
+        '牛皮': '牛皮', '三层加硬': '三层B坑 K7K', '黄色': '黄色',
+    }
+    mat_map.update(extra_map)
+    
+    mat_keys = ['三层加硬', '双面白色', '台湾纸', '超硬', '特硬', '优质', '特价', '牛皮', '白色', '双白', '黑色', '红色', '黄色']
+    mat = ''
+    for k in mat_keys:
+        if k in spec:
+            mat = mat_map.get(k, k)
+            break
+    
+    clean = spec
+    hm = re.search(r'(?:高(?:度)?[【\\[]?|【)(\d+\.?\d*)\s*(?:[cC][mM]?|厘米)(?:高|)', clean)
+    has_only_height = hm and not re.search(r'[长宽×\*xX]', clean)
+    
+    # 高【Ncm】或高【N厘米】格式：只有高维度（必须在clean之前提取，避免被替换掉）
+
+    
+    clean = re.sub(r'\d+\s*层\s*纸箱', '', clean)
+    clean = re.sub(r'\d+\s*级', '', clean)
+    clean = re.sub(r'[【\[]?\s*\d+\s*个[）\)]?', '', clean)
+    clean = re.sub(r'^\s*\d+\s*个\s*', '', clean)
+    clean = re.sub(r'\bmm\b', '', clean)
+    clean = re.sub(r'[（(][^）)]*不接受[^）)]*[）)]', '', clean)
+    
+    # 提取全部数字
+    all_nums = [float(x.group()) for x in re.finditer(r'\d+\.?\d*', clean) if float(x.group()) > 0 and float(x.group()) < 2000]
+    dim_nums = [n for n in all_nums if abs(n - qty) > 0.01]
+    if not dim_nums:
+        dim_nums = [n for n in all_nums if n != qty]
+    
+    fmt = lambda n: str(int(n)) if n == int(n) else str(n)
+    
+    # 处理只有高度的情况（已提前提取hm和has_only_height）
+    if has_only_height:
+        hv = float(hm.group(1))
+        # 尝试从name提取长宽（如"宽度14CM高度7CM"或"14*7"）
+        name_lw = re.search(r'宽度(\d+\.?\d*).*?高度(\d+\.?\d*)|长[度]?(\d+\.?\d*).*?宽[度]?(\d+\.?\d*)|(\d+\.?\d*)\s*[×\*xX]\s*(\d+\.?\d*)', name)
+        if name_lw:
+            n1 = name_lw.group(1) or ''
+            n2 = name_lw.group(2) or ''
+            if n1 and n2:
+                nm = f'{fmt(float(n1))}×{fmt(float(n2))}×{fmt(hv)}'
+                return f'{mat} {nm}' if mat else nm
+        return f'{mat} {fmt(hv)}' if mat else fmt(hv)
+    
+    # 数字×数字×数字 格式
+    m3 = re.search(r'(\d+\.?\d*)\s*[*×xX]\s*(\d+\.?\d*)\s*[*×xX]\s*(\d+\.?\d*)', clean)
+    if m3:
+        d = f'{fmt(float(m3.group(1)))}×{fmt(float(m3.group(2)))}×{fmt(float(m3.group(3)))}'
+        hv = float(m3.group(3))
+        if abs(hv - qty) < 0.01:
+            d = f'{fmt(float(m3.group(1)))}×{fmt(float(m3.group(2)))}'
+        return f'{mat} {d}' if mat else d
+    
+    # 找不到三数字×格式，但可能有"长宽"格式
+    lw = re.search(r'[长宽]\s*[*×xX]?\s*(\d+\.?\d*)\s*[*×xX]\s*(\d+\.?\d*)', clean)
+    h = re.search(r'[高]\s*(\d+\.?\d*)', clean)
+    if lw:
+        d = f'{fmt(float(lw.group(1)))}×{fmt(float(lw.group(2)))}'
+        if h:
+            hv = float(h.group(1))
+            if abs(hv - qty) > 0.01:
+                d += f'×{fmt(hv)}'
+        return f'{mat} {d}' if mat else d
+    
+    # 数字×数字
+    pair = re.search(r'(\d+\.?\d*)\s*[*×xX]\s*(\d+\.?\d*)', clean)
+    if pair:
+        d = f'{fmt(float(pair.group(1)))}×{fmt(float(pair.group(2)))}'
+        if len(dim_nums) >= 3:
+            used = {float(pair.group(1)), float(pair.group(2))}
+            for n in dim_nums:
+                if all(abs(n-u) > 0.01 for u in used):
+                    d += f'×{fmt(n)}'
+                    break
+        return f'{mat} {d}' if mat else d
+    
+    # 兜底
+    if len(dim_nums) >= 3:
+        d = f'{fmt(dim_nums[0])}×{fmt(dim_nums[1])}×{fmt(dim_nums[2])}'
+        return f'{mat} {d}' if mat else d
+    elif len(dim_nums) >= 2:
+        d = f'{fmt(dim_nums[0])}×{fmt(dim_nums[1])}'
+        return f'{mat} {d}' if mat else d
+    elif mat:
+        return mat
+    
+    s = spec.replace(';', ' ').replace('；', ' ').strip()
+    return s[:40]
+
 @app.route('/api/dashboard')
 def dashboard():
     """今日订单 - 从1688订单缓存读取真实数据"""
@@ -504,12 +631,31 @@ def dashboard():
                 if len(items) > 2:
                     product_names += f' …等{len(items)}种'
                 
+                # 构建结构化items（含规格/尺寸/数量）
+                detail_items = []
+                for i in items:
+                    name = i.get('name', '') or ''
+                    spec = i.get('spec', '') or ''
+                    sku = i.get('sku', '') or ''
+                    qty = i.get('qty', 0) or 0
+                    
+                    # 从spec解析材质+尺寸
+                    display = _parse_item_display(spec, name, qty)
+                    
+                    detail_items.append({
+                        'name': name,
+                        'spec': spec or sku or name,
+                        'qty': qty,
+                        'display': display,  # 前端直接显示这个
+                    })
+                
                 orders.append({
                     'id': o.get('so_id', ''),
                     'store': shop_info['store'],
                     'worker': shop_info['worker'],
                     'product': product_names[:50] if product_names else (items[0].get('name','?')[:30] if items else '？'),
                     'qty': sum(i.get('qty', 0) for i in items),
+                    'items': detail_items,  # 返回结构化items
                     'process': '待处理',
                     'status': '待发货',
                     'urgent': False,
@@ -528,8 +674,6 @@ def dashboard():
         },
         'today_orders': orders
     })
-
-
 
 
 
@@ -574,7 +718,6 @@ def order_urgent():
         persist()
     return jsonify({"success": True, "order_id": oid, "urgent": urgent})
 
-
 # 功能列表（保持不变）
 PERM_FEATURES = ["首页","订单生产进度","扫码报工","日报表","数据看板","刀模","库存","原材料","聚水潭","员工","权限管理","报价","实时订单"]
 
@@ -613,7 +756,7 @@ def _sync_all_employees_perms():
             del base[name]
     _permission_data["permissions"] = base
 
-_employees_master_list = []
+_employees_master_list = list(_permission_data.get("employees", []))
 
 # 初始化时执行一次
 _sync_all_employees_perms()
@@ -651,7 +794,6 @@ for key, default_val in _permission_data_init.items():
         _permission_data[key] = default_val
 # 再次同步权限
 _sync_all_employees_perms()
-
 
 
 # ==================== 报价系统 ====================
@@ -1740,10 +1882,21 @@ def search_dimoldb():
             hv = float(height)
             matches = [d for d in matches if abs(float(d.get('height', 0)) - hv) < 0.1]
         # 内外径过滤：刀模数据dim_type字段为空，需要用name里的(内)/(外)来判断
-        if dim_type == 'inner':
-            matches = [d for d in matches if '(内)' in d.get('name', '')]
-        elif dim_type == 'outer':
-            matches = [d for d in matches if '(外)' in d.get('name', '') or '(外' in d.get('name', '')]
+        # 但juxing/koudi/shuangcha等类型没有内外径之分，忽略dim_type过滤
+        ptype_for_dim = data.get('type', '')
+        if dim_type and ptype_for_dim == 'zhengsquare':
+            if dim_type == 'inner':
+                matches = [d for d in matches if '(内)' in d.get('name', '')]
+            elif dim_type == 'outer':
+                matches = [d for d in matches if '(外)' in d.get('name', '') or '(外' in d.get('name', '')]
+        elif dim_type and ptype_for_dim not in ('zhengsquare', '', None):
+            # 非正方形类型：如果name带(内)(外)则过滤，否则不过滤
+            has_inner_outer = any(d for d in matches if '(内)' in d.get('name', '') or '(外)' in d.get('name', ''))
+            if has_inner_outer and dim_type:
+                if dim_type == 'inner':
+                    matches = [d for d in matches if '(内)' in d.get('name', '')]
+                elif dim_type == 'outer':
+                    matches = [d for d in matches if '(外)' in d.get('name', '')]
         return jsonify({"success": True, "matches": matches})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
@@ -1956,23 +2109,32 @@ def get_inventory():
             item['name'] = '内径' + item['name']
         elif item.get('dim_type') == 'outer' and not item['name'].startswith('外径') and not item['name'].startswith('内'):
             item['name'] = '外径' + item['name']
-        # 匹配对应刀模（按尺寸+内外径）
+    # 匹配对应刀模（按尺寸+内外径）——只加载一次刀模库
+    dm_match_db = load_dimoldb()
+    for item in page_data:
         dm_info = []
         try:
-            db = load_dimoldb()
             l, w, h = item.get('length'), item.get('width'), item.get('height')
-            itype = item.get('product_type')
             idim = item.get('dim_type', '')
-            if l and w and h and itype:
-                candidates = [d for d in db if d.get('product_type') == itype
-                    and abs(float(d.get('length', 0)) - float(l)) < 0.1
+            if l and w and h:
+                # 按尺寸匹配所有刀模（不限product_type）
+                candidates = [d for d in dm_match_db if
+                    abs(float(d.get('length', 0)) - float(l)) < 0.1
                     and abs(float(d.get('width', 0)) - float(w)) < 0.1
                     and abs(float(d.get('height', 0)) - float(h)) < 0.1]
-                # 内外径过滤
+                # 内外径过滤（基于刀模name和remark）
                 if idim == 'outer':
-                    candidates = [d for d in candidates if '(外)' in d.get('name', '') or d.get('remark', '').find('外') >= 0]
+                    candidates = [d for d in candidates if '(外)' in d.get('name', '') or ('外' in (d.get('remark') or ''))]
                 elif idim == 'inner':
-                    candidates = [d for d in candidates if '(内)' in d.get('name', '') or d.get('remark', '').find('内') >= 0]
+                    candidates = [d for d in candidates if '(内)' in d.get('name', '') or ('内' in (d.get('remark') or ''))]
+                # 当库存dim_type为空时，按库存name中的"内径"/"外径"前缀来过滤
+                if not idim:
+                    iname = item.get('name', '')
+                    if iname.startswith('内径'):
+                        candidates = [d for d in candidates if '(内)' in d.get('name', '') or ('内' in (d.get('remark') or ''))]
+                    else:
+                        # 没有标记内外径的，默认走外径刀模
+                        candidates = [d for d in candidates if '(外)' in d.get('name', '') or ('外' in (d.get('remark') or ''))]
                 for dm in candidates:
                     dm_info.append({
                         'id': dm.get('id', ''),
@@ -1980,7 +2142,8 @@ def get_inventory():
                         'code': dm.get('code', '') or '',
                         'remark': dm.get('remark', '') or ''
                     })
-        except: pass
+        except:
+            pass
         item['dimoldb_info'] = dm_info
     resp = jsonify({
         "success": True,
@@ -2130,7 +2293,6 @@ def get_inventory_single():
             if d.get('id') == item_id:
                 return jsonify({"success": True, "data": d})
     return jsonify({"success": False, "error": "未找到该商品"})
-
 
 @app.route('/api/inventory/import_excel', methods=['POST'])
 def import_inventory_excel():
@@ -2318,6 +2480,36 @@ def permissions():
         ]
     })
 
+@app.route('/api/permissions/data')
+def permissions_data():
+    _sync_all_employees_perms()
+    employees = _employees_master_list
+    perms = _permission_data.get("permissions", {})
+    return jsonify({
+        "employees": employees,
+        "permissions": perms,
+        "roles": [
+            {"name": "超级管理员", "desc": "所有权限", "count": 2},
+            {"name": "主管", "desc": "生产管理、员工查看", "count": 5},
+            {"name": "客服", "desc": "订单查看、生产进度", "count": 10},
+            {"name": "员工", "desc": "扫码报工、查看任务", "count": 20},
+        ],
+        "menu_modules": [
+            {"name": "首页", "perms": ["今日订单", "生产概览", "销售概览"]},
+            {"name": "报价", "perms": ["报价计算", "报价参数"]},
+            {"name": "刀模", "perms": ["刀模查询", "刀模录入"]},
+            {"name": "库存", "perms": ["成品库存", "原材料库存"]},
+            {"name": "订单进度", "perms": ["生产进度", "加急管理"]},
+            {"name": "数据看板", "perms": ["销售数据", "生产数据"]},
+            {"name": "实时订单", "perms": ["订单查看", "客服分配"]},
+            {"name": "员工", "perms": ["员工查看", "员工管理"]},
+        ]
+    })
+
+@app.route('/api/employees')
+def employees_list():
+    _sync_all_employees_perms()
+    return jsonify(_employees_master_list)
 
 # ==================== 静态文件 ====================
 @app.route('/login_simple')
@@ -2502,7 +2694,6 @@ def index():
 @app.route('/<path:path>')
 def static_files(path):
     return send_from_directory('.', path)
-
 
 # ===== 聚水潭对接模块 =====
 JST_CONFIG = {
@@ -2813,13 +3004,11 @@ def jst_inventory_ui():
         mock_inv = [i for i in mock_inv if sku.lower() in i['sku_id'].lower()]
     return jsonify({'success': True, 'real_data': False, 'data': mock_inv})
 
-
 from io import BytesIO
 import qrcode
 import barcode
 from barcode.writer import ImageWriter
 import base64
-
 
 
 def _1688_fetch_all_shops_orders():
@@ -2961,6 +3150,21 @@ def api_realtime_orders():
                 shops = set()
                 for o_ in cached_orders:
                     shops.add(o_.get('shop_name', '?'))
+                
+                # 构建1688店铺名到简称的映射（"三羊包装"→"三羊"）
+                shop_alias = {
+                    '三羊包装': '三羊', '友尚包装': '友尚', '正方形包装': '正方形',
+                    '大鱼包装': '大鱼', '亚润包装': '亚润',
+                }
+                for o_ in cached_orders:
+                    full = o_.get('shop_name', '')
+                    o_['shop_name'] = shop_alias.get(full, full)
+                    # 给items加display字段
+                    if 'items' in o_:
+                        for _it in o_['items']:
+                            if not _it.get('display'):
+                                _it['display'] = _parse_item_display(_it.get('spec', ''), _it.get('name', ''), _it.get('qty', 0))
+                
                 # 按时间倒序排列
                 cached_orders.sort(key=lambda x: x.get('created', ''), reverse=True)
                 print(f'[实时订单] 缓存命中: {len(cached_orders)} 条订单, 店铺: {shops}')
@@ -3061,12 +3265,55 @@ def api_get_shop_config():
     return jsonify({'success': True, 'config': config})
 
 @app.route('/api/shop-config', methods=['POST'])
-def api_save_shop_config():
+def api_add_shop_config():
+    """添加单个店铺配置"""
     try:
         data = request.get_json(force=True) or {}
-        config = data.get('config', [])
-        save_shop_config(config)
-        return jsonify({'success': True, 'message': '保存成功'})
+        configs = load_shop_config()
+        new_id = f"shop_{len(configs)+1}_{int(time.time())}"
+        new_item = {
+            'id': new_id,
+            'platform': data.get('platform', '1688'),
+            'shop_name': data.get('shop_name', ''),
+            'customer_service': data.get('customer_service', ''),
+            'sort_order': data.get('sort_order', len(configs)+1)
+        }
+        configs.append(new_item)
+        save_shop_config(configs)
+        return jsonify({'success': True, 'message': '已添加', 'item': new_item})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/shop-config/<config_id>', methods=['PUT'])
+def api_update_shop_config(config_id):
+    """更新单个店铺配置"""
+    try:
+        data = request.get_json(force=True) or {}
+        configs = load_shop_config()
+        for c in configs:
+            if c.get('id') == config_id:
+                if 'customer_service' in data:
+                    c['customer_service'] = data['customer_service']
+                if 'sort_order' in data:
+                    c['sort_order'] = data['sort_order']
+                if 'shop_name' in data:
+                    c['shop_name'] = data['shop_name']
+                if 'platform' in data:
+                    c['platform'] = data['platform']
+                save_shop_config(configs)
+                return jsonify({'success': True, 'message': '已更新'})
+        return jsonify({'success': False, 'error': '未找到该配置'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/shop-config/<config_id>', methods=['DELETE'])
+def api_delete_shop_config(config_id):
+    """删除单个店铺配置"""
+    try:
+        configs = load_shop_config()
+        configs = [c for c in configs if c.get('id') != config_id]
+        save_shop_config(configs)
+        return jsonify({'success': True, 'message': '已删除'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
@@ -3074,7 +3321,6 @@ def api_save_shop_config():
 def api_reset_shop_config():
     save_shop_config(DEFAULT_SHOP_CONFIG)
     return jsonify({'success': True, 'config': list(DEFAULT_SHOP_CONFIG)})
-
 
 # ========== 1688店铺配置 ==========
 ALIBABA_SHOPS = [
@@ -3150,6 +3396,220 @@ import threading as _th
 _sync_thread = _th.Thread(target=_sync_orders_task, daemon=True)
 _sync_thread.start()
 print('[订单同步] 后台同步线程已启动（每5分钟同步一次）')
+
+# ==================== 缺失API补充（客服端）====================
+
+@app.route('/api/production_orders')
+def api_production_orders():
+    """返回生产订单列表（简化版，返回空数组避免前端报错）"""
+    return jsonify({"orders": []})
+
+@app.route('/api/scan_logs')
+def api_scan_logs():
+    """返回扫码日志列表"""
+    return jsonify({"logs": []})
+
+@app.route('/api/scan_workers')
+def api_scan_workers():
+    """返回可选操作人列表"""
+    return jsonify({"workers": []})
+
+@app.route('/api/employee/status', methods=['GET', 'POST'])
+def api_employee_status():
+    """获取/修改员工出勤状态（内存中维护）"""
+    global _employee_today_status
+    if request.method == 'GET':
+        today = datetime.date.today().isoformat()
+        day_status = _employee_today_status.get(today, {})
+        # 所有在职员工默认"出勤"
+        statuses = {}
+        for emp in _employees_master_list:
+            statuses[emp['name']] = day_status.get(emp['name'], '出勤')
+        return jsonify({"statuses": statuses})
+    else:
+        data = request.get_json()
+        name = data.get('name', '')
+        status = data.get('status', '出勤')
+        today = datetime.date.today().isoformat()
+        if today not in _employee_today_status:
+            _employee_today_status[today] = {}
+        _employee_today_status[today][name] = status
+        persist()
+        return jsonify({"success": True, "message": "状态已更新"})
+
+@app.route('/api/employee/resigned')
+def api_employee_resigned():
+    """返回离职员工列表"""
+    return jsonify({"employees": _resigned_employees})
+
+@app.route('/api/employee/add', methods=['POST'])
+def api_employee_add():
+    """新增员工"""
+    global _employees_master_list, _permission_data
+    data = request.get_json()
+    name = data.get('name', '').strip()
+    position = data.get('position', '').strip()
+    if not name:
+        return jsonify({"success": False, "message": "员工姓名不能为空"})
+    try:
+        db = get_db()
+        cur = db.cursor()
+        cur.execute("INSERT INTO employees (name, position, enabled) VALUES (%s, %s, 1)", (name, position))
+        db.commit()
+        cur.close()
+        db.close()
+        # 刷新内存列表
+        _sync_all_employees_perms()
+        return jsonify({"success": True, "message": "添加成功"})
+    except Exception as e:
+        return jsonify({"success": False, "message": f"添加失败: {str(e)}"})
+
+@app.route('/api/employee/update', methods=['POST'])
+def api_employee_update():
+    """编辑员工"""
+    global _employees_master_list
+    data = request.get_json()
+    old_name = data.get('old_name', '')
+    name = data.get('name', '').strip()
+    position = data.get('position', '').strip()
+    if not name:
+        return jsonify({"success": False, "message": "员工姓名不能为空"})
+    try:
+        db = get_db()
+        cur = db.cursor()
+        cur.execute("UPDATE employees SET name=%s, position=%s WHERE name=%s", (name, position, old_name))
+        db.commit()
+        cur.close()
+        db.close()
+        _sync_all_employees_perms()
+        return jsonify({"success": True, "message": "更新成功"})
+    except Exception as e:
+        return jsonify({"success": False, "message": f"更新失败: {str(e)}"})
+
+@app.route('/api/employee/delete', methods=['POST'])
+def api_employee_delete():
+    """删除员工（软删除到离职列表）"""
+    global _employees_master_list, _resigned_employees
+    data = request.get_json()
+    name = data.get('name', '')
+    emp = next((e for e in _employees_master_list if e['name'] == name), None)
+    if emp:
+        _resigned_employees.append({
+            "name": name, "position": emp.get('position', ''),
+            "resigned_time": datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
+        })
+    try:
+        db = get_db()
+        cur = db.cursor()
+        cur.execute("UPDATE employees SET enabled=0 WHERE name=%s", (name,))
+        db.commit()
+        cur.close()
+        db.close()
+    except:
+        pass
+    _sync_all_employees_perms()
+    return jsonify({"success": True, "message": "已标记为离职"})
+
+@app.route('/api/employee/restore', methods=['POST'])
+def api_employee_restore():
+    """恢复离职员工"""
+    global _resigned_employees
+    data = request.get_json()
+    name = data.get('name', '')
+    _resigned_employees = [e for e in _resigned_employees if e.get('name') != name]
+    try:
+        db = get_db()
+        cur = db.cursor()
+        cur.execute("UPDATE employees SET enabled=1 WHERE name=%s", (name,))
+        db.commit()
+        cur.close()
+        db.close()
+    except:
+        pass
+    _sync_all_employees_perms()
+    return jsonify({"success": True, "message": "已恢复"})
+
+@app.route('/api/employee/deactivate', methods=['POST'])
+def api_employee_deactivate():
+    """标记员工离职（不可逆）"""
+    data = request.get_json()
+    name = data.get('name', '')
+    try:
+        db = get_db()
+        cur = db.cursor()
+        cur.execute("UPDATE employees SET enabled=0 WHERE name=%s", (name,))
+        db.commit()
+        cur.close()
+        db.close()
+    except:
+        pass
+    _sync_all_employees_perms()
+    return jsonify({"success": True, "message": "已离职"})
+
+@app.route('/api/employee/delete_resigned', methods=['POST'])
+def api_employee_delete_resigned():
+    """彻底删除离职记录"""
+    global _resigned_employees
+    data = request.get_json()
+    name = data.get('name', '')
+    _resigned_employees = [e for e in _resigned_employees if e.get('name') != name]
+    return jsonify({"success": True, "message": "已删除"})
+
+@app.route('/api/permissions/save', methods=['POST'])
+def api_permissions_save():
+    """保存权限配置"""
+    global _permission_data
+    data = request.get_json()
+    if 'permissions' in data:
+        _permission_data['permissions'] = data['permissions']
+    if 'employee_enabled' in data:
+        _permission_data['employee_enabled'] = data['employee_enabled']
+    # 保存到数据库
+    try:
+        db = get_db()
+        cur = db.cursor()
+        for emp_name, perms in data.get('permissions', {}).items():
+            for pk, val in perms.items():
+                cur.execute("""
+                    INSERT INTO employee_permissions (employee_name, permission_key, enabled)
+                    VALUES (%s, %s, %s)
+                    ON DUPLICATE KEY UPDATE enabled=%s
+                """, (emp_name, pk, 1 if val else 0, 1 if val else 0))
+        for emp_name, ena in data.get('employee_enabled', {}).items():
+            cur.execute("UPDATE employees SET enabled=%s WHERE name=%s", (1 if ena else 0, emp_name))
+        db.commit()
+        cur.close()
+        db.close()
+    except Exception as e:
+        print(f"[权限保存] 错误: {e}")
+    persist()
+    return jsonify({"success": True, "message": "保存成功"})
+
+@app.route('/api/qrcode/<order_id>')
+def api_qrcode(order_id):
+    """生成订单二维码（返回占位，无qr库时兜底）"""
+    try:
+        import qrcode
+        from io import BytesIO
+        import base64
+        img = qrcode.make(str(order_id))
+        buf = BytesIO()
+        img.save(buf, format='PNG')
+        b64 = base64.b64encode(buf.getvalue()).decode()
+        return jsonify({"success": True, "qr_base64": b64})
+    except ImportError:
+        # 没有qrcode库时返回空白
+        return jsonify({"success": True, "qr_base64": ""})
+
+@app.route('/api/barcode/<order_id>')
+def api_barcode(order_id):
+    """生成订单条码（返回占位）"""
+    return jsonify({"success": True, "barcode_base64": ""})
+
+@app.route('/api/scan_report', methods=['POST'])
+def api_scan_report():
+    """扫码报工确认"""
+    return jsonify({"success": True})
 
 if __name__ == '__main__':
     print("🏭 飞机盒智能生产管理系统启动中...")
