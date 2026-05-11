@@ -242,5 +242,67 @@
       49
     ],
     "max_danbu_length_cm": 230
-  }
+  },
+  "material_mapping": [
+    {
+      "material_key": "d6d",
+      "material_name": "特硬 D6D",
+      "group": "airbox",
+      "keywords": "特硬,D6D,国产,材质,加硬"
+    },
+    {
+      "material_key": "taiwan",
+      "material_name": "台湾纸(超硬)",
+      "group": "airbox",
+      "keywords": "台湾,进口,超硬"
+    },
+    {
+      "material_key": "w7w",
+      "material_name": "白色 W7W",
+      "group": "airbox",
+      "keywords": "白色,W7W"
+    },
+    {
+      "material_key": "black",
+      "material_name": "黑色",
+      "group": "airbox",
+      "keywords": "黑色,黑卡"
+    },
+    {
+      "material_key": "red",
+      "material_name": "红色",
+      "group": "airbox",
+      "keywords": "红色"
+    },
+    {
+      "material_key": "q7q",
+      "material_name": "优质 Q7Q",
+      "group": "airbox",
+      "keywords": "优质,Q7Q,特价,优惠,差材料"
+    },
+    {
+      "material_key": "p6d",
+      "material_name": "P6D",
+      "group": "koudi",
+      "keywords": "P6D"
+    },
+    {
+      "material_key": "b_keng",
+      "material_name": "三层B坑 K7K",
+      "group": "carton",
+      "keywords": "普通,B坑,K7K"
+    },
+    {
+      "material_key": "eb_keng",
+      "material_name": "五层EB坑 K636K",
+      "group": "carton",
+      "keywords": "五层EB,EB坑,K636K"
+    },
+    {
+      "material_key": "bc_keng",
+      "material_name": "五层BC坑 K737K",
+      "group": "carton",
+      "keywords": "五层BC,BC坑,K737K"
+    }
+  ]
 }

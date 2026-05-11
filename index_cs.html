@@ -220,7 +220,15 @@
         .db-chart { background: #1e293b; border-radius: 10px; padding: 14px; }
         .db-chart-title { font-size: 13px; color: rgba(255,255,255,0.7); margin-bottom: 10px; font-weight: 500; }
 
+        /* ===== 库存数量对非管理员隐藏（全局） ===== */
+        [data-stock-field] { display: block; }
+        body:not([data-is-admin]) [data-stock-field] { display: none !important; }
+
+        /* ===================================================================
+         * 手机端全面适配（所有页面）
+         * =================================================================== */
         @media (max-width: 768px) {
+            /* ---------- 顶栏 ---------- */
             .topbar { padding: 0 10px; flex-wrap: wrap; height: auto; min-height: 48px; }
             .topbar .brand .sysname { font-size: 14px; }
             .topbar .brand .sysname small { display: none; }
@@ -231,6 +239,8 @@
             .subnav { padding: 0 8px; height: 40px; overflow-x: auto; -webkit-overflow-scrolling: touch; gap: 2px; }
             .subnav a { font-size: 12px; padding: 4px 10px; white-space: nowrap; }
             .content { padding: 10px 12px; }
+
+            /* ---------- 概览卡片（首页） ---------- */
             .stats-cards { grid-template-columns: repeat(2, 1fr); gap: 8px; }
             .stat-card { padding: 10px; }
             .stat-card .num { font-size: 22px; }
@@ -238,47 +248,230 @@
             .overview-header h3 { font-size: 14px; }
             .overview-header { flex-wrap: wrap; gap: 6px; }
             .footer-bar { grid-template-columns: 1fr; }
+            .overview-header input[type="date"] { max-width: 130px; }
+
+            /* ---------- 搜索栏 ---------- */
             .search-bar { padding: 6px 10px; flex-wrap: wrap; }
-            .search-bar input { font-size: 16px; } /* 防止iOS缩放 */
+            .search-bar input { font-size: 16px; }
             .search-bar button { font-size: 12px; padding: 6px 12px; }
             .search-results.show { flex-direction: column; }
+
+            /* ---------- 库存数量对非管理员隐藏 ---------- */
+            [data-stock-field] { display: block; }
+            body:not([data-is-admin]) [data-stock-field] { display: none !important; }
+
+            /* ---------- 刀模快速查询（首页） ---------- */
+            .dm-quick-card { padding: 12px !important; }
+            .dm-quick-card input { font-size: 16px !important; }
+            .dm-quick-card > div[style*="display:flex"][style*="gap:6px"] { flex-direction: column !important; }
+            .dm-quick-card > div[style*="display:flex"][style*="gap:6px"] input { width: 100% !important; }
+            .dm-quick-card > div[style*="display:flex"][style*="gap:6px"] button { width: 100% !important; }
+            .dm-quick-card > div[style*="display:flex"][style*="gap:6px"] span { display: none; }
+
+            /* ---------- 订单表格（首页 + 所有表格） ---------- */
             .order-table-wrap { overflow-x: auto; }
             .order-table-wrap table { font-size: 11px; }
             .order-table-wrap table th, .order-table-wrap table td { padding: 6px 4px; white-space: nowrap; }
             #orderTableHeader table th { padding: 6px 4px; white-space: nowrap; }
             #orderScrollWrap table td { padding: 6px 4px; white-space: nowrap; }
-            .dm-quick-card input { font-size: 16px !important; }
-            /* 原材料页面手机适配 */
+
+            /* ---------- 今日订单搜索栏 ---------- */
+            .table-title { flex-direction: column !important; align-items: flex-start !important; }
+            .table-title > div { width: 100%; }
+            /* 筛选下拉框在手机端显示不全的问题 */
+            .table-title > div > select { max-width: calc(50% - 8px); min-width: 0; flex: 1; font-size: 12px !important; padding: 6px 4px !important; }
+            .table-title > div > input[type="text"] { width: 100% !important; max-width: none !important; }
+            .table-title > div > button { font-size: 12px !important; padding: 6px 10px !important; }
+            /* 实时订单页下拉框手机适配 */
+            #rtPlatformFilter { gap: 2px !important; }
+            #rtPlatformFilter .rt-filter, #rtShopFilter .rt-shop-filter { font-size: 11px !important; padding: 3px 6px !important; }
+            #rtShopFilter { gap: 2px !important; }
+            #rtOrderList > div[style*="padding:0 16px"] { padding: 0 8px !important; }
+            /* 首页筛选区(店铺/客服) */
+            #filterStore, #filterWorker { font-size: 12px !important; padding: 4px !important; }
+            #orderPagination { flex-direction: column !important; gap: 8px !important; align-items: flex-start !important; }
+            #orderPagination > div { width: 100%; justify-content: flex-start !important; flex-wrap: wrap; }
+            /* 订单列表在手机上 — 可横滚表格 */
+            #orderTableHeader { display: table-header-group; }
+            #orderTableHeader table, #orderScrollWrap table { table-layout: auto !important; width: auto !important; min-width: 100% !important; }
+            #orderScrollWrap { height: auto !important; max-height: none !important; overflow-x: auto !important; overflow-y: hidden !important; -webkit-overflow-scrolling: touch; }
+            #orderTableHeader table th, #orderScrollWrap table td { white-space: nowrap; padding: 6px 8px !important; font-size: 11px; }
+            #orderScrollWrap table td[data-label="属性"] { white-space: normal !important; min-width: 140px; }
+
+            /* ---------- 弹窗 ---------- */
+            .modal { max-width: 95% !important; margin: 10px; max-height: 90vh; }
+            .modal-body { padding: 12px; }
+            .modal-body .info-row { flex-direction: column; }
+            .modal-body .info-row .label { width: 100%; margin-bottom: 2px; }
+
+            /* =============================================================
+             * 刀模库页面 (page-dimoldb)
+             * ============================================================= */
+            #page-dimoldb > div[style*="grid-template-columns:1fr 1fr"] { grid-template-columns: 1fr !important; }
+            #page-dimoldb .search-bar { flex-wrap: wrap; }
+            #page-dimoldb .search-bar input { width: 100% !important; font-size: 16px !important; }
+            #page-dimoldb .search-bar select { width: 100% !important; }
+            #page-dimoldb .search-bar button { width: 100% !important; }
+            #dimoldbRightCol select { width: 100% !important; }
+            #dimoldbRightCol input { width: 100% !important; font-size: 16px !important; }
+            #dimoldbRightCol > div > div[style*="display:flex"][style*="gap:8px"] { flex-direction: column !important; }
+
+            /* =============================================================
+             * 库存页面 (page-inventory)
+             * ============================================================= */
+            #page-inventory > div[style*="grid-template-columns:1fr 1fr"] { grid-template-columns: 1fr !important; }
+            #page-inventory .search-bar select { width: 100% !important; }
+            #page-inventory .search-bar input { width: 100% !important; font-size: 16px !important; }
+            #page-inventory .search-bar button { width: 100% !important; }
+            #page-inventory .overview-header > div { flex-wrap: wrap; gap: 4px; }
+            #page-inventory .overview-header > div button { font-size: 11px !important; padding: 4px 8px !important; }
+            #invRightCol select { width: 100% !important; }
+            #invRightCol input { width: 100% !important; font-size: 16px !important; }
+            #invRightCol > div > div[style*="display:flex"] { flex-direction: column !important; }
+            .inv-table-wrap { overflow-x: auto; }
+            .inv-table-wrap table { font-size: 11px; }
+            .inv-table-wrap table th, .inv-table-wrap table td { padding: 4px; white-space: nowrap; }
+
+            /* =============================================================
+             * 原材料页面 (page-raw)
+             * ============================================================= */
             .raw-layout { grid-template-columns: 1fr !important; }
-            /* 数据看板手机适配 */
+            #page-raw .search-bar { flex-wrap: wrap; }
+            #page-raw .search-bar input { width: 100% !important; font-size: 16px !important; }
+
+            /* =============================================================
+             * 聚水潭页面 (page-jst)
+             * ============================================================= */
+            #page-jst .subnav a { font-size: 12px; padding: 6px 8px; }
+            #page-jst > div[style*="display:flex"] { flex-direction: column; }
+            #jstTabOrders > div[style*="display:flex"] { flex-direction: column; }
+            #jstTabOrders input, #jstTabOrders select { width: 100% !important; font-size: 16px !important; }
+            #jstTabOrders table { font-size: 11px; }
+            #jstTabOrders th, #jstTabOrders td { padding: 4px; white-space: nowrap; }
+            .jst-stats { grid-template-columns: repeat(2,1fr) !important; }
+            .jst-filter-row { flex-direction: column !important; gap: 4px !important; }
+            .jst-filter-row input, .jst-filter-row select { width: 100% !important; }
+
+            /* =============================================================
+             * 生产进度页面 (page-production)
+             * ============================================================= */
+            #page-production .overview-header > div { flex-wrap: wrap; }
+            #page-production .overview-header input[type="text"] { width: 100% !important; }
+
+            /* =============================================================
+             * 扫码报工页面 (page-scan)
+             * ============================================================= */
+            #page-scan .search-bar { flex-wrap: wrap; gap: 4px; }
+            #page-scan .search-bar input { width: 100% !important; }
+            #page-scan .search-bar button { flex: 1; font-size: 12px !important; padding: 8px 10px !important; }
+            #scannerModal .modal { max-width: 95% !important; margin: 10px; }
+
+            /* =============================================================
+             * 日报表页面 (page-report)
+             * ============================================================= */
+            #page-report > div[style*="grid-template-columns:1fr 1fr"] { grid-template-columns: 1fr !important; }
+            #page-report .overview-header { flex-direction: column; align-items: flex-start; }
+            #page-report .overview-header > div { width: 100%; }
+            #reportCards { grid-template-columns: repeat(2,1fr) !important; }
+            #page-report table { font-size: 11px; }
+            #page-report th, #page-report td { padding: 4px; white-space: nowrap; }
+
+            /* =============================================================
+             * 数据看板页面 (page-databoard)
+             * ============================================================= */
             #page-databoard > div[style*="padding:20px 24px"] { padding: 10px !important; }
             #page-databoard > div > div[style*="grid-template-columns:repeat(7,1fr)"] { grid-template-columns: repeat(2,1fr) !important; }
             #page-databoard > div > div[style*="grid-template-columns:repeat(3,1fr)"] { grid-template-columns: 1fr !important; }
             #page-databoard > div > div[style*="grid-template-columns:repeat(2,1fr)"] { grid-template-columns: 1fr !important; }
-            /* 扫码弹窗 */
-            #scannerModal .modal { max-width: 95% !important; margin: 10px; }
-            /* 订单详情弹窗 */
-            .modal { max-width: 95% !important; margin: 10px; }
-            /* 聚水潭手机适配 */
-            #page-jst .subnav a { font-size: 12px; padding: 6px 8px; }
-            #jstTabOrders > div[style*="display:flex"] { flex-direction: column; }
-            #jstTabOrders input, #jstTabOrders select { width: 100% !important; font-size: 16px !important; }
-            /* 日报表 */
-            #page-report > div[style*="grid-template-columns:1fr 1fr"] { grid-template-columns: 1fr !important; }
-            /* 刀模库 */
-            #page-dimoldb .search-bar { flex-wrap: wrap; }
-            #page-dimoldb .search-bar input { width: 100% !important; font-size: 16px !important; }
-            /* 报价 */
+            #page-databoard .db-card .db-val { font-size: 20px; }
+            #page-databoard .db-chart { padding: 10px; }
+
+            /* =============================================================
+             * 员工管理页面 (page-employee)
+             * ============================================================= */
+            #page-employee .overview-header { flex-direction: column; align-items: flex-start; }
+            #page-employee .emp-table { font-size: 11px; }
+            #page-employee .emp-table th, #page-employee .emp-table td { padding: 4px; white-space: nowrap; }
+            #page-employee .search-bar { flex-wrap: wrap; }
+            #page-employee .search-bar input { width: 100% !important; }
+
+            /* =============================================================
+             * 报价页面 (page-quote)
+             * ============================================================= */
             #page-quote .quote-layout { grid-template-columns: 1fr !important; }
+            #page-quote .overview-header { flex-direction: column; align-items: flex-start; }
+            #page-quote .overview-header > div { flex-wrap: wrap; }
+            #page-quote input, #page-quote select { font-size: 16px !important; }
+            .quote-result { font-size: 13px; overflow-x: auto; }
+
+            /* =============================================================
+             * 权限管理页面 (page-permission)
+             * ============================================================= */
+            #page-permission .overview-header { flex-direction: column; align-items: flex-start; }
+            #page-permission > div > div[style*="display:flex"][style*="gap:8px"][style*="margin-bottom"] { flex-wrap: wrap; }
+            #page-permission > div > div[style*="display:flex"][style*="gap:8px"][style*="margin-bottom"] button { flex: 1; min-width: calc(50% - 4px); font-size: 11px !important; padding: 6px 8px !important; }
+            #permMainContent table { font-size: 11px; }
+            #permMainContent th, #permMainContent td { padding: 4px; white-space: nowrap; }
+
+            /* =============================================================
+             * 实时订单页面 (page-realtime)
+             * ============================================================= */
+            #page-realtime > div:first-child { flex-direction: column !important; align-items: flex-start !important; }
+            #page-realtime > div:first-child > div:first-child { width: 100%; }
+            #page-realtime > div:first-child > div:last-child { width: 100%; justify-content: flex-start; }
+            #rtOrderList table { font-size: 11px; }
+            #rtOrderList th, #rtOrderList td { padding: 4px; white-space: nowrap; }
+            #rtOrderList .rt-row { flex-direction: column !important; padding: 8px !important; gap: 4px !important; }
+            #rtOrderList .rt-row > div { width: 100% !important; }
+            #rtOrderList .rt-row .rt-actions { flex-wrap: wrap; gap: 4px; }
+            #rtOrderList .rt-row .rt-actions button { font-size: 11px !important; padding: 4px 8px !important; }
+            #rtOrderDetail { font-size: 12px !important; }
+            #rtOrderDetail .info-row { flex-direction: column; }
+            #rtOrderDetail .info-row .label { width: 100%; }
+            #rtOrderDetail table { font-size: 11px; }
+            #rtOrderDetail th, #rtOrderDetail td { padding: 4px; }
+
+            /* =============================================================
+             * 刀模管理（WPS嵌入页面）page-diemold
+             * ============================================================= */
+            #page-diemold .iframe-container { height: calc(100vh - 200px); }
+
+            /* =============================================================
+             * 通用：所有页面的输入框在手机上防止缩放
+             * ============================================================= */
+            input[type="text"], input[type="number"], input[type="search"],
+            input[type="tel"], input[type="email"], input[type="password"],
+            select, textarea { font-size: 16px !important; }
+
+            /* =============================================================
+             * 弹窗内详情信息
+             * ============================================================= */
+            #prodModalBody { font-size: 12px; }
+            #prodModalBody .info-row { flex-direction: column; }
+            #prodModalBody .info-row .label { width: 100%; }
+            #prodModalBody table { font-size: 11px; }
+            #prodModalBody th, #prodModalBody td { padding: 4px; }
         }
 
-        /* 更小屏幕 */
+        /* 更小屏幕 (<480px) */
         @media (max-width: 480px) {
             .stats-cards { grid-template-columns: repeat(2, 1fr); gap: 6px; }
             .stat-card .num { font-size: 18px; }
-            .login-box { padding: 24px 20px; }
+            .login-box { padding: 24px 20px; width: 95%; }
             .topbar .brand .sysname { font-size: 13px; }
             .topbar .top-nav a { font-size: 11px; padding: 3px 6px; }
+            .search-bar button { font-size: 11px; padding: 6px 8px; }
+            #page-permission > div > div[style*="display:flex"][style*="gap:8px"][style*="margin-bottom"] button { min-width: 100%; }
+            #page-inventory .overview-header > div button { font-size: 10px !important; padding: 3px 6px !important; }
+        }
+
+        /* ===== 超小屏 (<360px) ===== */
+        @media (max-width: 360px) {
+            .topbar .top-nav a { font-size: 10px; padding: 2px 4px; }
+            .stat-card .num { font-size: 16px; }
+            .stat-card { padding: 8px; }
+            .stats-cards { gap: 4px; }
+            .content { padding: 6px 8px; }
         }
 
         /* 数据看板模式：去掉padding，背景融合 */
@@ -386,19 +579,17 @@
 <!-- ====== 顶部条 ====== -->
 <div class="topbar">
     <div class="brand">
-        <div class="logo">🐑</div>
+        <div class="logo">📦</div>
         <div class="sysname">
-            三羊包装 <small>智能生产管理</small>
+            泽安供应链智能系统
         </div>
     </div>
     <div class="top-nav" id="topNav">
         <a class="active" onclick="switchTopPage('main', this)">📋 首页</a>
-        <a onclick="switchTopPage('dimoldb', this)">🔩 刀模库</a>
-        <a onclick="switchTopPage('inventory', this)">📦 成品</a>
-        <a onclick="switchTopPage('raw', this)">🧱 原材料</a>
-        <a onclick="switchTopPage('jst', this)">🔄 聚水潭</a>
-        <a onclick="switchTopPage('realtime', this)">📋 实时订单</a>
-        <a onclick="switchTopPage('diemold', this)">📄 WPS刀模表</a>
+        <a onclick="switchTopPage('quote', this)">💰 报价</a>
+        <a onclick="switchTopPage('dimoldb', this)">🔩 刀模</a>
+        <a onclick="switchTopPage('inventory', this)">📦 库存</a>
+        <a onclick="switchTopPage('employee', this)">👥 员工</a>
     </div>
     <div class="user" id="userInfo" onclick="showUserMenu()">🔑 登录</div>
 </div>
@@ -463,9 +654,10 @@
 <!-- ====== 二级导航 ====== -->
 <div class="subnav">
     <a onclick="switchSubPage('production', this)">📊 订单生产进度</a>
-    <a onclick="switchSubPage('scan', this)">📱 扫码报工</a>
-    <a onclick="switchSubPage('report', this)">📋 日报表</a>
-    <a onclick="switchSubPage('databoard', this)">📈 数据看板</a>
+    <a onclick="switchSubPage('databoard', this)">📈 店铺数据看板</a>
+    <a onclick="switchSubPage('realtime', this)">📋 实时订单</a>
+    <a onclick="switchSubPage('diemold', this)">📄 WPS刀模嵌入</a>
+    <a onclick="switchSubPage('jst', this)">🔄 聚水潭嵌入</a>
 </div>
 
 <!-- ====== 主内容 ====== -->
@@ -585,12 +777,20 @@
                         </div>
                     </div>
                     <div style="margin-bottom:10px;">
-                        <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">备注</label>
-                        <input type="text" id="dmfRemark" style="width:100%;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;" placeholder="可选：刀模编号、存放位置等" onfocus="this.select()">
+                        <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">🔢 刀模编码</label>
+                        <input type="text" id="dmfCode" style="width:100%;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;" placeholder="可选：刀模编号" onfocus="this.select()">
                     </div>
                     <div style="margin-bottom:10px;">
+                        <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">📍 存放库位</label>
+                        <input type="text" id="dmfLocation" style="width:100%;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;" placeholder="可选：存放位置" onfocus="this.select()">
+                    </div>
+                    <div style="margin-bottom:10px;">
+                        <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">备注</label>
+                        <input type="text" id="dmfRemark" style="width:100%;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;" placeholder="可选：额外说明" onfocus="this.select()">
+                    </div>
+                    <div style="margin-bottom:10px;" data-stock-field>
                         <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">📦 库存数量 <span style="color:#999;font-weight:400;">(个)</span></label>
-                            <input type="number" id="dmfStock" min="0" style="width:100%;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;" placeholder="0" onfocus="this.select()">
+                        <input type="number" id="dmfStock" min="0" style="width:100%;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;" placeholder="0" onfocus="this.select()">
                     </div>
                     <div style="display:flex;gap:8px;">
                         <button onclick="submitDimoldbForm()" style="flex:1;padding:8px;background:#1677ff;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;">💾 保存刀模</button>
@@ -819,76 +1019,17 @@
         </div>
     </div>
 
-    <!-- ===== 聚水潭页 ===== -->
+    <!-- ===== 聚水潭页（iframe嵌入官网） ===== -->
     <div id="page-jst" class="page-section">
-        <div class="jst-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;padding:12px 16px;border-bottom:1px solid #f0f0f0;">
-            <div style="display:flex;align-items:center;gap:8px;">
-                <h3 style="margin:0;">🔄 聚水潭</h3>
-                <span id="jstDataStatus" style="font-size:11px;padding:2px 6px;border-radius:8px;background:#fff3cd;color:#856404;">模拟数据</span>
-            </div>
-            <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                <button onclick="jstRefreshToken()" style="padding:4px 10px;border:1px solid #d9d9d9;border-radius:4px;background:#fff;cursor:pointer;font-size:12px;">🔄 刷新Token</button>
-                <button onclick="jstLoadOrders()" style="padding:4px 10px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">📋 加载订单</button>
-            </div>
+        <div style="padding:8px 16px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;gap:8px;">
+            <h3 style="margin:0;font-size:16px;">🔄 聚水潭</h3>
         </div>
-
-        <!-- 子导航 -->
-        <div class="subnav" style="display:flex;border-bottom:1px solid #f0f0f0;padding:0 12px;">
-            <a class="active" onclick="jstSwitchTab('orders', this)" style="cursor:pointer;padding:8px 14px;font-size:13px;border-bottom:2px solid #1677ff;color:#1677ff;text-decoration:none;">📦 订单</a>
-            <a onclick="jstSwitchTab('inventory', this)" style="cursor:pointer;padding:8px 14px;font-size:13px;color:#666;text-decoration:none;">📊 库存</a>
-            <a onclick="jstSwitchTab('status', this)" style="cursor:pointer;padding:8px 14px;font-size:13px;color:#666;text-decoration:none;">ℹ️ 连接状态</a>
-        </div>
-
-        <!-- 订单 Tab -->
-        <div id="jstTabOrders" class="jst-tab">
-            <!-- 搜索栏 -->
-            <div style="display:flex;gap:6px;padding:10px 16px;flex-wrap:wrap;">
-                <input type="text" id="jstSearchInput" placeholder="搜索单号..." style="flex:1;min-width:150px;padding:6px 10px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;" onkeydown="if(event.key==='Enter') jstLoadOrders()">
-                <select id="jstStatusFilter" style="padding:6px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;">
-                    <option value="">全部状态</option>
-                    <option value="待打印">待打印</option>
-                    <option value="已打印">已打印</option>
-                    <option value="已发货">已发货</option>
-                    <option value="已完成">已完成</option>
-                </select>
-                <button onclick="jstLoadOrders()" style="padding:6px 14px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">搜索</button>
-            </div>
-            <!-- 订单列表 -->
-            <div id="jstOrderList" style="padding:0 16px;">
-                <div style="text-align:center;padding:40px 0;color:#999;font-size:13px;">点击"加载订单"查看聚水潭订单</div>
-            </div>
-            <!-- 分页 -->
-            <div id="jstOrderPagination" style="display:none;padding:10px 16px;border-top:1px solid #f0f0f0;justify-content:space-between;align-items:center;">
-                <span id="jstPageInfo" style="font-size:12px;color:#999;"></span>
-                <div style="display:flex;gap:4px;" id="jstPageBtns"></div>
-            </div>
-        </div>
-
-        <!-- 库存 Tab -->
-        <div id="jstTabInventory" class="jst-tab" style="display:none;">
-            <div style="display:flex;gap:6px;padding:10px 16px;flex-wrap:wrap;">
-                <input type="text" id="jstInvSearch" placeholder="搜索SKU..." style="flex:1;min-width:150px;padding:6px 10px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;" onkeydown="if(event.key==='Enter') jstLoadInventory()">
-                <button onclick="jstLoadInventory()" style="padding:6px 14px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">查询库存</button>
-            </div>
-            <div id="jstInvList" style="padding:0 16px;">
-                <div style="text-align:center;padding:40px 0;color:#999;font-size:13px;">点击"查询库存"查看聚水潭库存</div>
-            </div>
-        </div>
-
-        <!-- 状态 Tab -->
-        <div id="jstTabStatus" class="jst-tab" style="display:none;padding:16px;">
-            <div style="background:#f9f9f9;border-radius:8px;padding:16px;">
-                <h4 style="margin:0 0 12px 0;font-size:14px;">🔌 聚水潭连接状态</h4>
-                <table style="width:100%;font-size:13px;">
-                    <tr><td style="padding:6px 0;color:#666;">App Key</td><td style="padding:6px 0;"><code style="font-size:11px;">5ea00cde...289349</code></td></tr>
-                    <tr><td style="padding:6px 0;color:#666;">API 地址</td><td style="padding:6px 0;"><code style="font-size:11px;">https://open.erp321.com/api/open/query.aspx</code></td></tr>
-                    <tr><td style="padding:6px 0;color:#666;">Token 状态</td><td id="jstTokenStatus" style="padding:6px 0;color:#856404;">❌ 未获取</td></tr>
-                    <tr><td style="padding:6px 0;color:#666;">数据来源</td><td id="jstDataSource" style="padding:6px 0;color:#856404;">📝 模拟数据</td></tr>
-                </table>
-                <div style="margin-top:12px;padding:10px;background:#e8f4fd;border-radius:6px;font-size:12px;color:#0056b3;">
-                    💡 明天你截图聚水潭后台页面后，我来调通真实接口。目前先用模拟数据显示界面效果。
-                </div>
-            </div>
+        <div id="jstIframeWrap" style="width:100%;height:calc(100vh - 140px);overflow:hidden;">
+            <iframe id="jstIframe" src="https://zhaccount.scm121.com/user/login" 
+                style="width:100%;height:100%;border:none;" 
+                allow="clipboard-read; clipboard-write" 
+                sandbox="allow-scripts allow-forms allow-same-origin allow-popups">
+            </iframe>
         </div>
     </div>
 
@@ -928,7 +1069,7 @@
 
         <!-- 概览 -->
         <div class="overview-header">
-            <h3>📊 生产概览</h3>
+            <h3>📊 销售概览</h3>
             <input type="date" id="datePicker" onchange="loadDashboard()" onfocus="this.select()" >
         </div>
 
@@ -998,24 +1139,7 @@
             </div>
         </div>
 
-        <!-- 底部功能栏 -->
-        <div class="footer-bar">
-            <div class="footer-card" onclick="goQuotePage()">
-                <div class="icon">💰</div>
-                <div class="f-title">报价</div>
-                <div class="f-desc">智能报价计算器</div>
-            </div>
-            <div class="footer-card" onclick="goPermissionPage()">
-                <div class="icon">🔐</div>
-                <div class="f-title">权限</div>
-                <div class="f-desc">管理员工账号权限</div>
-            </div>
-            <div class="footer-card" onclick="goEmployeePage()">
-                <div class="icon">👥</div>
-                <div class="f-title">员工</div>
-                <div class="f-desc">查看员工信息与考勤</div>
-            </div>
-        </div>
+        <!-- 底部功能栏（已移除） -->
     </div>
 
     <!-- ===== 订单生产进度页 ===== -->
@@ -1326,6 +1450,7 @@
                 <button onclick="loadPermissionTable()" style="padding:6px 16px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">🔐 功能权限管理</button>
                 <button onclick="loadResignedEmployees()" style="padding:6px 16px;background:#333;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">🗑️ 回收站</button>
                 <button onclick="loadQuoteConfigEditor()" style="padding:6px 16px;background:#e94560;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">💰 报价参数</button>
+                <button onclick="loadShopConfig()" style="padding:6px 16px;background:#52c41a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">🏪 店铺客服</button>
                 <span id="permStat" style="font-size:12px;color:#888;"></span>
             </div>
             <div id="permMainContent" style="min-height:200px;">
@@ -1456,6 +1581,12 @@
             
             if (data.success) {
                 _currentUser = data.user;
+                // 设置admin标记，用于CSS控制库存数量显示
+                if (_currentUser && _currentUser.role === '超级管理员') {
+                    document.body.setAttribute('data-is-admin', 'true');
+                } else {
+                    document.body.removeAttribute('data-is-admin');
+                }
                 document.getElementById('loginOverlay').style.display = 'none';
                 try {
                     await loadPermissions();
@@ -1556,6 +1687,8 @@
                 a.style.display = hasPerm('订单生产进度') ? '' : 'none';
             } else if (onclick.includes('databoard')) {
                 a.style.display = hasPerm('数据看板') ? '' : 'none';
+            } else if (onclick.includes('realtime')) {
+                a.style.display = hasPerm('实时订单') ? '' : 'none';
             } else {
                 a.style.display = '';
             }
@@ -1624,6 +1757,7 @@
     function checkPagePerm(name) {
         const pageToFeature = {
             'main': '首页',
+            'realtime': '实时订单',
             'diemold': '刀模',
             'dimoldb': '刀模库',
             'inventory': '库存',
@@ -1641,7 +1775,7 @@
         if (feature && !hasPerm(feature)) {
             // admin 默认全部权限
             if (_currentUser && _currentUser.role === '超级管理员') return true;
-            alert('暂无权限访问此功能');
+            switchTopPage('main', null);
             return false;
         }
         return true;
@@ -1650,20 +1784,33 @@
     // ===== 用户菜单 =====
     function showUserMenu() {
         if (_currentUser) {
-            const choice = prompt(
-                `${_currentUser.name}（${_currentUser.role}）\n\n` +
-                `输入 1 → 修改密码\n` +
-                `输入 2 → 退出登录\n\n` +
-                `请输入数字：`
-            );
-            if (choice === '1') {
-                openPasswordModal();
-            } else if (choice === '2') {
-                doLogout();
+            // 构建菜单按钮
+            let btns = '<div style="margin-bottom:8px;font-size:14px;color:#333;">' + _currentUser.name + '（' + _currentUser.role + '）</div>';
+            btns += '<button onclick="openPasswordModal();closeUserMenu()" style="display:block;width:100%;padding:10px;margin-bottom:4px;background:#f5f5f5;border:1px solid #e8e8e8;border-radius:6px;cursor:pointer;font-size:14px;text-align:left;">🔑 修改密码</button>';
+            if (_currentUser.role === '超级管理员') {
+                btns += '<button onclick="switchTopPage(\'permission\', null);closeUserMenu()" style="display:block;width:100%;padding:10px;margin-bottom:4px;background:#f5f5f5;border:1px solid #e8e8e8;border-radius:6px;cursor:pointer;font-size:14px;text-align:left;">🔐 权限设置</button>';
             }
+            btns += '<button onclick="doLogout();closeUserMenu()" style="display:block;width:100%;padding:10px;background:#fff2f0;border:1px solid #ffccc7;border-radius:6px;cursor:pointer;font-size:14px;text-align:left;color:#e94560;">🚪 退出登录</button>';
+            
+            const overlay = document.createElement('div');
+            overlay.id = 'userMenuOverlay';
+            overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;background:rgba(0,0,0,0.3);display:flex;justify-content:center;align-items:flex-start;padding-top:80px;';
+            overlay.onclick = function(e) { if (e.target === overlay) closeUserMenu(); };
+            
+            const menu = document.createElement('div');
+            menu.style.cssText = 'background:#fff;border-radius:12px;padding:16px;width:280px;box-shadow:0 8px 30px rgba(0,0,0,0.15);';
+            menu.innerHTML = btns;
+            
+            overlay.appendChild(menu);
+            document.body.appendChild(overlay);
         } else {
             document.getElementById('loginOverlay').style.display = 'flex';
         }
+    }
+    
+    function closeUserMenu() {
+        const el = document.getElementById('userMenuOverlay');
+        if (el) el.remove();
     }
 
     // ===== 修改密码 =====
@@ -1753,14 +1900,17 @@
         }
     }
 
-    // ===== 加载权限数据（通过 /api/my_permissions 一次获取）=====
+    // ===== 加载权限数据（通过 /api/permissions/data 一次获取）=====
     async function loadPermissions() {
         try {
-            const data = await getAPI('/api/my_permissions');
-            if (data.success) {
-                window._myPerms = data.my_permissions || {};
-                window._allPerms = data.all_permissions || {};
-                window._allEmployees = data.all_employees || [];
+            const data = await getAPI('/api/permissions/data');
+            // /api/permissions/data 直接返回对象，没有 .success 包装
+            if (data && data.employees) {
+                // 当前登录用户的权限
+                const username = _currentUser ? _currentUser.name : 'admin';
+                window._myPerms = data.permissions && data.permissions[username] || {};
+                window._allPerms = data.permissions || {};
+                window._allEmployees = data.employees || [];
             } else {
                 window._myPerms = {};
                 window._allPerms = {};
@@ -1892,6 +2042,21 @@
             document.getElementById('page-quote').classList.add('active');
             // 自动加载材质选项
             setTimeout(loadQuoteConfig, 100);
+        } else if (name === 'realtime') {
+            document.getElementById('page-main').classList.remove('active');
+            document.getElementById('page-realtime').classList.add('active');
+            rtRenderOrders();
+        } else if (name === 'diemold') {
+            document.getElementById('page-main').classList.remove('active');
+            document.getElementById('page-diemold').classList.add('active');
+            // 延迟加载iframe
+            const iframe = document.querySelector('#page-diemold iframe[data-src]');
+            if (iframe && !iframe.src) iframe.src = iframe.dataset.src;
+        } else if (name === 'jst') {
+            document.getElementById('page-main').classList.remove('active');
+            document.getElementById('page-jst').classList.add('active');
+            // 刷新聚水潭状态
+            if (typeof jstRefreshToken === 'function') jstRefreshToken();
         } else {
             document.body.classList.remove('dark-bg');
             document.querySelector('.content').classList.remove('databoard-mode');
@@ -2103,30 +2268,32 @@
                 else dateStr = p;
             }
             // 属性：从items构建属性明细
-            let attrStr = o.product;
+            let attrStr = '';
             if (o.items && o.items.length > 0) {
                 attrStr = o.items.map(item => {
-                    const spec = item.spec || item.name || '';
+                    const label = item.display || item.spec || item.name || '';
                     const qty = item.qty || 0;
-                    return spec + '×' + qty;
-                }).join('<br>');
+                    return '<div style="line-height:1.8;">' + label + '<span style="color:#999;margin-left:6px;">×' + qty + '</span></div>';
+                }).join('');
+            } else {
+                attrStr = o.product || o.name || '';
             }
             // 卖家备注
             const sellerMemo = o.remark || '';
             return `
             <tr>
-                <td style="font-size:11px;color:#888;">${dateStr}</td>
-                <td style="font-family:monospace;font-size:12px;">${o.id}</td>
-                <td${isEmployee?' style="display:none"':''}>${o.store}</td>
-                <td${isEmployee?' style="display:none"':''}>${o.worker || '—'}</td>
-                <td style="font-size:12px;">${attrStr}</td>
-                <td>${o.qty}</td>
-                <td>${o.process}</td>
-                <td>
+                <td data-label="日期" style="font-size:11px;color:#888;">${dateStr}</td>
+                <td data-label="单号" style="font-family:monospace;font-size:12px;">${o.id}</td>
+                <td data-label="店铺"${isEmployee?' style="display:none"':''}>${o.store}</td>
+                <td data-label="客服"${isEmployee?' style="display:none"':''}>${o.worker || '—'}</td>
+                <td data-label="属性/商品" style="font-size:11px;line-height:1.6;white-space:normal;word-break:break-all;">${attrStr}</td>
+                <td data-label="数量">${o.qty}</td>
+                <td data-label="工序">${o.process}</td>
+                <td data-label="状态">
                     <span class="tag ${o.status==='已完成'?'tag-done':o.status==='待审单'?'tag-pending':'tag-production'}">${o.status}</span>
                     ${o.urgent ? '<span class="urgent-badge">🔴加急</span>' : ''}
                 </td>
-                <td>
+                <td data-label="操作">
                     <div style="display:flex;gap:3px;flex-wrap:wrap;">
                         <button onclick="showOrderQr('${o.id}')" style="padding:2px 8px;border:none;border-radius:3px;cursor:pointer;font-size:11px;background:#722ed1;color:#fff;">📱二维码</button>
                         <button onclick="showOrderBarcode('${o.id}')" style="padding:2px 8px;border:none;border-radius:3px;cursor:pointer;font-size:11px;background:#08979c;color:#fff;">〰️条码</button>
@@ -2811,7 +2978,7 @@
             getAPI('/api/employees'),
             getAPI('/api/employee/status')
         ]);
-        window._allEmployees = empData.employees;
+        window._allEmployees = Array.isArray(empData) ? empData : (empData.employees || []);
         window._empStatuses = statusData.statuses || {};
         // 根据当前用户角色控制tab显示
         const role = _currentUser ? _currentUser.role : '';
@@ -2821,24 +2988,17 @@
         const factoryTab = document.getElementById('empTabFactory');
         const officeTab = document.getElementById('empTabOffice');
         
-        let defaultDept = '美丽湾工厂部';
-        if (role === '超级管理员' || (role === '管理' && myDept === '美丽湾工厂部')) {
-            // 超管/美丽湾管理层 → 两个tab都显示
+        let defaultDept = '洋坑塘运营部';
+        // 美丽湾工厂部默认隐藏，洋坑塘运营部默认显示
+        // 超管显示两个tab，其他人只看洋坑塘
+        if (role === '超级管理员' || role === '管理') {
             factoryTab.style.display = '';
-            officeTab.style.display = '';
-        } else if (role === '员工' && myDept === '美丽湾工厂部') {
-            // 美丽湾普通员工 → 只显示美丽湾tab
-            factoryTab.style.display = '';
-            officeTab.style.display = 'none';
-            defaultDept = '美丽湾工厂部';
-        } else if (role === '客服' || myDept === '洋坑塘运营部') {
-            // 洋坑塘客服 → 只显示洋坑塘tab
-            factoryTab.style.display = 'none';
             officeTab.style.display = '';
             defaultDept = '洋坑塘运营部';
         } else {
-            factoryTab.style.display = '';
-            officeTab.style.display = 'none';
+            factoryTab.style.display = 'none';
+            officeTab.style.display = '';
+            defaultDept = '洋坑塘运营部';
         }
         
         // 默认显示
@@ -2879,30 +3039,11 @@
         }
 
         const employees = window._allEmployees || [];
-        // 加载洋坑塘tab时，额外显示美丽湾管理层
-        let filtered;
-        if (dept === '洋坑塘运营部') {
-            const mgmtNames = ['戴雅利','邓涛','黄兴','隆浪','蒋义红','沈齐豪','覃海霞'];
-            // 美丽湾管理除邓涛、黄兴、隆浪、姚斌外，其他人看不到洋坑塘员工
-            const mgmtCanSeeYangtang = ['戴雅利','邓涛','黄兴','隆浪','姚斌'];
-            const myName = _currentUser ? _currentUser.employee_name : '';
-            if (mgmtNames.includes(myName) && !mgmtCanSeeYangtang.includes(myName)) {
-                // 蒋义红、沈齐豪、覃海霞 → 只显示美丽湾管理层
-                filtered = employees.filter(e => mgmtNames.includes(e.name));
-            } else {
-                filtered = employees.filter(e => e.dept === dept || mgmtNames.includes(e.name));
-            }
-        } else {
-            // 美丽湾工厂部：普通员工只看自己+管理层
-            if (_currentUser && _currentUser.role !== '超级管理员' && _currentUser.role !== '管理') {
-                const myName = _currentUser.employee_name;
-                const mgmtNames = ['戴雅利','邓涛','黄兴','隆浪','蒋义红','沈齐豪','覃海霞','姚斌'];
-                filtered = employees.filter(e => e.dept === dept && (e.name === myName || mgmtNames.includes(e.name)));
-            } else {
-                // 管理层/超级管理员看全部
-                filtered = employees.filter(e => e.dept === dept);
-            }
-        }
+        // 所有员工直接显示，不分部门过滤
+        let filtered = employees;
+
+        // 按department过滤：选了哪个tab就只看该部门的员工
+        // dept为空时统一归到"洋坑塘运营部"
         
         // 更新统计
         const statuses = window._empStatuses || {};
@@ -3162,7 +3303,8 @@
         document.getElementById('permStat').textContent = '加载员工数据...';
         
         const empData = await getAPI('/api/employees');
-        const employees = empData.employees;
+        // /api/employees 直接返回数组
+        const employees = Array.isArray(empData) ? empData : (empData.employees || []);
         document.getElementById('permStat').textContent = `共 ${employees.length} 人`;
         
         let html = `
@@ -3384,9 +3526,11 @@
         
         // 从员工API同步员工列表
         const empData = await getAPI('/api/employees');
-        const allEmpNames = empData.employees.map(e => e.name);
+        // /api/employees 直接返回数组
+        const empList = Array.isArray(empData) ? empData : (empData.employees || []);
+        const allEmpNames = empList.map(e => e.name);
         
-        const features = ['首页', '订单生产进度', '扫码报工', '日报表', '数据看板', '刀模', '刀模库', '库存', '聚水潭', '员工', '权限管理', '报价'];
+        const features = ['首页', '实时订单', '订单生产进度', '扫码报工', '日报表', '数据看板', '刀模', '刀模库', '库存', '聚水潭', '员工', '权限管理', '报价'];
         // 用_allPerms（来自/api/my_permissions），服务端保证完整
         const perms = window._allPerms || data.permissions || {};
         
@@ -4428,9 +4572,11 @@
                 const invPromises = matches.map(async (m) => {
                     const spec = (m.length && m.width && m.height) ? `${m.length}×${m.width}×${m.height}` : m.name;
                     try {
-                        // 根据刀模的dim_type确定库存查询的type参数
+                        // 根据刀模name判断内外径（刀模dim_type字段为空）
+                        let mDim = '';
+                        if (m.name.includes('(内)') || m.name.includes('内径')) mDim = 'inner';
+                        else if (m.name.includes('(外)') || m.name.includes('外径')) mDim = 'outer';
                         let invType = ptype;
-                        const mDim = m.dim_type || dimType;
                         if (invType === 'zhengsquare' || invType === '') {
                             if (mDim === 'inner') invType = 'zhengsquare-inner';
                             else if (mDim === 'outer') invType = 'zhengsquare-outer';
@@ -4514,25 +4660,23 @@
             const matches = dmData.matches || [];
             const invItems = (invData.success && invData.data) ? invData.data : [];
 
-            // 按 spec 分组库存，方便刀模关联
-            const invBySpec = {};
+            // 按 尺寸维度 分组库存（用length/width/height数值）
+            const invByDim = {};
             for (const inv of invItems) {
-                const spec = inv.spec || inv.name || '';
-                if (!invBySpec[spec]) invBySpec[spec] = [];
-                invBySpec[spec].push(inv);
+                const dk = inv.length + 'x' + inv.width + 'x' + inv.height;
+                if (!invByDim[dk]) invByDim[dk] = [];
+                invByDim[dk].push(inv);
             }
 
             if (matches.length > 0) {
                 let html = '';
                 for (const m of matches) {
-                    // 每个刀模对应的库存（按 spec = 尺寸匹配）
+                    // 每个刀模对应的库存（按尺寸匹配）
                     const specKey = m.length + 'x' + m.width + 'x' + m.height;
-                    // 根据刀模的 dim_type 过滤对应的库存（内外径分开）
-                    // 刀模dim_type字段为空，用name判断
                     let dmDimType = '';
                     if (m.name.includes('(内)') || m.name.includes('内径')) dmDimType = 'inner';
                     else if (m.name.includes('(外)') || m.name.includes('外径')) dmDimType = 'outer';
-                    let relatedInv = invBySpec[specKey] || invBySpec[m.name] || [];
+                    let relatedInv = invByDim[specKey] || [];
                     if (dmDimType) {
                         relatedInv = relatedInv.filter(ri => ri.dim_type === dmDimType);
                     }
@@ -4602,6 +4746,7 @@
     let _invTotalPages = 1;
     const _invTypeLabels = {
         'zhengsquare': '正方形飞机盒',
+        'changfang': '长方形飞机盒',
         'juxing': '长方形飞机盒',
         'daikou': '带扣飞机盒',
         'koudi': '扣底盒',
@@ -4660,6 +4805,8 @@
                     dmAllData.matches.forEach(m => {
                         const key = `${m.length}x${m.width}x${m.height}`;
                         if (!dimoldbMap[key]) dimoldbMap[key] = [];
+                        // 存刀模时也记录dim_type
+                        m._dmType = (m.name && m.name.includes('(内)')) ? 'inner' : ((m.name && m.name.includes('(外)')) ? 'outer' : '');
                         dimoldbMap[key].push(m);
                     });
                 }
@@ -4670,11 +4817,22 @@
                 const dimLabel = item.dim_type === 'inner' ? '内径' : (item.dim_type === 'outer' ? '外径' : '');
                 const stock = item.stock || 0;
                 const stockColor = stock <= 0 ? '#e94560' : (stock < 50 ? '#d48806' : '#52c41a');
-                // 本地匹配刀模
-                const dmKey = `${item.length}x${item.width}x${item.height}`;
-                const dmMatches = dimoldbMap[dmKey] || [];
-                const dmHtml = dmMatches.length > 0
-                    ? dmMatches.map(m => `<span style="display:inline-block;background:#e6f7ff;color:#1677ff;padding:1px 6px;border-radius:3px;font-size:11px;margin-right:3px;">🔧${m.remark||''}</span>`).join('')
+                // 本地匹配刀模（按dim_type过滤）
+                // 优先使用后端返回的dimoldb_info，其次本地匹配
+                let dmForRender = item.dimoldb_info && item.dimoldb_info.length > 0
+                    ? item.dimoldb_info
+                    : [];
+                if (dmForRender.length === 0) {
+                    // 后端没返回，走本地匹配
+                    const dmKey = `${item.length}x${item.width}x${item.height}`;
+                    let local = dimoldbMap[dmKey] || [];
+                    if (item.dim_type) {
+                        local = local.filter(m => !m._dmType || m._dmType === item.dim_type);
+                    }
+                    dmForRender = local;
+                }
+                const dmHtml = dmForRender.length > 0
+                    ? dmForRender.map(m => `<span style="display:inline-block;background:#e6f7ff;color:#1677ff;padding:1px 6px;border-radius:3px;font-size:11px;margin-right:3px;">🔧${m.remark||''}</span>`).join('')
                     : '';
                 html += `
                 <div onclick="fillInvQuick('${item.id}')" style="display:flex;align-items:center;padding:8px 10px;border-bottom:1px solid #f0f0f0;cursor:pointer;" title="点击填充查询">
@@ -4686,9 +4844,9 @@
                             ${item.location ? ' ｜ 📍' + item.location : ''}
                         </div>
                     </div>
-                    <div style="text-align:center;margin:0 12px;">
-                        <div style="font-size:18px;font-weight:800;color:${stockColor};">${stock}</div>
-                        <div style="font-size:10px;color:#999;">个</div>
+                    <div id="invStockDisplay" style="text-align:center;margin:0 12px;">
+                        <div style="font-size:18px;font-weight:800;color:${stockColor};">${stock <= 0 ? '⚠️' : '✓'}</div>
+                        <div style="font-size:10px;color:#999;">${stock <= 0 ? '无货' : '有货'}</div>
                     </div>
                     <div style="font-size:10px;color:#bbb;white-space:nowrap;">${item.updated_at || item.created_at || ''}</div>
                     ${canEdit ? `
@@ -5365,12 +5523,12 @@
                 '<span style="background:#ff6a00;color:#fff;padding:1px 5px;border-radius:3px;font-size:10px;">1688</span>' :
                 '<span style="background:#1677ff;color:#fff;padding:1px 5px;border-radius:3px;font-size:10px;">' + (o.platform || '线下') + '</span>';
 
-            // 生成规格多行显示（只显示属性spec，不显示商品名）
+            // 生成商品属性多行显示（优先display，回退到spec或name）
             var specHtml = '';
             if (o.items && o.items.length > 0) {
                 specHtml = o.items.map(function(itm) {
-                    var spec = itm.spec || '';
-                    return '<div style="white-space:nowrap;">' + spec + ' <b style="color:#e94560;">×' + (itm.qty || 0) + '</b></div>';
+                    var label = itm.display || itm.spec || itm.name || '';
+                    return '<div style="white-space:nowrap;">' + label + ' <b style="color:#e94560;">×' + (itm.qty || 0) + '</b></div>';
                 }).join('');
             }
 
@@ -5598,6 +5756,76 @@
             statusEl.textContent = '❌ ' + e.message;
             statusEl.style.color = '#e94560';
         }
+    }
+
+    // ===== 店铺客服管理 =====
+    async function loadShopConfig() {
+        var container = document.getElementById('permMainContent');
+        if (!container) return;
+        container.innerHTML = '<div style="text-align:center;padding:40px;color:#999;"><div class="spinner"></div>加载中...</div>';
+        try {
+            var resp = await fetch('/api/shop-config');
+            var data = await resp.json();
+            var configs = data.shop_config || data.config || [];
+            var html = '<div style="background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.06);">';
+            html += '<h4 style="margin-bottom:16px;">🏪 店铺客服配置 <span style="font-size:12px;color:#999;font-weight:400;">— 按平台分组显示</span></h4>';
+            // 按平台分组
+            var groups = {};
+            configs.forEach(function(c) {
+                var plat = c.platform || '其他';
+                if (!groups[plat]) groups[plat] = [];
+                groups[plat].push(c);
+            });
+            var order = ['1688', 'tmall', 'taobao', '其他'];
+            order.forEach(function(plat) {
+                var items = groups[plat] || [];
+                if (items.length === 0) return;
+                html += '<div style="margin-bottom:20px;"><h5 style="font-size:14px;margin:0 0 8px 0;color:#333;">' + plat + '</h5>';
+                html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+                html += '<thead><tr style="background:#f5f5f5;"><th style="padding:6px 8px;border-bottom:1px solid #e8e8e8;text-align:left;">店铺名</th><th style="padding:6px 8px;border-bottom:1px solid #e8e8e8;text-align:left;">客服</th><th style="padding:6px 8px;border-bottom:1px solid #e8e8e8;text-align:left;">排序</th><th style="padding:6px 8px;border-bottom:1px solid #e8e8e8;text-align:center;">操作</th></tr></thead><tbody>';
+                items.forEach(function(c) {
+                    html += '<tr><td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;">' + (c.shop_name || '') + '</td>';
+                    html += '<td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;"><input type="text" value="' + (c.customer_service || '') + '" onchange="updateShopKefu(\'' + c.id + '\', this.value)" style="width:120px;padding:4px 6px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;"></td>';
+                    html += '<td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;"><input type="number" value="' + (c.sort_order || 0) + '" onchange="updateShopOrder(\'' + c.id + '\', this.value)" style="width:60px;padding:4px 6px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;"></td>';
+                    html += '<td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;text-align:center;"><button onclick="deleteShopConfig(\'' + c.id + '\')" style="padding:2px 8px;border:none;border-radius:3px;background:#e94560;color:#fff;cursor:pointer;font-size:11px;">删除</button></td></tr>';
+                });
+                html += '</tbody></table></div>';
+            });
+            // 添加新店铺表单
+            html += '<div style="margin-top:16px;padding-top:16px;border-top:1px solid #e8e8e8;">';
+            html += '<h5 style="font-size:13px;margin:0 0 8px 0;">➕ 添加新店铺</h5>';
+            html += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">';
+            html += '<select id="newShopPlatform" style="padding:6px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;"><option value="1688">1688</option><option value="tmall">天猫</option><option value="taobao">淘宝</option><option value="other">其他</option></select>';
+            html += '<input type="text" id="newShopName" placeholder="店铺名" style="padding:6px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;width:140px;">';
+            html += '<input type="text" id="newShopKefu" placeholder="客服名" style="padding:6px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;width:140px;">';
+            html += '<button onclick="addShopConfig()" style="padding:6px 14px;background:#52c41a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">添加</button>';
+            html += '</div></div></div>';
+            container.innerHTML = html;
+        } catch(e) {
+            container.innerHTML = '<div style="text-align:center;padding:40px;color:#e94560;">❌ 加载失败: ' + e.message + '</div>';
+        }
+    }
+
+    async function updateShopKefu(id, val) {
+        await fetch('/api/shop-config/' + id, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({customer_service: val})});
+    }
+    async function updateShopOrder(id, val) {
+        await fetch('/api/shop-config/' + id, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({sort_order: parseInt(val)||0})});
+    }
+    async function deleteShopConfig(id) {
+        if (!confirm('确定删除？')) return;
+        await fetch('/api/shop-config/' + id, {method:'DELETE'});
+        loadShopConfig();
+    }
+    async function addShopConfig() {
+        var plat = document.getElementById('newShopPlatform').value;
+        var name = document.getElementById('newShopName').value.trim();
+        var kefu = document.getElementById('newShopKefu').value.trim();
+        if (!name) { alert('请输入店铺名'); return; }
+        await fetch('/api/shop-config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({platform: plat, shop_name: name, customer_service: kefu})});
+        document.getElementById('newShopName').value = '';
+        document.getElementById('newShopKefu').value = '';
+        loadShopConfig();
     }
 </script>
 

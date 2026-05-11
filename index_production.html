@@ -396,6 +396,7 @@
         <a onclick="switchTopPage('dimoldb', this)">🔩 刀模库</a>
         <a onclick="switchTopPage('inventory', this)">📦 成品</a>
         <a onclick="switchTopPage('raw', this)">🧱 原材料</a>
+        <a onclick="switchTopPage('employee', this)">👥 员工</a>
     </div>
     <div class="user" id="userInfo" onclick="showUserMenu()">🔑 登录</div>
 </div>
@@ -459,7 +460,7 @@
 
 <!-- ====== 二级导航 ====== -->
 <div class="subnav">
-    <a onclick="switchSubPage('production', this)">📊 订单生产进度</a>
+    <a onclick="switchSubPage('production', this)">🖨️ 打单管理</a>
     <a onclick="switchSubPage('scan', this)">📱 扫码报工</a>
     <a onclick="switchSubPage('report', this)">📋 日报表</a>
     <a onclick="switchSubPage('databoard', this)">📈 数据看板</a>
@@ -573,6 +574,17 @@
                     <div style="margin-bottom:10px;">
                         <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">备注</label>
                         <input type="text" id="dmfRemark" style="width:100%;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;" placeholder="可选：刀模编号、存放位置等" onfocus="this.select()">
+                    </div>
+                    <div style="margin-bottom:10px;">
+                        <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">🔧 刀模分类</label>
+                        <select id="dmfTypeClass" style="width:100%;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;">
+                            <option value="固定">固定刀模</option>
+                            <option value="组合">组合刀模</option>
+                        </select>
+                    </div>
+                    <div style="margin-bottom:10px;">
+                        <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">🔢 开几 <span style="color:#999;font-weight:400;">(啤货数量=订单数量÷开几)</span></label>
+                        <input type="number" id="dmfOpens" min="1" value="1" style="width:100%;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;" onfocus="this.select()">
                     </div>
                     <div style="margin-bottom:10px;">
                         <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">📦 库存数量 <span style="color:#999;font-weight:400;">(个)</span></label>
@@ -898,45 +910,54 @@
                     <div style="display:flex;gap:4px;margin-left:8px;" id="pageBtns"></div>
                 </div>
             </div>
-        </div>
+    </div>
+</div>
 
-        <!-- 底部功能栏 -->
-        <div class="footer-bar">
-                <div class="f-title">报价</div>
-                <div class="f-desc">智能报价计算器</div>
-            </div>
-            <div class="footer-card" onclick="goPermissionPage()">
-                <div class="icon">🔐</div>
-                <div class="f-title">权限</div>
-                <div class="f-desc">管理员工账号权限</div>
-            </div>
-            <div class="footer-card" onclick="goEmployeePage()">
-                <div class="icon">👥</div>
-                <div class="f-title">员工</div>
-                <div class="f-desc">查看员工信息与考勤</div>
-            </div>
+<!-- ===== 打单管理页（旧：订单生产进度） ===== -->
+<div id="page-production" class="page-section">
+    <div class="overview-header">
+        <div>
+            <h3>🖨️ 打单管理</h3>
+            <span style="font-size:12px;color:#888;">文员打单 → 自动创建工单 → 流转生产</span>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <select id="prodFilterShop" onchange="loadProdDashboard()" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;">
+                <option value="">全部店铺</option>
+            </select>
+            <select id="prodFilterType" onchange="loadProdDashboard()" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;">
+                <option value="">全部类型</option>
+                <option value="飞机盒">飞机盒</option>
+                <option value="纸箱">纸箱</option>
+                <option value="扣底盒">扣底盒/双插盒</option>
+                <option value="现货">现货</option>
+            </select>
+            <select id="prodFilterPrint" onchange="loadProdDashboard()" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;">
+                <option value="">全部打印状态</option>
+                <option value="printed">已打印</option>
+                <option value="unprinted">未打印</option>
+            </select>
+            <input type="date" id="prodFilterDateFrom" onchange="loadProdDashboard()" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;">
+            <input type="date" id="prodFilterDateTo" onchange="loadProdDashboard()" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;">
+            <input type="text" id="prodFilterSearch" placeholder="搜单号/产品..." onkeydown="if(event.key==='Enter') loadProdDashboard()" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;width:140px;">
+            <button onclick="loadProdDashboard()" style="padding:4px 12px;background:#1a1a2e;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">🔍 搜索</button>
+            <button onclick="printAllUnprinted()" style="padding:4px 12px;background:#52c41a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">🖨️ 一键打印全部未打</button>
+            <button onclick="batchPrintProdOrders()" style="padding:4px 12px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">🖨️ 批量打印选中</button>
+            <button onclick="batchInitFlows()" style="padding:4px 12px;background:#fa8c16;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">📋 创建工单</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:6px;font-size:11px;color:#888;align-items:center;">
+            <span id="prodStats">加载中...</span>
         </div>
     </div>
-
-    <!-- ===== 订单生产进度页 ===== -->
-    <div id="page-production" class="page-section">
-        <div class="overview-header">
-            <h3>📊 订单生产进度</h3>
-            <div style="display:flex;gap:8px;align-items:center;">
-                <span style="font-size:12px;color:#888;">仅显示聚水潭已打印销售单</span>
-                <input type="text" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;width:160px;" placeholder="搜索内部单号..." onkeydown="if(event.key==='Enter') filterProdOrders(this.value)" onfocus="this.select()">
-                <button style="padding:4px 12px;background:#1a1a2e;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;" onclick="filterProdOrders(this.previousElementSibling.value)">搜索</button>
-            </div>
-        </div>
-        <div class="order-table-wrap">
-            <table>
-                <thead><tr>
-                    <th>内部单号</th><th>店铺名称</th><th>发货省份</th><th>发货城市</th><th>产品</th><th>数量</th><th>当前工序</th><th>流程进度</th>
-                </tr></thead>
-                <tbody id="prodTable"></tbody>
-            </table>
-        </div>
+    <div class="order-table-wrap">
+        <table>
+            <thead><tr>
+                <th style="width:36px;"><input type="checkbox" onchange="toggleAllProdCheckbox(this)"></th>
+                <th>状态</th><th>内部单号</th><th>店铺</th><th>产品</th><th>规格</th><th>数量</th><th>当前工序</th><th>进度</th><th>日期</th><th>操作</th>
+            </tr></thead>
+            <tbody id="prodTable"></tbody>
+        </table>
     </div>
+</div>
 
     <!-- ===== 扫码报工页 ===== -->
     <div id="page-scan" class="page-section">
@@ -1075,7 +1096,7 @@
                 <span id="empStats" style="font-size:13px;color:#888;"></span>
                 <input type="date" id="empExportDate" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;" onfocus="this.select()" >
                 <button onclick="exportAttendance()" style="padding:6px 16px;background:#52c41a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">📥 导出考勤</button>
-                <button id="empEditBtn" onclick="showEmployeeEditor()" style="padding:6px 16px;background:#722ed1;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;display:none;">⚙️ 管理员工</button>
+                <button id="empEditBtn" onclick="loadFullEmployeeEditor();switchSubPage('permission',null)" style="padding:6px 16px;background:#722ed1;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;display:none;">⚙️ 管理员工</button>
             </div>
         </div>
 
@@ -1124,7 +1145,7 @@
                 <button onclick="loadFullEmployeeEditor()" style="padding:6px 16px;background:#722ed1;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">👥 管理全部员工</button>
                 <button onclick="loadPermissionTable()" style="padding:6px 16px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">🔐 功能权限管理</button>
                 <button onclick="loadResignedEmployees()" style="padding:6px 16px;background:#333;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">🗑️ 回收站</button>
-                <button onclick="loadQuoteConfigEditor()" style="padding:6px 16px;background:#e94560;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">💰 报价参数</button>
+                <button onclick="loadQuoteConfigEditor()" style="padding:6px 16px;background:#fa8c16;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">📋 报价参数</button>
                 <span id="permStat" style="font-size:12px;color:#888;"></span>
             </div>
             <div id="permMainContent" style="min-height:200px;">
@@ -1144,6 +1165,25 @@
         </div>
     </div>
 
+</div>
+
+<!-- ===== 底部功能栏 ===== -->
+<div class="footer-bar">
+    <div class="footer-card" onclick="switchSubPage('dimoldb', null)" data-perm="刀模库">
+        <div class="icon">🔩</div>
+        <div class="f-title">WPS刀模嵌入</div>
+        <div class="f-desc">查看和管理固定刀模</div>
+    </div>
+    <div class="footer-card" onclick="goJSTPage()" data-perm="聚水潭">
+        <div class="icon">📦</div>
+        <div class="f-title">聚水潭嵌入</div>
+        <div class="f-desc">聚水潭订单查询</div>
+    </div>
+    <div class="footer-card" onclick="openProcessSettings()" data-perm="管理员">
+        <div class="icon">⚙️</div>
+        <div class="f-title">工序超时设置</div>
+        <div class="f-desc">设置各工序目标完成时长</div>
+    </div>
 </div>
 
 <!-- ===== 生产进度弹窗 ===== -->
@@ -1342,15 +1382,18 @@
         if (footerBar) {
             const footerCards = footerBar.querySelectorAll('.footer-card');
             footerCards.forEach(card => {
-                const onclick = card.getAttribute('onclick') || '';
-                const titleEl = card.querySelector('.f-title');
-                const title = titleEl ? titleEl.textContent.trim() : '';
-                if (onclick.includes('goPermissionPage') || onclick.includes('goPermPage') || title === '权限') {
-                    card.style.display = hasPerm('权限管理') ? '' : 'none';
-                } else if (onclick.includes('goQuotePage') || onclick.includes('报价') || title === '报价') {
-                    card.style.display = hasPerm('报价') ? '' : 'none';
-                } else if (onclick.includes('goEmployeePage') || onclick.includes('goEmpPage') || title === '员工') {
-                    card.style.display = hasPerm('员工') ? '' : 'none';
+                const perm = card.getAttribute('data-perm');
+                if (perm) {
+                    card.style.display = hasPerm(perm) ? '' : 'none';
+                } else {
+                    const onclick = card.getAttribute('onclick') || '';
+                    const titleEl = card.querySelector('.f-title');
+                    const title = titleEl ? titleEl.textContent.trim() : '';
+                    if (onclick.includes('goPermissionPage') || onclick.includes('goPermPage') || title === '权限') {
+                        card.style.display = hasPerm('权限管理') ? '' : 'none';
+                    } else if (onclick.includes('goEmployeePage') || onclick.includes('goEmpPage') || title === '员工') {
+                        card.style.display = hasPerm('员工') ? '' : 'none';
+                    }
                 }
             });
         }
@@ -1392,13 +1435,12 @@
             'databoard': '数据看板',
             'employee': '员工',
             'permission': '权限管理',
-            'quote': '报价'
         };
         const feature = pageToFeature[name];
         if (feature && !hasPerm(feature)) {
             // admin 默认全部权限
             if (_currentUser && _currentUser.role === '超级管理员') return true;
-            alert('暂无权限访问此功能');
+            switchTopPage('main', null);
             return false;
         }
         return true;
@@ -1407,20 +1449,32 @@
     // ===== 用户菜单 =====
     function showUserMenu() {
         if (_currentUser) {
-            const choice = prompt(
-                `${_currentUser.name}（${_currentUser.role}）\n\n` +
-                `输入 1 → 修改密码\n` +
-                `输入 2 → 退出登录\n\n` +
-                `请输入数字：`
-            );
-            if (choice === '1') {
-                openPasswordModal();
-            } else if (choice === '2') {
-                doLogout();
+            let btns = '<div style="margin-bottom:8px;font-size:14px;color:#333;">' + _currentUser.name + '（' + _currentUser.role + '）</div>';
+            btns += '<button onclick="openPasswordModal();closeUserMenu()" style="display:block;width:100%;padding:10px;margin-bottom:4px;background:#f5f5f5;border:1px solid #e8e8e8;border-radius:6px;cursor:pointer;font-size:14px;text-align:left;">🔑 修改密码</button>';
+            if (_currentUser.role === '超级管理员') {
+                btns += '<button onclick="goPermissionPage();closeUserMenu()" style="display:block;width:100%;padding:10px;margin-bottom:4px;background:#f5f5f5;border:1px solid #e8e8e8;border-radius:6px;cursor:pointer;font-size:14px;text-align:left;">🔐 权限设置</button>';
             }
+            btns += '<button onclick="doLogout();closeUserMenu()" style="display:block;width:100%;padding:10px;background:#fff2f0;border:1px solid #ffccc7;border-radius:6px;cursor:pointer;font-size:14px;text-align:left;color:#e94560;">🚪 退出登录</button>';
+            
+            const overlay = document.createElement('div');
+            overlay.id = 'userMenuOverlay';
+            overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;background:rgba(0,0,0,0.3);display:flex;justify-content:center;align-items:flex-start;padding-top:80px;';
+            overlay.onclick = function(e) { if (e.target === overlay) closeUserMenu(); };
+            
+            const menu = document.createElement('div');
+            menu.style.cssText = 'background:#fff;border-radius:12px;padding:16px;width:280px;box-shadow:0 8px 30px rgba(0,0,0,0.15);';
+            menu.innerHTML = btns;
+            
+            overlay.appendChild(menu);
+            document.body.appendChild(overlay);
         } else {
             document.getElementById('loginOverlay').style.display = 'flex';
         }
+    }
+    
+    function closeUserMenu() {
+        const el = document.getElementById('userMenuOverlay');
+        if (el) el.remove();
     }
 
     // ===== 修改密码 =====
@@ -1573,6 +1627,10 @@
         // 切到页面时回顶部
         window.scrollTo({top: 0, behavior: 'smooth'});
 
+        // 切到打单管理页时自动加载
+        if (name === 'production') {
+            loadProdDashboard();
+        }
         // 切到原材料页时自动加载
         if (name === 'raw') {
             loadRaw();
@@ -1614,8 +1672,8 @@
         // 子功能页通过切换首页内的内容区域来展示
         
         if (name === 'production') {
-            loadProductionPage();
-            // 切换到生产进度页：隐藏首页内容，显示生产进度内容
+            loadProdDashboard();
+            // 切换到打单管理页：隐藏首页内容，显示打单管理内容
             document.getElementById('page-main').classList.remove('active');
             document.getElementById('page-production').classList.add('active');
         }
@@ -1649,10 +1707,34 @@
             document.getElementById('page-quote').classList.add('active');
             // 自动加载材质选项
             setTimeout(loadQuoteConfig, 100);
+        } else if (name === 'dimoldb') {
+            document.getElementById('page-main').classList.remove('active');
+            document.getElementById('page-dimoldb').classList.add('active');
+            loadDimoldbList(1);
+        } else if (name === 'inventory') {
+            document.getElementById('page-main').classList.remove('active');
+            document.getElementById('page-inventory').classList.add('active');
+        } else if (name === 'raw') {
+            document.getElementById('page-main').classList.remove('active');
+            document.getElementById('page-raw').classList.add('active');
+            loadRaw();
+        } else if (name === 'jst') {
+            document.getElementById('page-main').classList.remove('active');
+            document.getElementById('page-jst').classList.add('active');
         } else {
             document.body.classList.remove('dark-bg');
             document.querySelector('.content').classList.remove('databoard-mode');
         }
+    }
+
+    // ===== 从底部功能栏进入聚水潭嵌入（跳到首页聚焦搜索框）=====
+    function goJSTPage() {
+        if (!hasPerm('聚水潭')) { switchTopPage('main', null); return; }
+        switchTopPage('main', null);
+        setTimeout(() => {
+            const input = document.getElementById('searchInput');
+            if (input) { input.focus(); input.select(); }
+        }, 100);
     }
 
     // ===== 从底部功能栏打开员工/权限/报价页 =====
@@ -1770,7 +1852,7 @@
                 <div class="info-row"><span class="label">金额</span><span>¥${d.amount}</span></div>
                 <div class="info-row"><span class="label">下单日期</span><span>${d.order_date}</span></div>
                 <div class="info-row"><span class="label">交货日期</span><span>${d.delivery_date}</span></div>
-                <div class="info-row"><span class="label">收货地址</span><span>${d.address}</span></div>
+                <div class="info-row"><span class="label">收货地址</span><span>${(function(){let a=d.address||'';let m=a.match(/([^省]+省)([^市]+市)/);return m?m[1]+m[2]:a.slice(0,8);})()}</span></div>
                 <div class="info-row"><span class="label">物流</span><span>${d.logistics}</span></div>
             `;
         }
@@ -2091,76 +2173,272 @@
 
     // ===== 加载生产进度页 =====
     let allProdOrders = [];
-    async function loadProductionPage() {
-        console.log('loadProductionPage called');
+    // ===== 打单管理（从/api/production/dashboard读取）=====
+    let _prodDashboardOrders = [];
+    let _prodDashboardIdxMap = {}; // so_id -> index in raw array
+    let _prodMappingData = []; // 材料关键词映射
+    
+    async function loadProdDashboard() {
+        const shop = document.getElementById('prodFilterShop').value;
+        const type = document.getElementById('prodFilterType').value;
+        const printStatus = document.getElementById('prodFilterPrint').value;
+        const dateFrom = document.getElementById('prodFilterDateFrom').value;
+        const dateTo = document.getElementById('prodFilterDateTo').value;
+        const search = document.getElementById('prodFilterSearch').value.trim().toLowerCase();
+        
         try {
-            const data = await getAPI('/api/production_orders');
-            console.log('production data:', data);
-            allProdOrders = data.orders;
-            renderProdTable(data.orders);
+            const res = await fetch('/api/production/dashboard');
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error);
+            
+            // 保存材料映射
+            _prodMappingData = data.material_mapping || [];
+            
+            // 填充店铺筛选
+            const shopSel = document.getElementById('prodFilterShop');
+            if (shopSel.options.length <= 1) {
+                (data.filters.shops || []).forEach(s => {
+                    const opt = document.createElement('option');
+                    opt.value = s; opt.textContent = s;
+                    shopSel.appendChild(opt);
+                });
+            }
+            
+            _prodDashboardOrders = data.orders || [];
+            
+            // 前端筛选
+            let filtered = _prodDashboardOrders;
+            if (shop) filtered = filtered.filter(o => o.shop === shop);
+            if (type) filtered = filtered.filter(o => o.product_type === type);
+            if (printStatus === 'printed') filtered = filtered.filter(o => o.printed);
+            if (printStatus === 'unprinted') filtered = filtered.filter(o => !o.printed);
+            if (dateFrom) filtered = filtered.filter(o => o.created >= dateFrom);
+            if (dateTo) filtered = filtered.filter(o => o.created <= dateTo);
+            if (search) filtered = filtered.filter(o =>
+                o.so_id.toLowerCase().includes(search) ||
+                o.product_name.toLowerCase().includes(search) ||
+                o.shop.toLowerCase().includes(search)
+            );
+            
+            // 重建索引映射
+            _prodDashboardIdxMap = {};
+            _prodDashboardOrders.forEach((o, i) => { _prodDashboardIdxMap[o.so_id] = i; });
+            
+            renderProdDashboard(filtered);
         } catch(e) {
-            console.error('loadProductionPage error:', e);
+            document.getElementById('prodTable').innerHTML = '<tr><td colspan="11" style="color:#e94560;text-align:center;padding:30px;">❌ 加载失败: ' + e.message + '</td></tr>';
         }
     }
-
-    function renderProdTable(orders) {
-        console.log('renderProdTable called with', orders.length, 'orders');
-        const html = orders.map((o, idx) => {
-            const doneSteps = o.flow.filter(s => s.done).length;
-            const totalSteps = o.flow.length;
-            const pct = Math.round(doneSteps / totalSteps * 100);
-            const currentStep = o.flow.find(s => !s.done)?.step || '已完成';
-            return `<tr style="cursor:pointer;" onclick="console.log('click row ${idx}');showProdFlowByIndex(${idx})">
-                <td style="font-family:monospace;font-size:12px;color:#1677ff;font-weight:600;">${o.inner_id}</td>
-                <td>${o.store}</td>
-                <td>${o.province}</td>
-                <td>${o.city}</td>
-                <td>${o.product}</td>
-                <td>${o.qty}</td>
-                <td><span class="tag ${pct===100?'tag-done':'tag-production'}">${currentStep}</span></td>
-                <td style="min-width:120px;">
-                    <div style="display:flex;align-items:center;gap:6px;">
-                        <div style="flex:1;height:6px;background:#f0f0f0;border-radius:3px;overflow:hidden;">
-                            <div style="height:100%;width:${pct}%;background:${pct===100?'#52c41a':'#1677ff'};border-radius:3px;transition:width 0.5s;"></div>
-                        </div>
-                        <span style="font-size:11px;color:#888;">${pct}%</span>
-                    </div>
-                </td>
-            </tr>`;
-        }).join('');
-        console.log('rendering', html.substring(0, 100));
-        document.getElementById('prodTable').innerHTML = html;
-        console.log('prodTable rendered');
+    
+    function renderProdDashboard(orders) {
+        const total = _prodDashboardOrders.length;
+        const printed = _prodDashboardOrders.filter(o => o.printed).length;
+        const unprinted = total - printed;
+        document.getElementById('prodStats').textContent = `共 ${total} 单 ｜ 已打印 ${printed} 单 ｜ 未打印 ${unprinted} 单`;
+        
+        if (!orders.length) {
+            document.getElementById('prodTable').innerHTML = '<tr><td colspan="11" style="text-align:center;padding:30px;color:#999;">暂无匹配的订单</td></tr>';
+            return;
+        }
+        
+        try {
+            const html = orders.map(function(o, idx) {
+                var printBadge = o.printed
+                    ? '<span style="color:#52c41a;font-weight:bold;">✅ 已打印</span>'
+                    : '<span style="color:#e94560;font-weight:bold;">⭕ 未打印</span>';
+                
+                // 构建规格展示 —— 每个规格一行，显示完整属性
+                var itemsHtml = '';
+                var specs = o.full_items || [];
+                if (!specs.length) {
+                    itemsHtml = '<span style="color:#999;font-size:11px;">—</span>';
+                } else {
+                    var lines = [];
+                    specs.forEach(function(item, idx) {
+                        // 从name和spec里提取材料
+                        var nameLow = (item.name || '').toLowerCase();
+                        var specStr = item.spec || '';
+                        // 用映射匹配材料名
+                        var mat = '—';
+                        var mapping = _prodMappingData || [];
+                        for (var mi = 0; mi < mapping.length; mi++) {
+                            var kwList = (mapping[mi].keywords || '').split(',').map(function(k) { return k.trim().toLowerCase(); });
+                            for (var ki = 0; ki < kwList.length; ki++) {
+                                if (kwList[ki] && nameLow.includes(kwList[ki])) {
+                                    mat = mapping[mi].material_name || kwList[0];
+                                    break;
+                                }
+                            }
+                            if (mat !== '—') break;
+                        }
+                        // 颜色
+                        var color = '—';
+                        if (nameLow.includes('牛皮')) color = '牛皮';
+                        else if (nameLow.includes('原色')) color = '原色';
+                        else if (nameLow.includes('黄') && nameLow.includes('纸')) color = '黄纸';
+                        else if (nameLow.includes('白')) color = '白';
+                        // 从spec里提取尺寸
+                        var dimMatch = specStr.match(/(\d+[\.\d]*)\s*[*×xX]\s*(\d+[\.\d]*)/);
+                        var heightMatch = specStr.match(/(?:高|高度)[【]?(\d+[\.\d]*)/) || specStr.match(/(\d+[\.\d]*)cm高/);
+                        var dim = dimMatch ? dimMatch[1]+'×'+dimMatch[2] : (specStr || '').substring(0, 15);
+                        var h = heightMatch ? heightMatch[1]+'cm' : '';
+                        var skuLabel = (item.sku || '').replace('外尺寸','').replace('内尺寸','');
+                        var label = mat + ' ' + color;
+                        // 尺寸高亮
+                        var sizeStr = dim + (h ? '×'+h : '');
+                        lines.push('<div style="font-size:11px;line-height:1.6;padding:1px 0;border-bottom:' + (idx < specs.length-1 ? '1px dashed #eee' : 'none') + ';">' +
+                            '<span style="color:#666;">' + label + '</span> ' +
+                            '<strong style="color:#333;">' + sizeStr + '</strong>' +
+                            '<span style="color:#999;margin-left:4px;">×' + item.qty + '</span>' +
+                            (skuLabel ? ' <span style="font-size:10px;color:#aaa;">' + skuLabel + '</span>' : '') +
+                            ' <span style="font-size:10px;' + (item.has_stock ? 'color:#52c41a;' : 'color:#e94560;') + 'font-weight:500;">' + (item.has_stock ? '✅现货' : '📦需生产') + '</span>' +
+                            '</div>');
+                    });
+                    itemsHtml = lines.join('');
+                }
+                
+                var typeClass = 'tag-default';
+                if (o.product_type === '纸箱') typeClass = 'tag-warning';
+                else if (o.product_type === '扣底盒') typeClass = 'tag-info';
+                else if (o.product_type === '现货') typeClass = 'tag-success';
+                
+                // 当前工序
+                var currentStep = '—';
+                var pct = o.progress || 0;
+                if (o.steps && o.steps.length) {
+                    var activeStep = o.steps.find(function(s) { return s.active; });
+                    var doneAll = o.steps.every(function(s) { return s.done; });
+                    currentStep = doneAll ? '✅ 已完成' : (activeStep ? activeStep.name : '—');
+                }
+                
+                // 进度条HTML
+                var barColor = (pct >= 100) ? '#52c41a' : '#1677ff';
+                var progressHtml = '<div style="display:flex;align-items:center;gap:4px;min-width:80px;">' +
+                    '<div style="flex:1;height:5px;background:#f0f0f0;border-radius:3px;overflow:hidden;">' +
+                    '<div style="height:100%;width:' + pct + '%;background:' + barColor + ';border-radius:3px;"></div>' +
+                    '</div><span style="font-size:10px;color:#888;white-space:nowrap;">' + pct + '%</span></div>';
+                
+                return '<tr onclick="showProdDetailBySoId(\'' + o.so_id + '\')" style="cursor:pointer;">' +
+                    '<td style="width:36px;" onclick="event.stopPropagation()">' +
+                    '<input type="checkbox" class="prod-checkbox" value="' + o.so_id + '" onchange="updateBatchPrintBtn()">' +
+                    '</td>' +
+                    '<td style="font-size:11px;">' + printBadge + '</td>' +
+                    '<td style="font-family:monospace;font-size:12px;color:#1677ff;font-weight:600;">' + (o.so_id || '') + '</td>' +
+                    '<td style="font-size:12px;">' + (o.shop || '') + '</td>' +
+                    '<td><span class="tag ' + typeClass + '">' + (o.product_type || '') + '</span></td>' +
+                    '<td style="font-size:12px;max-width:200px;overflow-wrap:break-word;word-break:break-word;">' + itemsHtml + '</td>' +
+                    '<td><strong>' + (o.qty || 0) + '</strong></td>' +
+                    '<td style="font-size:11px;color:#1677ff;">' + currentStep + '</td>' +
+                    '<td style="min-width:80px;">' + progressHtml + '</td>' +
+                    '<td style="font-size:11px;color:#666;">' + (o.created || '') + '</td>' +
+                    '<td style="font-size:11px;">' +
+                    '<button onclick="event.stopPropagation();printSingleProd(\'' + o.so_id + '\')" style="padding:2px 8px;background:#52c41a;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:11px;">🖨️</button> ' +
+                    '<button onclick="event.stopPropagation();initSingleFlow(\'' + o.so_id + '\')" style="padding:2px 8px;background:#1677ff;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:11px;">📋</button>' +
+                    '</td></tr>';
+            }).join('');
+            
+            document.getElementById('prodTable').innerHTML = html;
+        } catch(e) {
+            document.getElementById('prodTable').innerHTML = '<tr><td colspan="10" style="color:#e94560;">渲染错误: ' + e.message + '</td></tr>';
+        }
+        updateBatchPrintBtn();
     }
-
-    function showProdFlowByIndex(idx) {
-        console.log('showProdFlowByIndex', idx);
-        const order = allProdOrders[idx];
-        if (!order) { console.log('order not found'); return; }
-        console.log('showing order:', order.inner_id);
-            stepsHtml = order.flow.map((s, i) => {
-            let cls = s.done ? 'done' : (i === order.flow.findIndex(x => !x.done) ? 'active' : 'pending');
-            let label = s.done ? '✓' : (cls === 'active' ? '◉' : '○');
-            return `<div class="progress-step ${cls}">
-                <div class="dot ${cls}">${label}</div>
-                <div class="pname">${s.step}</div>
-                <div class="ptime">${s.time}</div>
-                ${s.person ? `<div style="font-size:10px;color:#999;">${s.person}</div>` : ''}
-            </div>`;
-        }).join('');
-        document.getElementById('prodModalBody').innerHTML = `
+    
+    function showProdDetailBySoId(soId) {
+        const o = _prodDashboardOrders.find(item => item.so_id === soId);
+        if (!o) return;
+        
+        // 工序进度条
+        var stepsHtml = '';
+        if (o.steps && o.steps.length) {
+            stepsHtml = '<div style="margin:12px 0;padding:10px;background:#fff;border-radius:8px;border:1px solid #e8e8e8;">' +
+                '<div style="font-size:13px;font-weight:600;margin-bottom:8px;">📋 工序进度 (' + o.progress + '%)</div>' +
+                '<div style="display:flex;gap:2px;overflow-x:auto;padding-bottom:4px;">';
+            o.steps.forEach(function(s) {
+                var cls = s.done ? 'done' : (s.active ? 'active' : 'pending');
+                var label = s.done ? '✓' : (s.active ? '◉' : '○');
+                var sc = s.done ? '#52c41a' : (s.active ? '#1677ff' : '#d9d9d9');
+                stepsHtml += '<div style="display:flex;flex-direction:column;align-items:center;min-width:60px;padding:4px;">' +
+                    '<div style="width:24px;height:24px;border-radius:50%;background:' + sc + ';color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;">' + label + '</div>' +
+                    '<div style="font-size:10px;color:#666;margin-top:4px;text-align:center;white-space:nowrap;">' + s.name + '</div>' +
+                    '</div>';
+                if (s !== o.steps[o.steps.length-1]) {
+                    stepsHtml += '<div style="flex:1;height:2px;background:' + sc + ';margin-top:11px;min-width:8px;"></div>';
+                }
+            });
+            stepsHtml += '</div></div>';
+        }
+        
+        // 构建规格列表 —— 每个规格独立显示
+        var itemsListHtml = '';
+        var fullItems = o.full_items || [];
+        if (fullItems.length) {
+            var itemRows = [];
+            fullItems.forEach(function(item, idx) {
+                var nameLow = (item.name || '').toLowerCase();
+                var specStr = item.spec || '';
+                // 弹窗优先用后端返回的material_name，没有再用映射匹配
+                var mat = item.material_name || '—';
+                var color = nameLow.includes('牛皮') ? '牛皮' : (nameLow.includes('原色') ? '原色' : (nameLow.includes('白') ? '白' : ''));
+                var dimMatch = specStr.match(/(\d+[\.\d]*)\s*[*×xX]\s*(\d+[\.\d]*)/);
+                var heightMatch = specStr.match(/(?:高|高度)[【]?(\d+[\.\d]*)/) || specStr.match(/(\d+[\.\d]*)cm高/);
+                var dim = dimMatch ? dimMatch[1]+'×'+dimMatch[2] : specStr;
+                var ht = heightMatch ? heightMatch[1]+'cm' : '';
+                var sizeStr = dim + (ht ? '×'+ht : '');
+                var labelStr = (mat !== '—' ? mat : '') + (color ? ' '+color : '');
+                var stockBadge = item.has_stock
+                    ? '<span style="font-size:10px;color:#52c41a;font-weight:bold;">✅现货</span>'
+                    : '<span style="font-size:10px;color:#e94560;font-weight:bold;">📦需生产 <span style="font-weight:400;color:#999;">(库存'+item.stock_qty+')</span></span>';
+                itemRows.push('<div style="padding:6px 8px;margin:2px 0;background:#fff;border:1px solid #e8e8e8;border-radius:6px;">' +
+                    '<div style="display:flex;align-items:center;justify-content:space-between;">' +
+                    '<div style="flex:1;">' +
+                    '<span style="font-size:12px;color:#888;">#'+(idx+1)+'</span> ' +
+                    (labelStr ? '<span style="font-size:12px;color:#555;">'+labelStr+'</span> ' : '') +
+                    '<strong style="font-size:13px;color:#333;">'+sizeStr+'</strong> ' +
+                    '<span style="font-size:12px;color:#e94560;font-weight:bold;">×'+item.qty+'</span>' +
+                    ' '+stockBadge +
+                    '</div>' +
+                    '<div style="display:flex;gap:4px;flex-shrink:0;">' +
+                    '<button onclick="event.stopPropagation();printSingleItem(\'' + o.so_id + '\',\'' + (item.skuId||'') + '\')" style="padding:2px 8px;background:#52c41a;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:11px;">🖨️打印</button> ' +
+                    '<button onclick="event.stopPropagation();initSingleFlow(\'' + o.so_id + '\')" style="padding:2px 8px;background:#1677ff;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:11px;">📋工单</button>' +
+                    '</div>' +
+                    '</div>' +
+                    '</div>');
+            });
+            itemsListHtml = itemRows.join('');
+        } else {
+            itemsListHtml = '<div style="font-size:12px;color:#999;">无规格信息</div>';
+        }
+        
+        const body = document.getElementById('prodModalBody');
+        body.innerHTML = `
             <div style="margin-bottom:12px;padding:12px;background:#fafafa;border-radius:8px;">
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;">
-                    <div><strong>内部单号：</strong>${order.inner_id}</div>
-                    <div><strong>店铺：</strong>${order.store}</div>
-                    <div><strong>发货地：</strong>${order.province} ${order.city}</div>
-                    <div><strong>数量：</strong>${order.qty}</div>
+                    <div><strong>内部单号：</strong>${o.so_id}</div>
+                    <div><strong>店铺：</strong>${o.shop}</div>
+                    <div><strong>类型：</strong>${o.product_type}</div>
+                    <div><strong>总数量：</strong>${o.qty}</div>
+                    <div><strong>下单日期：</strong>${o.created}</div>
+                    <div><strong>打印状态：</strong>${o.printed ? '✅ 已打印 '+o.printed_at : '⭕ 未打印'}</div>
+                    <div><strong>工单状态：</strong>${o.has_flow ? (o.flow_status || '已创建') : '❌ 未创建'}</div>
+                    <div><strong>收货人：</strong>${o.receiver || '—'}</div>
+                    <div style="grid-column:1/3;"><strong>地址：</strong>${(function(){let a=o.address||'';let m=a.match(/([^省]+省)([^市]+市)/);return m?m[1]+m[2]:a.slice(0,8);})()}</div>
+                    ${o.seller_memo ? `<div style="grid-column:1/3;color:#e94560;"><strong>卖家备注：</strong>${o.seller_memo}</div>` : ''}
+                    ${o.buyer_memo ? `<div style="grid-column:1/3;color:#1677ff;"><strong>买家备注：</strong>${o.buyer_memo}</div>` : ''}
+                </div>
+                <div style="margin:12px 0;">
+                    <div style="font-size:13px;font-weight:600;margin-bottom:6px;">📦 商品明细</div>
+                    ${itemsListHtml}
+                </div>
+                ${stepsHtml}
+                <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap;">
+                    <button onclick="printSingleProd('${o.so_id}')" style="padding:6px 16px;background:#52c41a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px;">🖨️ ${o.printed ? '重新打印' : '打印工单'}</button>
+                    <button onclick="initSingleFlow('${o.so_id}')" style="padding:6px 16px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px;">📋 ${o.has_flow ? '重建工单' : '创建工单'}</button>
+                    <button onclick="closeModal('prodModal')" style="padding:6px 16px;background:#888;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px;">关闭</button>
                 </div>
             </div>
-            <div class="progress-bar">${stepsHtml}</div>
         `;
         document.getElementById('prodModal').classList.add('show');
-        console.log('modal shown');
     }
 
     // ===== 手机摄像头扫码（原生getUserMedia + jsQR）=====
@@ -3143,7 +3421,7 @@
         const empData = await getAPI('/api/employees');
         const allEmpNames = empData.employees.map(e => e.name);
         
-        const features = ['首页', '订单生产进度', '扫码报工', '日报表', '数据看板', '刀模', '刀模库', '库存', '聚水潭', '员工', '权限管理', '报价'];
+        const features = ['首页', '订单生产进度', '扫码报工', '日报表', '数据看板', '刀模', '刀模库', '库存', '原材料', '聚水潭', '员工', '权限管理'];
         // 用_allPerms（来自/api/my_permissions），服务端保证完整
         const perms = window._allPerms || data.permissions || {};
         
@@ -3276,6 +3554,12 @@
         if (!_permData) return;
         _permData.processes[di].dept = name.trim();
         renderPermProcesses(_permData.processes);
+        // 自动保存到后端
+        fetch('/api/processes/save', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({processes: _permData.processes})
+        }).catch(e => console.error('保存部门失败', e));
     }
 
     function deleteProcessDept(di, name) {
@@ -3301,6 +3585,12 @@
         if (!_permData) return;
         _permData.processes[di].steps[si].name = name.trim();
         renderPermProcesses(_permData.processes);
+        // 自动保存到后端，重启不丢失
+        fetch('/api/processes/save', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({processes: _permData.processes})
+        }).catch(e => console.error('保存工序失败', e));
     }
 
     function deleteProcessStep(di, si, name) {
@@ -3847,8 +4137,48 @@
                     <input type="number" id="cfgRetailMult" value="${qd.profit?.retail_multiplier || 2.0}" step="0.1" min="1" max="5" onfocus="this.select()" style="width:80px;padding:6px 8px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;">
                     <span style="font-size:12px;color:#999;margin-left:8px;">倍（默认2倍）</span>
                 </div>
-            `;
-
+                
+                <!-- 材料关键词映射 -->
+                <div style="margin-bottom:16px;padding:12px;background:#fafafa;border-radius:8px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                        <div style="font-size:13px;font-weight:600;color:#333;">🔑 材料关键词映射 <span style="font-size:11px;color:#999;font-weight:400;">— 订单商品名称包含关键词时自动识别材料</span></div>
+                        <button onclick="addMaterialMappingRow()" style="padding:3px 10px;background:#52c41a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">+ 添加</button>
+                    </div>
+                    <div style="overflow-x:auto;">
+                        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                            <thead>
+                                <tr style="background:#e8e8e8;">
+                                    <th style="padding:6px 8px;text-align:left;border:1px solid #d9d9d9;">材料</th>
+                                    <th style="padding:6px 8px;text-align:left;border:1px solid #d9d9d9;">分组</th>
+                                    <th style="padding:6px 8px;text-align:left;border:1px solid #d9d9d9;">关键词（逗号分隔）</th>
+                                    <th style="padding:6px 8px;text-align:center;border:1px solid #d9d9d9;width:50px;">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="matMappingBody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                `;
+            
+            // 渲染映射行
+            var mappingBody = document.getElementById('matMappingBody');
+            var mappingHtml = '';
+            var mapping = qd.material_mapping || [];
+            if (mapping.length === 0) {
+                mappingHtml = '<tr><td colspan="4" style="text-align:center;padding:16px;color:#999;">暂无映射规则，点击"+ 添加"新增</td></tr>';
+            } else {
+                mapping.forEach(function(m, idx) {
+                    mappingHtml += '<tr>' +
+                        '<td style="padding:4px 8px;border:1px solid #e8e8e8;"><input type="text" class="map-material" value="' + m.material_name + '" readonly style="border:none;background:transparent;font-size:12px;width:120px;color:#333;" data-key="' + m.material_key + '"></td>' +
+                        '<td style="padding:4px 8px;border:1px solid #e8e8e8;"><input type="text" class="map-group" value="' + m.group + '" readonly style="border:none;background:transparent;font-size:12px;width:80px;color:#666;"></td>' +
+                        '<td style="padding:4px 8px;border:1px solid #e8e8e8;"><input type="text" class="map-keywords" value="' + m.keywords + '" style="width:100%;border:1px solid #d9d9d9;border-radius:4px;padding:4px 6px;font-size:12px;" placeholder="特硬,D6D,国产"></td>' +
+                        '<td style="padding:4px 8px;border:1px solid #e8e8e8;text-align:center;"><button onclick="this.closest(\'tr\').remove()" style="padding:2px 8px;background:#e94560;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:11px;">删除</button></td>' +
+                        '</tr>';
+                });
+            }
+            // 稍后通过setTimeout填充，因为container.innerHTML会覆盖
+            
             // 各产品体系的材料单价
             const groups = [
                 {key: 'airbox', label: '📦 正方形 / 长方形 / 带扣飞机盒'},
@@ -3885,6 +4215,22 @@
             </div>`;
 
             container.innerHTML = html;
+            
+            // 填充映射行
+            var mpBody = document.getElementById('matMappingBody');
+            if (mpBody) {
+                var mp = qd.material_mapping || [];
+                var mpHtml = '';
+                mp.forEach(function(m) {
+                    mpHtml += '<tr>' +
+                        '<td style="padding:4px 8px;border:1px solid #e8e8e8;"><input type="text" class="map-material" value="' + (m.material_name||'') + '" readonly style="border:none;background:transparent;font-size:12px;width:120px;color:#333;" data-key="' + (m.material_key||'') + '"></td>' +
+                        '<td style="padding:4px 8px;border:1px solid #e8e8e8;"><input type="text" class="map-group" value="' + (m.group||'') + '" readonly style="border:none;background:transparent;font-size:12px;width:80px;color:#666;"></td>' +
+                        '<td style="padding:4px 8px;border:1px solid #e8e8e8;"><input type="text" class="map-keywords" value="' + (m.keywords||'') + '" style="width:100%;border:1px solid #d9d9d9;border-radius:4px;padding:4px 6px;font-size:12px;" placeholder="特硬,D6D,国产"></td>' +
+                        '<td style="padding:4px 8px;border:1px solid #e8e8e8;text-align:center;"><button onclick="this.closest(\'tr\').remove()" style="padding:2px 8px;background:#e94560;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:11px;">删除</button></td>' +
+                        '</tr>';
+                });
+                mpBody.innerHTML = mpHtml;
+            }
         } catch(e) {
             container.innerHTML = `<div style="text-align:center;padding:40px;color:#e94560;">❌ 加载失败: ${e.message}</div>`;
         }
@@ -3917,6 +4263,23 @@
                 }
             });
 
+            // 读取映射数据
+            var mappingData = [];
+            document.querySelectorAll('#matMappingBody tr').forEach(function(tr) {
+                var mat = tr.querySelector('.map-material');
+                var grp = tr.querySelector('.map-group');
+                var kw = tr.querySelector('.map-keywords');
+                if (mat && grp && kw) {
+                    mappingData.push({
+                        material_key: mat.dataset.key || '',
+                        material_name: mat.value || '',
+                        group: grp.value || '',
+                        keywords: kw.value || ''
+                    });
+                }
+            });
+            if (mappingData.length) qd.material_mapping = mappingData;
+
             const saveRes = await fetch('/api/quote/save_config', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -3937,6 +4300,19 @@
             statusEl.textContent = '❌ ' + e.message;
             statusEl.style.color = '#e94560';
         }
+    }
+
+    // 添加材料映射行
+    function addMaterialMappingRow() {
+        var body = document.getElementById('matMappingBody');
+        if (!body) return;
+        var tr = document.createElement('tr');
+        tr.innerHTML = 
+            '<td style="padding:4px 8px;border:1px solid #e8e8e8;"><input type="text" class="map-material" value="自定义材料" readonly style="border:none;background:transparent;font-size:12px;width:120px;color:#333;" data-key="custom"></td>' +
+            '<td style="padding:4px 8px;border:1px solid #e8e8e8;"><input type="text" class="map-group" value="airbox" style="width:80px;border:1px solid #d9d9d9;border-radius:4px;padding:3px 4px;font-size:11px;" placeholder="分组"></td>' +
+            '<td style="padding:4px 8px;border:1px solid #e8e8e8;"><input type="text" class="map-keywords" value="" style="width:100%;border:1px solid #d9d9d9;border-radius:4px;padding:4px 6px;font-size:12px;" placeholder="关键词,用,逗号,分隔"></td>' +
+            '<td style="padding:4px 8px;border:1px solid #e8e8e8;text-align:center;"><button onclick="this.closest(\'tr\').remove()" style="padding:2px 8px;background:#e94560;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:11px;">删除</button></td>';
+        body.appendChild(tr);
     }
 
     // ===== 固定刀模库 =====
@@ -3988,6 +4364,7 @@
                             ${tlabel} ｜ ${item.length}×${item.width}×${item.height} cm
                             ${item.remark ? ' ｜ 📍' + item.remark : ''}
                             <span style="color:#52c41a;font-weight:600;"> ｜ 📦${item.stock ?? 0}个</span>
+                            <span style="color:#1677ff;font-weight:500;"> ｜ ${item.type_class || '固定'}${(item.opens && item.opens > 1) ? ' 开'+item.opens : ''}</span>
                         </div>
                     </div>
                     <div style="font-size:11px;color:#999;white-space:nowrap;">${item.created_at || ''}</div>
@@ -4036,6 +4413,8 @@
         document.getElementById('dmfH').value = '';
         document.getElementById('dmfRemark').value = '';
         document.getElementById('dmfStock').value = '0';
+        document.getElementById('dmfTypeClass').value = '固定';
+        document.getElementById('dmfOpens').value = '1';
         document.getElementById('dmfType').value = 'zhengsquare';
         document.getElementById('dmfStatus').textContent = '';
         _editingDimoldbId = null;
@@ -4051,6 +4430,8 @@
         document.getElementById('dmfH').value = item.height || '';
         document.getElementById('dmfRemark').value = item.remark || '';
         document.getElementById('dmfStock').value = item.stock ?? '0';
+        document.getElementById('dmfTypeClass').value = item.type_class || '固定';
+        document.getElementById('dmfOpens').value = item.opens || '1';
         _editingDimoldbId = item.id;
         document.getElementById('dimoldbFormMode').textContent = '编辑模式 — ' + item.name;
         document.getElementById('dmfCancelBtn').style.display = '';
@@ -4063,6 +4444,8 @@
         const w = parseFloat(document.getElementById('dmfW').value);
         const h = parseFloat(document.getElementById('dmfH').value);
         const remark = document.getElementById('dmfRemark').value.trim();
+        const type_class = document.getElementById('dmfTypeClass').value;
+        const opens = parseInt(document.getElementById('dmfOpens').value) || 1;
         const stock = parseInt(document.getElementById('dmfStock').value) || 0;
         const statusEl = document.getElementById('dmfStatus');
 
@@ -4076,7 +4459,7 @@
         statusEl.style.color = '#666';
 
         try {
-            const body = { product_type: ptype, name, length: l, width: w, height: h, remark, stock };
+            const body = { product_type: ptype, name, length: l, width: w, height: h, remark, stock, type_class, opens };
                 url = '/api/dimoldb';
             let method = 'POST';
             if (_editingDimoldbId) {
@@ -4216,7 +4599,7 @@
                     html += `
                     <div style="background:#f6ffed;border:1px solid #b7eb8f;border-radius:8px;padding:10px;margin-bottom:6px;">
                         <div style="font-weight:600;">${m.name} ${ieLabel ? `<span style="font-size:12px;color:#fff;background:#1677ff;padding:2px 8px;border-radius:4px;font-weight:bold;">${ieLabel}</span>` : ''}</div>
-                        <div style="font-size:12px;color:#666;">${tlabel} ｜ ${m.length}×${m.width}×${m.height} cm</div>
+                        <div style="font-size:12px;color:#666;">${tlabel} ｜ ${m.length}×${m.width}×${m.height} cm ｜ ${m.type_class || '固定'}${(m.opens && m.opens > 1) ? ' 开'+m.opens : ''}</div>
                         ${m.remark ? `<div style="font-size:13px;color:#e67e22;margin-top:4px;font-weight: bold;">📍 ${m.remark}</div>` : ''}
                         ${stockHtml}
                     </div>`;
@@ -5355,6 +5738,291 @@
             statusEl.textContent = '❌ ' + e.message;
             statusEl.style.color = '#e94560';
     }
+}
+
+// ===== 工序超时设置弹窗 =====
+let _processStepTimeouts = {};
+
+async function openProcessSettings() {
+    // 检查权限
+    if (!_currentUser || (_currentUser.role !== '超级管理员' && _currentUser.role !== '管理' && _currentUser.role !== '主管')) {
+        alert('只有管理员/主管可以设置工序超时');
+        return;
+    }
+    
+    try {
+        const res = await fetch('/api/process_timeout');
+        const data = await res.json();
+        _processStepTimeouts = data.timeouts || {};
+    } catch(e) {
+        _processStepTimeouts = {};
+    }
+    
+    const defaultSteps = ['客服接单', '文员打单', '算料', '分纸', '找纸板', '找刀模', '啤货', '清废(外包)', '清废', '印刷(如有)', '开槽/打角', '粘胶/打钉', '粘胶', '打捆打包过膜', '打捆过膜', '打包', '打捆过膜打包', '发货(快递/物流)', '发货', '仓库找货', '多库存→仓库入库'];
+    
+    let rows = '';
+    defaultSteps.forEach(step => {
+        const val = _processStepTimeouts[step] || '';
+        rows += `
+        <div style="display:flex;align-items:center;padding:6px 0;border-bottom:1px solid #f0f0f0;">
+            <span style="flex:1;font-size:13px;">${step}</span>
+            <input type="number" id="timeout_${step.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_')}" value="${val}" min="0" placeholder="分钟" style="width:100px;padding:6px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px;text-align:center;">
+            <span style="width:40px;text-align:center;font-size:12px;color:#999;">分钟</span>
+        </div>`;
+    });
+    
+    const html = `
+    <div style="padding:4px;">
+        <p style="font-size:12px;color:#888;margin-bottom:12px;">设置每个工序的目标完成时长，超时将自动标红提醒。留空表示不设超时限制。</p>
+        <div style="max-height:400px;overflow-y:auto;margin-bottom:12px;">
+            ${rows}
+        </div>
+        <div style="display:flex;gap:8px;">
+            <button onclick="saveProcessTimeouts()" style="flex:1;padding:8px;background:#1677ff;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;">💾 保存设置</button>
+            <button onclick="closeModal('timeoutModal')" style="padding:8px 20px;background:#888;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">关闭</button>
+        </div>
+    </div>`;
+    
+    // 创建/显示弹窗
+    let modal = document.getElementById('timeoutModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'timeoutModal';
+        modal.className = 'modal-overlay';
+        modal.innerHTML = '<div class="modal" style="max-width:500px;"><div class="modal-header"><h3>⚙️ 工序超时设置</h3><button class="close" onclick="closeModal(\'timeoutModal\')">✕</button></div><div class="modal-body" id="timeoutModalBody"></div></div>';
+        document.body.appendChild(modal);
+    }
+    document.getElementById('timeoutModalBody').innerHTML = html;
+    modal.classList.add('show');
+}
+
+async function saveProcessTimeouts() {
+    const timeouts = {};
+    const inputs = document.querySelectorAll('#timeoutModalBody input[type="number"]');
+    inputs.forEach(inp => {
+        const id = inp.id;
+        const stepName = id.replace(/^timeout_/, '').replace(/_/g, '');
+        // 反向查找默认步骤名
+        const val = inp.value.trim();
+        if (val && parseInt(val) > 0) {
+            timeouts[stepName] = parseInt(val);
+        }
+    });
+    
+    // 用元素ID里的步骤名太粗糙，改用更精确的方式
+    // 重建：直接读取每行文本
+    const div = document.getElementById('timeoutModalBody');
+    const rows = div.querySelectorAll('div[style*="border-bottom"]');
+    rows.forEach(row => {
+        const span = row.querySelector('span');
+        const input = row.querySelector('input');
+        if (span && input) {
+            const stepName = span.textContent.trim();
+            const val = input.value.trim();
+            if (val && parseInt(val) > 0) {
+                timeouts[stepName] = parseInt(val);
+            }
+        }
+    });
+    
+    try {
+        const res = await fetch('/api/process_timeout', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({timeouts})
+        });
+        const data = await res.json();
+        if (data.success) {
+            alert('✅ 工序超时设置已保存');
+            closeModal('timeoutModal');
+        } else {
+            alert('❌ ' + (data.error || '保存失败'));
+        }
+    } catch(e) {
+        alert('❌ ' + e.message);
+    }
+}
+
+// ===== 批量操作（打单管理） =====
+function getSelectedProdIds() {
+    return Array.from(document.querySelectorAll('.prod-checkbox:checked')).map(cb => cb.value).filter(Boolean);
+}
+
+function updateBatchPrintBtn() {
+    const n = getSelectedProdIds().length;
+    const btn = document.querySelector('button[onclick*="batchPrintProdOrders"]');
+    if (btn) btn.textContent = n > 0 ? `🖨️ 批量打印(${n})` : '🖨️ 批量打印选中';
+}
+
+function toggleAllProdCheckbox(el) {
+    document.querySelectorAll('.prod-checkbox').forEach(cb => cb.checked = el.checked);
+    updateBatchPrintBtn();
+}
+
+async function printSingleProd(orderId) {
+    // 记录打印日志
+    try {
+        const o = _prodDashboardOrders.find(item => item.so_id === orderId);
+        await fetch('/api/production/print_log', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                order_id: orderId,
+                shop_name: o?.shop || '',
+                product_type: o?.product_type || '',
+                printed_by: _currentUser?.employee_name || _currentUser?.username || 'admin'
+            })
+        });
+    } catch(e) {}
+    
+    // 创建工单（如果还没有）
+    await fetch('/api/flow/create', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({order_id: orderId})
+    });
+    
+    window.open('/api/production/print?ids=' + orderId);
+    // 刷新列表
+    setTimeout(loadProdDashboard, 1000);
+}
+
+async function unmarkPrinted(orderId) {
+    if (!confirm('取消打印标记？该订单可以重新打印')) return;
+    try {
+        await fetch('/api/production/print_log/' + orderId, {method: 'DELETE'});
+        loadProdDashboard();
+    } catch(e) {
+        alert('❌ ' + e.message);
+    }
+}
+
+async function batchPrintProdOrders() {
+    const ids = getSelectedProdIds();
+    if (!ids.length) { alert('请先勾选要打印的订单'); return; }
+    // 记录打印日志
+    const currentUser = _currentUser?.employee_name || _currentUser?.username || 'admin';
+    for (const id of ids) {
+        try {
+            const o = _prodDashboardOrders.find(item => item.so_id === id);
+            await fetch('/api/production/print_log', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    order_id: id,
+                    shop_name: o?.shop || '',
+                    product_type: o?.product_type || '',
+                    printed_by: currentUser
+                })
+            });
+            await fetch('/api/flow/create', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({order_id: id})
+            });
+        } catch(e) {}
+    }
+    window.open('/api/production/print?ids=' + ids.join(','));
+    setTimeout(loadProdDashboard, 1000);
+}
+
+async function printAllUnprinted() {
+    const unprinted = _prodDashboardOrders.filter(o => !o.printed);
+    if (!unprinted.length) { alert('没有未打印的订单'); return; }
+    const ids = unprinted.map(o => o.so_id);
+    if (!confirm(`一键打印全部 ${ids.length} 单未打订单？`)) return;
+    const currentUser = _currentUser?.employee_name || _currentUser?.username || 'admin';
+    for (const id of ids) {
+        try {
+            const o = _prodDashboardOrders.find(item => item.so_id === id);
+            await fetch('/api/production/print_log', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    order_id: id,
+                    shop_name: o?.shop || '',
+                    product_type: o?.product_type || '',
+                    printed_by: currentUser
+                })
+            });
+            await fetch('/api/flow/create', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({order_id: id})
+            });
+        } catch(e) {}
+    }
+    window.open('/api/production/print?ids=' + ids.join(','));
+    setTimeout(loadProdDashboard, 1000);
+}
+
+async function initBatchFlows(ids) {
+    for (const id of ids) {
+        try {
+            await fetch('/api/flow/create', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({order_id: id})
+            });
+        } catch(e) {}
+    }
+    loadProdDashboard();
+}
+
+async function batchInitFlows() {
+    const ids = getSelectedProdIds();
+    if (!ids.length) { alert('请先勾选要创建工单的订单'); return; }
+    await initBatchFlows(ids);
+    alert('✅ 已为 ' + ids.length + ' 个订单创建工单');
+}
+
+// 打印单件商品（按skuId细分）
+async function printSingleItem(orderId, skuId) {
+    // 记录打印日志
+    try {
+        const o = _prodDashboardOrders.find(item => item.so_id === orderId);
+        await fetch('/api/production/print_log', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                order_id: orderId,
+                shop_name: o?.shop || '',
+                product_type: o?.product_type || '',
+                printed_by: _currentUser?.employee_name || _currentUser?.username || 'admin'
+            })
+        });
+    } catch(e) {}
+    
+    if (skuId) {
+        window.open('/api/production/print?ids=' + orderId + '&sku_id=' + encodeURIComponent(skuId));
+    } else {
+        window.open('/api/production/print?ids=' + orderId);
+    }
+    setTimeout(loadProdDashboard, 1000);
+}
+
+async function initSingleFlow(orderId) {
+    try {
+        const res = await fetch('/api/flow/create', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({order_id: orderId})
+        });
+        const data = await res.json();
+        if (data.success) {
+            alert('✅ 工单已创建' + (data.flow.machine_recommend ? '\n推荐啤货：' + data.flow.machine_recommend : ''));
+            loadProdDashboard();
+        } else {
+            alert('❌ ' + (data.error || '创建失败'));
+        }
+    } catch(e) {
+        alert('❌ ' + e.message);
+    }
+}
+
+async function filterProdOrders(keyword) {
+    document.getElementById('prodFilterSearch').value = keyword;
+    loadProdDashboard();
 }
 </script>
 
