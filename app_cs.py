@@ -631,6 +631,9 @@ def dashboard():
                 product_names = '; '.join([f"{i.get('name','?')[:20]} x{i.get('qty',0)}" for i in items[:2]])
                 if len(items) > 2:
                     product_names += f' …等{len(items)}种'
+                _raw_dt = o.get('pay_time') or o.get('created') or ''
+                _digits = ''.join(c for c in str(_raw_dt) if c.isdigit())
+                _pay_yyyymmdd = _digits[:8] if len(_digits) >= 8 else ''
                 
                 # 构建结构化items（含规格/尺寸/数量）
                 detail_items = []
@@ -661,6 +664,8 @@ def dashboard():
                     'status': '待发货',
                     'urgent': False,
                     'remark': o.get('seller_memo', '') or o.get('buyer_memo', ''),
+                    'pay_time': _pay_yyyymmdd,
+                    'created': o.get('created', ''),
                 })
     except Exception as e:
         print(f'[今日订单] 读取缓存失败: {e}')
@@ -3176,7 +3181,7 @@ def api_realtime_orders():
                 # 构建1688店铺名到简称的映射（"三羊包装"→"三羊"）
                 shop_alias = {
                     '三羊包装': '三羊', '友尚包装': '友尚', '正方形包装': '正方形',
-                    '大鱼包装': '大鱼', '亚润包装': '亚润',
+                    '大鱼包装': '大鱼', '亚润包装': '亚润', '新鑫星包装': '新鑫星',
                 }
                 for o_ in cached_orders:
                     full = o_.get('shop_name', '')

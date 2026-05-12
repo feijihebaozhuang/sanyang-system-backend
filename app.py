@@ -502,6 +502,10 @@ def dashboard():
                 product_names = '; '.join([f"{i.get('name','?')[:20]} x{i.get('qty',0)}" for i in items[:2]])
                 if len(items) > 2:
                     product_names += f' …等{len(items)}种'
+                # 首页表格用 pay_time（8 位年月日）；1688 可能只有 created，统一抽数字前缀
+                _raw_dt = o.get('pay_time') or o.get('created') or ''
+                _digits = ''.join(c for c in str(_raw_dt) if c.isdigit())
+                _pay_yyyymmdd = _digits[:8] if len(_digits) >= 8 else ''
                 
                 orders.append({
                     'id': o.get('so_id', ''),
@@ -513,6 +517,8 @@ def dashboard():
                     'status': '待发货',
                     'urgent': False,
                     'remark': o.get('seller_memo', '') or o.get('buyer_memo', ''),
+                    'pay_time': _pay_yyyymmdd,
+                    'created': o.get('created', ''),
                 })
     except Exception as e:
         print(f'[今日订单] 读取缓存失败: {e}')
@@ -4119,11 +4125,20 @@ def api_realtime_orders():
                 cache = json.load(f)
                 cached_orders = cache.get('orders', [])
             if cached_orders:
-                # 不再硬编码为亚润，使用缓存中实际的shop_name
-                # 匹配客服配置中的店铺名做映射
-                shops = set()
+                # 1688 同步写入的 shop_name 多为「友尚包装」等全名，与 shop_config 里「友尚」等简称不一致；
+                # 与 app_cs.py 保持一致，在返回前规范为简称，供前端店铺筛选。
+                shop_alias = {
+                    '三羊包装': '三羊',
+                    '友尚包装': '友尚',
+                    '正方形包装': '正方形',
+                    '大鱼包装': '大鱼',
+                    '亚润包装': '亚润',
+                    '新鑫星包装': '新鑫星',
+                }
                 for o_ in cached_orders:
-                    shops.add(o_.get('shop_name', '?'))
+                    full = o_.get('shop_name', '')
+                    o_['shop_name'] = shop_alias.get(full, full)
+                shops = set(o_.get('shop_name', '?') for o_ in cached_orders)
                 # 按时间倒序排列
                 cached_orders.sort(key=lambda x: x.get('created', ''), reverse=True)
                 print(f'[实时订单] 缓存命中: {len(cached_orders)} 条订单, 店铺: {shops}')
