@@ -1,4 +1,5 @@
 .env
+.cursor/mcp.json
 alibaba_shops.json
 __pycache__/
 *.pyc

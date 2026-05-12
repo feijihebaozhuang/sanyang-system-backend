@@ -36,9 +36,14 @@ get_env_dir() {
     esac
 }
 
-ENV="${1:?Usage: $0 {stable|dev}}"
+# 注意：勿在 ${1:?...} 的提示语里写「{stable|dev}」，否则「}」会提前结束参数展开，导致 ENV 变成「dev}」等异常值。
+if [ $# -lt 1 ]; then
+    err "Usage: $0 stable   OR   $0 dev   [--branch=xxx]"
+    exit 1
+fi
+ENV="$1"
 if [ "$ENV" != "stable" ] && [ "$ENV" != "dev" ]; then
-    err "Environment must be stable or dev"
+    err "Environment must be stable or dev (got: $ENV)"
     exit 1
 fi
 
@@ -66,7 +71,13 @@ git checkout "$BRANCH" 2>&1 || { err "checkout failed"; exit 1; }
 git pull $REMOTE "$BRANCH" 2>&1 || { err "pull failed"; exit 1; }
 COMMIT=$(git rev-parse --short HEAD)
 log "  Commit: $COMMIT ($BRANCH)"
-rsync -a --delete --exclude=venv/ --exclude=__pycache__/ --exclude='*.pyc' --exclude=orders_cache.json --exclude=data.json --exclude=dimoldb.json --exclude=inventory.json --exclude='*.log' --exclude=.git/ "$REPO_DIR/" "$TARGET_DIR/"
+# 勿同步删除本机密钥与店铺 token（.env / alibaba_shops.json 在目标目录由运维单独维护）
+rsync -a --delete \
+  --exclude=venv/ --exclude=__pycache__/ --exclude='*.pyc' \
+  --exclude=orders_cache.json --exclude=data.json --exclude=dimoldb.json --exclude=inventory.json \
+  --exclude='*.log' --exclude=.git/ \
+  --exclude=.env --exclude=alibaba_shops.json \
+  "$REPO_DIR/" "$TARGET_DIR/"
 log "  Code synced"
 
 # Step 2
@@ -100,7 +111,8 @@ for app in cs prod; do
     log "  Starting: $dir/$script -> :$port"
     cd "$dir"
     source "$VENV_DIR/bin/activate"
-    setsid python3 "$script" > "$logfile" 2>&1 &
+    # setsid 在部分环境会被安全策略拦截，nohup 更通用
+    nohup python3 "$script" > "$logfile" 2>&1 &
     log "  PID=$! log=$logfile"
 done
 sleep 3

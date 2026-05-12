@@ -653,6 +653,7 @@ def dashboard():
                         'display': display,  # 前端直接显示这个
                     })
                 
+                ex = _order_extra.get(o.get('so_id', ''), {})
                 orders.append({
                     'id': o.get('so_id', ''),
                     'store': shop_info['store'],
@@ -662,7 +663,7 @@ def dashboard():
                     'items': detail_items,  # 返回结构化items
                     'process': '待处理',
                     'status': '待发货',
-                    'urgent': False,
+                    'urgent': bool(ex.get('urgent')),
                     'remark': o.get('seller_memo', '') or o.get('buyer_memo', ''),
                     'pay_time': _pay_yyyymmdd,
                     'created': o.get('created', ''),
@@ -3387,10 +3388,101 @@ print('[订单同步] 后台同步线程已启动（每5分钟同步一次）')
 
 # ==================== 缺失API补充（客服端）====================
 
-@app.route('/api/production_orders')
+def _build_production_orders_for_cs():
+    """与 app.py 生产进度同源：读 orders_cache + 工序树 + 加急状态；供客服端列表/进度条使用。"""
+    process_tree = _permission_data.get("processes", [])
+
+    def get_flow_for_order(order_type):
+        if not process_tree:
+            return [{"step": "客服接单", "done": False, "time": "-", "person": ""}]
+        is_tree = isinstance(process_tree[0], dict) and "dept" in process_tree[0]
+        if not is_tree:
+            return [{"step": s, "done": False, "time": "-", "person": ""} for s in process_tree]
+        target_dept = None
+        if order_type == "纸箱":
+            for d in process_tree:
+                if "纸箱" in d.get("dept", ""):
+                    target_dept = d
+                    break
+        else:
+            for d in process_tree:
+                if "美丽湾" in d.get("dept", "") or "飞机盒" in d.get("dept", ""):
+                    target_dept = d
+                    break
+        if not target_dept:
+            target_dept = process_tree[0]
+        if not target_dept or not target_dept.get("steps"):
+            return [{"step": "客服接单", "done": False, "time": "-", "person": ""}]
+        return [
+            {"step": s["name"], "done": False, "time": "-", "person": ""}
+            for s in target_dept.get("steps", [])
+        ]
+
+    orders_data = []
+    try:
+        if os.path.exists(ORDERS_CACHE_FILE):
+            with open(ORDERS_CACHE_FILE, "r", encoding="utf-8") as f:
+                cache = json.load(f)
+            for o in cache.get("orders", []):
+                first_item = (o.get("items") or [{}])[0]
+                prod_name = first_item.get("name", "")
+                order_type = "纸箱" if "纸箱" in prod_name else "飞机盒"
+                specs = []
+                for item in o.get("items") or []:
+                    spec = item.get("spec", "") or ""
+                    qty = item.get("qty", 0) or 0
+                    specs.append({"spec": spec, "qty": qty})
+                total_qty = sum(i.get("qty", 0) for i in (o.get("items") or []))
+                addr = o.get("receiver_address", "")
+                addr_parts = addr.split() if addr else []
+                province = addr_parts[0] if len(addr_parts) > 0 else ""
+                city = addr_parts[1] if len(addr_parts) > 1 else ""
+                so_id = o.get("so_id", "")
+                extra = _order_extra.get(so_id, {})
+                product_parts = []
+                for item in o.get("items") or []:
+                    label = (item.get("spec") or item.get("name") or "?")[:40]
+                    q = item.get("qty", 0) or 0
+                    product_parts.append(f"{label} x{q}")
+                product_str = "; ".join(product_parts[:3])
+                if len(product_parts) > 3:
+                    product_str += f" …共{len(product_parts)}行"
+                orders_data.append(
+                    {
+                        "inner_id": so_id,
+                        "store": o.get("shop_name", ""),
+                        "province": province,
+                        "city": city,
+                        "specs": specs,
+                        "product": product_str or "?",
+                        "seller_memo": o.get("seller_memo", "") or "",
+                        "buyer_memo": o.get("buyer_memo", "") or "",
+                        "qty": total_qty,
+                        "type": order_type,
+                        "urgent": bool(extra.get("urgent")),
+                        "flow": get_flow_for_order(order_type),
+                    }
+                )
+    except Exception as e:
+        print(f"[生产进度 CS] 读取缓存失败: {e}")
+
+    # 与主站一致：演示用进度填充（后续可改为读扫码报工表）
+    for i, order in enumerate(orders_data):
+        flow = order.get("flow") or []
+        if not flow:
+            continue
+        n = min(i % 4 + 1, len(flow))
+        for j in range(n):
+            flow[j]["done"] = True
+            flow[j]["time"] = "2026-04-28 09:00"
+            flow[j]["person"] = "张慧平"
+    return orders_data
+
+
+@app.route("/api/production_orders")
 def api_production_orders():
-    """返回生产订单列表（简化版，返回空数组避免前端报错）"""
-    return jsonify({"orders": []})
+    """客服端：订单生产进度（与主站同源数据结构）"""
+    return jsonify({"orders": _build_production_orders_for_cs()})
 
 @app.route('/api/scan_logs')
 def api_scan_logs():

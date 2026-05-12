@@ -1155,7 +1155,7 @@
         <div class="order-table-wrap">
             <table>
                 <thead><tr>
-                    <th>内部单号</th><th>店铺名称</th><th>发货省份</th><th>发货城市</th><th>产品</th><th>数量</th><th>当前工序</th><th>流程进度</th>
+                    <th>内部单号</th><th>店铺名称</th><th>发货省份</th><th>发货城市</th><th>产品</th><th>数量</th><th>当前工序</th><th>流程进度</th><th>加急</th>
                 </tr></thead>
                 <tbody id="prodTable"></tbody>
             </table>
@@ -2125,7 +2125,7 @@
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
                 <p style="font-size:14px;font-weight:600;margin:0;">状态：${ps.status} | 进度：${ps.progress}%</p>
                 ${canOperate && orderId ? `
-                    <button id="prodUrgentBtn" onclick="toggleProdUrgent('${orderId}')" style="padding:4px 12px;border:none;border-radius:4px;cursor:pointer;font-size:12px;background:${isUrgent?'#e94560':'#e8e8e8'};color:${isUrgent?'#fff':'#666'};">
+                    <button id="prodUrgentBtn" onclick="toggleProdUrgent('${orderId}', event)" style="padding:4px 12px;border:none;border-radius:4px;cursor:pointer;font-size:12px;background:${isUrgent?'#e94560':'#e8e8e8'};color:${isUrgent?'#fff':'#666'};">
                         ${isUrgent ? '🔴取消加急' : '⚪设为加急'}
                     </button>
                 ` : ''}
@@ -2135,25 +2135,53 @@
         document.getElementById('prodModal').classList.add('show');
     }
 
-    async function toggleProdUrgent(orderId) {
+    async function toggleProdUrgent(orderId, ev) {
+        if (ev && ev.stopPropagation) ev.stopPropagation();
+        const listO = typeof allProdOrders !== 'undefined' && allProdOrders.find(x => x.inner_id === orderId);
         const ps = window._prodData;
-        const newUrgent = !ps._urgent;
+        let newUrgent;
+        if (listO) {
+            newUrgent = !listO.urgent;
+        } else if (ps && ps._order_id === orderId) {
+            newUrgent = !ps._urgent;
+        } else {
+            alert('未找到该订单，请先在生产进度页加载数据或扫码查询');
+            return;
+        }
         const res = await fetch('/api/order/urgent', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin',
             body: JSON.stringify({order_id: orderId, urgent: newUrgent})
         });
         const data = await res.json();
-        if (data.success) {
-            ps._urgent = newUrgent;
-            // 如果首页有这个订单，也同步更新
-            const homeOrder = allOrders.find(o => o.id === orderId);
-            if (homeOrder) {
-                homeOrder.urgent = newUrgent;
-                const urgentCount = allOrders.filter(x => x.urgent).length;
-                document.getElementById('statUrgent').textContent = urgentCount;
+        if (!data.success) {
+            alert((data.error || data.message || '加急更新失败'));
+            return;
+        }
+        if (listO) {
+            listO.urgent = newUrgent;
+            if (typeof _allProdOrdersFull !== 'undefined') {
+                const full = _allProdOrdersFull.find(x => x.inner_id === orderId);
+                if (full) full.urgent = newUrgent;
             }
-            showProductionModal(); // 刷新弹窗
+            if (typeof renderProdTable === 'function') renderProdTable(allProdOrders);
+            const pm = document.getElementById('prodModal');
+            if (pm && pm.classList.contains('show') && typeof allProdOrders !== 'undefined') {
+                const idx = allProdOrders.findIndex(x => x.inner_id === orderId);
+                if (idx >= 0 && typeof showProdFlowByIndex === 'function') showProdFlowByIndex(idx);
+            }
+        }
+        if (ps && ps._order_id === orderId) {
+            ps._urgent = newUrgent;
+        }
+        const homeOrder = allOrders.find(o => o.id === orderId);
+        if (homeOrder) homeOrder.urgent = newUrgent;
+        const urgentCount = allOrders.filter(x => x.urgent).length;
+        const su = document.getElementById('statUrgent');
+        if (su) su.textContent = urgentCount;
+        if (ps && ps._order_id === orderId && document.getElementById('prodModal') && document.getElementById('prodModal').classList.contains('show')) {
+            showProductionModal();
         }
     }
 
@@ -2501,13 +2529,26 @@
 
     // ===== 加载生产进度页 =====
     let allProdOrders = [];
+    let _allProdOrdersFull = [];
+
+    function filterProdOrders(q) {
+        const t = (q || '').trim().toLowerCase();
+        if (!t) {
+            allProdOrders = _allProdOrdersFull.slice();
+        } else {
+            allProdOrders = _allProdOrdersFull.filter(o => (o.inner_id || '').toLowerCase().includes(t));
+        }
+        renderProdTable(allProdOrders);
+    }
+
     async function loadProductionPage() {
         console.log('loadProductionPage called');
         try {
             const data = await getAPI('/api/production_orders');
             console.log('production data:', data);
-            allProdOrders = data.orders;
-            renderProdTable(data.orders);
+            _allProdOrdersFull = data.orders || [];
+            allProdOrders = _allProdOrdersFull.slice();
+            renderProdTable(allProdOrders);
         } catch(e) {
             console.error('loadProductionPage error:', e);
         }
@@ -2518,14 +2559,18 @@
         const html = orders.map((o, idx) => {
             const doneSteps = o.flow.filter(s => s.done).length;
             const totalSteps = o.flow.length;
-            const pct = Math.round(doneSteps / totalSteps * 100);
+            const pct = totalSteps ? Math.round(doneSteps / totalSteps * 100) : 0;
             const currentStep = o.flow.find(s => !s.done)?.step || '已完成';
-            return `<tr style="cursor:pointer;" onclick="console.log('click row ${idx}');showProdFlowByIndex(${idx})">
+            const productStr = o.product || (o.specs && o.specs.length
+                ? o.specs.map(s => (s.spec || '—') + '×' + (s.qty || 0)).join('<br>')
+                : '—');
+            const isUrgent = !!o.urgent;
+            return `<tr style="cursor:pointer;" onclick="showProdFlowByIndex(${idx})">
                 <td style="font-family:monospace;font-size:12px;color:#1677ff;font-weight:600;">${o.inner_id}</td>
-                <td>${o.store}</td>
-                <td>${o.province}</td>
-                <td>${o.city}</td>
-                <td>${o.product}</td>
+                <td>${o.store || ''}</td>
+                <td>${o.province || ''}</td>
+                <td>${o.city || ''}</td>
+                <td style="max-width:220px;font-size:11px;">${productStr}</td>
                 <td>${o.qty}</td>
                 <td><span class="tag ${pct===100?'tag-done':'tag-production'}">${currentStep}</span></td>
                 <td style="min-width:120px;">
@@ -2535,6 +2580,9 @@
                         </div>
                         <span style="font-size:11px;color:#888;">${pct}%</span>
                     </div>
+                </td>
+                <td onclick="event.stopPropagation();">
+                    <button type="button" onclick="toggleProdUrgent('${o.inner_id}', event)" style="padding:2px 8px;border:none;border-radius:3px;cursor:pointer;font-size:11px;background:${isUrgent?'#e94560':'#e8e8e8'};color:${isUrgent?'#fff':'#666'};">${isUrgent?'🔴加急':'⚪加急'}</button>
                 </td>
             </tr>`;
         }).join('');
@@ -2548,7 +2596,17 @@
         const order = allProdOrders[idx];
         if (!order) { console.log('order not found'); return; }
         console.log('showing order:', order.inner_id);
-            stepsHtml = order.flow.map((s, i) => {
+        const doneSteps = order.flow.filter(s => s.done).length;
+        const totalSteps = order.flow.length;
+        const pct = totalSteps ? Math.round(doneSteps / totalSteps * 100) : 0;
+        const productStr = order.product || (order.specs && order.specs.length
+            ? order.specs.map(s => (s.spec || '—') + '×' + (s.qty || 0)).join('；')
+            : '—');
+        const sm = order.seller_memo || '';
+        const bm = order.buyer_memo || '';
+        const canOperate = _currentUser && _currentUser.role !== '员工';
+        const isUrgent = !!order.urgent;
+        const stepsHtml = order.flow.map((s, i) => {
             let cls = s.done ? 'done' : (i === order.flow.findIndex(x => !x.done) ? 'active' : 'pending');
             let label = s.done ? '✓' : (cls === 'active' ? '◉' : '○');
             return `<div class="progress-step ${cls}">
@@ -2559,13 +2617,26 @@
             </div>`;
         }).join('');
         document.getElementById('prodModalBody').innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px;flex-wrap:wrap;">
+                <div style="font-size:14px;font-weight:600;margin:0;">生产进度 ${pct}%</div>
+                ${canOperate ? `<button type="button" onclick="toggleProdUrgent('${order.inner_id}', event)" style="padding:4px 12px;border:none;border-radius:4px;cursor:pointer;font-size:12px;background:${isUrgent?'#e94560':'#e8e8e8'};color:${isUrgent?'#fff':'#666'};">${isUrgent ? '🔴取消加急' : '⚪设为加急'}</button>` : ''}
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+                <div style="flex:1;height:8px;background:#f0f0f0;border-radius:4px;overflow:hidden;">
+                    <div style="height:100%;width:${pct}%;background:${pct===100?'#52c41a':'#1677ff'};border-radius:4px;"></div>
+                </div>
+                <span style="font-size:12px;color:#888;">${pct}%</span>
+            </div>
             <div style="margin-bottom:12px;padding:12px;background:#fafafa;border-radius:8px;">
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;">
                     <div><strong>内部单号：</strong>${order.inner_id}</div>
-                    <div><strong>店铺：</strong>${order.store}</div>
-                    <div><strong>发货地：</strong>${order.province} ${order.city}</div>
+                    <div><strong>店铺：</strong>${order.store || '—'}</div>
+                    <div><strong>发货地：</strong>${order.province || ''} ${order.city || ''}</div>
                     <div><strong>数量：</strong>${order.qty}</div>
                 </div>
+                <div style="margin-top:10px;font-size:12px;line-height:1.5;"><strong>商品：</strong>${productStr}</div>
+                ${sm ? `<div style="margin-top:8px;font-size:12px;color:#666;"><strong>卖家备注：</strong>${sm}</div>` : ''}
+                ${bm ? `<div style="margin-top:6px;font-size:12px;color:#666;"><strong>买家留言：</strong>${bm}</div>` : ''}
             </div>
             <div class="progress-bar">${stepsHtml}</div>
         `;
