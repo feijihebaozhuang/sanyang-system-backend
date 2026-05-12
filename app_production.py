@@ -11,22 +11,14 @@ import json, datetime, csv, io, os, hashlib, copy, time, re, hmac, urllib.parse,
 from pypinyin import lazy_pinyin
 import pymysql
 
-DB_CONFIG = {
-    'host': '127.0.0.1',
-    'port': 3306,
-    'user': 'root',
-    'password': 'Jiangjunyan2015',
-    'database': 'sanyang',
-    'charset': 'utf8mb4',
-    'autocommit': True
-}
+from settings import ALIBABA_CONFIG, ALIBABA_SHOPS, DB_CONFIG, FLASK_SECRET_KEY
 
 def get_db():
     """获取数据库连接，每次调用新建（线程安全）"""
     return pymysql.connect(**DB_CONFIG, cursorclass=pymysql.cursors.DictCursor)
 
 app = Flask(__name__, static_folder='.')
-app.secret_key = 'feijihe_sanyang_2026_secret_key_!@#'
+app.secret_key = FLASK_SECRET_KEY
 CORS(app, supports_credentials=True)
 
 # ==================== 用户系统 ====================
@@ -2449,44 +2441,6 @@ async function submitReport(stepIndex, stepName) {{
 
 # ==================== 1688开放平台集成 ====================
 
-ALIBABA_CONFIG = {
-    'app_key': 1452593,
-    'app_secret': 'f4UOJ5NO1X',
-    'access_token': 'e33dabd6-389b-4a9b-a0f1-652094d751dd',  # 东莞三羊包装
-    'server': 'gw.open.1688.com'
-}
-
-ALIBABA_SHOPS = [
-    {
-        'shop_name': '三羊包装',
-        'app_key': 1452593,
-        'app_secret': 'f4UOJ5NO1X',
-        'access_token': 'e33dabd6-389b-4a9b-a0f1-652094d751dd',
-        'server': 'gw.open.1688.com'
-    },
-    {
-        'shop_name': '友尚包装',
-        'app_key': 1452593,
-        'app_secret': 'f4UOJ5NO1X',
-        'access_token': 'c81d0936-e3a7-4108-b1bc-7cb310e7e665',
-        'server': 'gw.open.1688.com'
-    },
-    {
-        'shop_name': '正方形包装',
-        'app_key': 1452593,
-        'app_secret': 'f4UOJ5NO1X',
-        'access_token': 'fdd2097a-cd83-4d09-92de-a279bb917032',
-        'server': 'gw.open.1688.com'
-    },
-    {
-        'shop_name': '大鱼包装',
-        'app_key': 1452593,
-        'app_secret': 'f4UOJ5NO1X',
-        'access_token': 'd22b6460-8663-4574-bee3-87c2f91f1fb6',
-        'server': 'gw.open.1688.com'
-    }
-]
-
 def _1688_sign(url_path, params, secret):
     """1688签名：HMAC-SHA1"""
     param_list = sorted([str(k) + str(v) for k, v in params.items()])
@@ -2520,7 +2474,9 @@ def _1688_fetch_orders(page=1, pagesize=50):
     all_orders = []
     current_page = page
     max_pages = 8
-    print(f'[1688] 拉取订单: 店铺={ALIBABA_CONFIG.get("shop_name","默认")}, token={ALIBABA_CONFIG["access_token"][:12]}...')
+    _tok = ALIBABA_CONFIG.get("access_token") or ""
+    _tok_preview = (_tok[:12] + "…") if len(_tok) > 12 else _tok
+    print(f'[1688] 拉取订单: 店铺={ALIBABA_CONFIG.get("shop_name","默认")}, token={_tok_preview!r}')
 
     while current_page <= max_pages:
         result = _1688_api(api, {
@@ -2540,9 +2496,6 @@ def _1688_fetch_orders(page=1, pagesize=50):
 def _1688_fetch_all_shops_orders():
     """遍历所有1688店铺，拉取每个店铺的订单并合并（独立函数，不依赖全局配置）"""
     import time as _t
-    APP_KEY = 1452593
-    APP_SECRET = 'f4UOJ5NO1X'
-    SERVER = 'gw.open.1688.com'
     api = '1/com.alibaba.trade/alibaba.trade.getSellerOrderList'
     all_shop_orders = []
     max_pages = 3  # 最多翻3页
@@ -2550,18 +2503,21 @@ def _1688_fetch_all_shops_orders():
     for shop in ALIBABA_SHOPS:
         shop_name = shop['shop_name']
         token = shop['access_token']
+        app_key = int(shop['app_key'])
+        app_secret = shop['app_secret']
+        server = shop['server']
         print(f'[1688] 拉取店铺: {shop_name}')
         for page in range(1, max_pages + 1):
             try:
-                url_path = f'param2/{api}/{APP_KEY}'
+                url_path = f'param2/{api}/{app_key}'
                 params = {'access_token': token, 'page': page, 'pageSize': 50}
                 param_list = sorted([str(k) + str(v) for k, v in params.items()])
                 msg = url_path.encode('utf-8')
                 for p in param_list:
                     msg += p.encode('utf-8')
-                sign = hmac.new(APP_SECRET.encode('utf-8'), msg, hashlib.sha1).hexdigest().upper()
+                sign = hmac.new(app_secret.encode('utf-8'), msg, hashlib.sha1).hexdigest().upper()
                 params['_aop_signature'] = sign
-                url = f'https://{SERVER}/openapi/{url_path}'
+                url = f'https://{server}/openapi/{url_path}'
                 form_data = urllib.parse.urlencode(params)
                 req = urllib.request.Request(url, data=form_data.encode('utf-8'), method='POST')
                 resp = urllib.request.urlopen(req, timeout=30)

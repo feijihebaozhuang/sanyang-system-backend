@@ -11,26 +11,27 @@ import json, datetime, csv, io, os, hashlib, copy, time, re, hmac, urllib.parse,
 from pypinyin import lazy_pinyin
 import pymysql
 
-DB_CONFIG = {
-    'host': '127.0.0.1',
-    'port': 3306,
-    'user': 'root',
-    'password': 'Jiangjunyan2015',
-    'database': 'sanyang',
-    'charset': 'utf8mb4',
-    'autocommit': True
-}
+from settings import (
+    ALIBABA_CONFIG,
+    ALIBABA_SHOPS,
+    DB_CONFIG,
+    FLASK_SECRET_KEY,
+    JST_CONFIG,
+    get_wechat_token,
+)
 
 def get_db():
     """获取数据库连接，每次调用新建（线程安全）"""
     return pymysql.connect(**DB_CONFIG, cursorclass=pymysql.cursors.DictCursor)
 
 app = Flask(__name__, static_folder='.')
-app.secret_key = 'feijihe_sanyang_2026_secret_key_!@#'
+app.secret_key = FLASK_SECRET_KEY
 CORS(app, supports_credentials=True)
 
 # 报价数据文件路径
 QUOTE_DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'quote_data.json')
+
+WECHAT_TOKEN = get_wechat_token()
 
 # ==================== 用户系统 ====================
 USERS = {
@@ -2662,9 +2663,6 @@ def raw_stock():
     return jsonify({"success": False, "error": "未找到该材料"})
 
 # ==================== 企业微信验证接口 ====================
-WECHAT_TOKEN = 'sanyang2026'
-
-@app.route('/wechat/callback', methods=['GET', 'POST'])
 def wechat_callback():
     import hashlib
     msg_signature = request.args.get('msg_signature', '')
@@ -2696,12 +2694,6 @@ def static_files(path):
     return send_from_directory('.', path)
 
 # ===== 聚水潭对接模块 =====
-JST_CONFIG = {
-    'app_key': '5ea00cde4b45421ca5451a871a289349',
-    'app_secret': '964e010e847140dca6419232d59fc44a',
-    'api_url': 'https://open.erp321.com/api/open/query.aspx',
-    'partnerid': '5ea00cde4b45421ca5451a871a289349'
-}
 
 def _jst_load_token():
     """从MySQL读取缓存的token"""
@@ -3014,9 +3006,6 @@ import base64
 def _1688_fetch_all_shops_orders():
     """遍历所有1688店铺，拉取每个店铺的订单并合并（独立函数，不依赖全局配置）"""
     import time as _t
-    APP_KEY = 1452593
-    APP_SECRET = 'f4UOJ5NO1X'
-    SERVER = 'gw.open.1688.com'
     api = '1/com.alibaba.trade/alibaba.trade.getSellerOrderList'
     all_shop_orders = []
     max_pages = 3  # 最多翻3页
@@ -3024,18 +3013,21 @@ def _1688_fetch_all_shops_orders():
     for shop in ALIBABA_SHOPS:
         shop_name = shop['shop_name']
         token = shop['access_token']
+        app_key = int(shop['app_key'])
+        app_secret = shop['app_secret']
+        server = shop['server']
         print(f'[1688] 拉取店铺: {shop_name}')
         for page in range(1, max_pages + 1):
             try:
-                url_path = f'param2/{api}/{APP_KEY}'
+                url_path = f'param2/{api}/{app_key}'
                 params = {'access_token': token, 'page': page, 'pageSize': 50}
                 param_list = sorted([str(k) + str(v) for k, v in params.items()])
                 msg = url_path.encode('utf-8')
                 for p in param_list:
                     msg += p.encode('utf-8')
-                sign = hmac.new(APP_SECRET.encode('utf-8'), msg, hashlib.sha1).hexdigest().upper()
+                sign = hmac.new(app_secret.encode('utf-8'), msg, hashlib.sha1).hexdigest().upper()
                 params['_aop_signature'] = sign
-                url = f'https://{SERVER}/openapi/{url_path}'
+                url = f'https://{server}/openapi/{url_path}'
                 form_data = urllib.parse.urlencode(params)
                 req = urllib.request.Request(url, data=form_data.encode('utf-8'), method='POST')
                 resp = urllib.request.urlopen(req, timeout=30)
@@ -3055,6 +3047,36 @@ def _1688_fetch_all_shops_orders():
                 break
         print(f'[1688] {shop_name}: 拉取完成')
     return all_shop_orders
+
+
+def _1688_sign(url_path, params, secret):
+    """1688签名：HMAC-SHA1"""
+    param_list = sorted([str(k) + str(v) for k, v in params.items()])
+    msg = url_path.encode('utf-8')
+    for p in param_list:
+        msg += p.encode('utf-8')
+    sha = hmac.new(secret.encode('utf-8'), msg, hashlib.sha1)
+    return sha.hexdigest().upper()
+
+
+def _1688_api(api_uri, biz_params=None):
+    """调用1688开放平台API"""
+    cfg = ALIBABA_CONFIG
+    url_path = f'param2/{api_uri}/{cfg["app_key"]}'
+    params = {'access_token': cfg['access_token']}
+    if biz_params:
+        params.update(biz_params)
+    params['_aop_signature'] = _1688_sign(url_path, params, cfg['app_secret'])
+    url = f'https://{cfg["server"]}/openapi/{url_path}'
+    form_data = urllib.parse.urlencode(params)
+    try:
+        req = urllib.request.Request(url, data=form_data.encode('utf-8'), method='POST')
+        resp = urllib.request.urlopen(req, timeout=30)
+        return json.loads(resp.read().decode('utf-8'))
+    except Exception as e:
+        print(f'[1688API] {api_uri} 调用失败: {e}')
+        return {}
+
 
 def _1688_format_order(o):
     """格式化1688订单为统一格式"""
@@ -3321,45 +3343,6 @@ def api_delete_shop_config(config_id):
 def api_reset_shop_config():
     save_shop_config(DEFAULT_SHOP_CONFIG)
     return jsonify({'success': True, 'config': list(DEFAULT_SHOP_CONFIG)})
-
-# ========== 1688店铺配置 ==========
-ALIBABA_SHOPS = [
-    {
-        'shop_name': '三羊包装',
-        'app_key': 1452593,
-        'app_secret': 'f4UOJ5NO1X',
-        'access_token': 'e33dabd6-389b-4a9b-a0f1-652094d751dd',
-        'server': 'gw.open.1688.com'
-    },
-    {
-        'shop_name': '友尚包装',
-        'app_key': 1452593,
-        'app_secret': 'f4UOJ5NO1X',
-        'access_token': 'c81d0936-e3a7-4108-b1bc-7cb310e7e665',
-        'server': 'gw.open.1688.com'
-    },
-    {
-        'shop_name': '正方形包装',
-        'app_key': 1452593,
-        'app_secret': 'f4UOJ5NO1X',
-        'access_token': 'cffe5f55-5a24-486c-bb8d-4349355be4c0',
-        'server': 'gw.open.1688.com'
-    },
-    {
-        'shop_name': '大鱼包装',
-        'app_key': 1452593,
-        'app_secret': 'f4UOJ5NO1X',
-        'access_token': 'f76816ff-68cf-4a4e-9d08-1f3e28b13f57',
-        'server': 'gw.open.1688.com'
-    },
-    {
-        'shop_name': '亚润包装',
-        'app_key': 1452593,
-        'app_secret': 'f4UOJ5NO1X',
-        'access_token': 'bdb56a38-b85b-410d-acb2-74a04fc20496',
-        'server': 'gw.open.1688.com'
-    }
-]
 
 # ========== 后台定时同步1688订单 ==========
 ORDERS_CACHE_FILE = 'orders_cache.json'
