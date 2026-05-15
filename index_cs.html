@@ -4869,6 +4869,25 @@
         resetInvForm();
     }
 
+    /** 与后端 _dimoldb_infer_inner_outer 一致：用于库存列表只显示与商品内外径匹配的刀模 remark */
+    function _invInferDimoldbRowType(m) {
+        var dt = (m.dim_type || '').trim();
+        if (dt === 'inner' || dt === 'outer') return dt;
+        var name = m.name || '';
+        var rk = m.remark || '';
+        if (name.indexOf('(内)') >= 0 || name.indexOf('内径') >= 0 || rk.indexOf('内') >= 0) return 'inner';
+        if (name.indexOf('(外)') >= 0 || name.indexOf('外径') >= 0 || rk.indexOf('外') >= 0) return 'outer';
+        return '';
+    }
+    function _invFilterDimoldbInfoForItem(item, list) {
+        if (!list || !list.length) return [];
+        var want = item.dim_type;
+        if (want === 'inner' || want === 'outer') {
+            return list.filter(function (x) { return _invInferDimoldbRowType(x) === want; });
+        }
+        return list.slice();
+    }
+
     async function loadInventory(page, resetPage) {
         const container = document.getElementById('invList');
         container.innerHTML = '<div class="loading"><div class="spinner"></div>加载中...</div>';
@@ -4904,8 +4923,7 @@
                     dmAllData.matches.forEach(m => {
                         const key = `${m.length}x${m.width}x${m.height}`;
                         if (!dimoldbMap[key]) dimoldbMap[key] = [];
-                        // 存刀模时也记录dim_type
-                        m._dmType = (m.name && m.name.includes('(内)')) ? 'inner' : ((m.name && m.name.includes('(外)')) ? 'outer' : '');
+                        m._dmType = _invInferDimoldbRowType(m);
                         dimoldbMap[key].push(m);
                     });
                 }
@@ -4925,11 +4943,12 @@
                     // 后端没返回，走本地匹配
                     const dmKey = `${item.length}x${item.width}x${item.height}`;
                     let local = dimoldbMap[dmKey] || [];
-                    if (item.dim_type) {
-                        local = local.filter(m => !m._dmType || m._dmType === item.dim_type);
+                    if (item.dim_type === 'inner' || item.dim_type === 'outer') {
+                        local = local.filter(m => m._dmType === item.dim_type);
                     }
                     dmForRender = local;
                 }
+                dmForRender = _invFilterDimoldbInfoForItem(item, dmForRender);
                 const dmHtml = dmForRender.length > 0
                     ? dmForRender.map(m => `<span style="display:inline-block;background:#e6f7ff;color:#1677ff;padding:1px 6px;border-radius:3px;font-size:11px;margin-right:3px;">🔧${m.remark||''}</span>`).join('')
                     : '';
