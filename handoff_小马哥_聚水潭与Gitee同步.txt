@@ -1,0 +1,285 @@
+================================================================================
+给小马哥（C）—— 代码同步说明（可直接转发）
+生成自本地仓库：sanyang-system（聚水潭探测为本地改动，此前未 push）
+================================================================================
+
+一、聚水潭两个 API（/api/jst/shops、/api/jst/orders_probe）
+
+1）依赖说明
+  - 与现有聚水潭模块共用：JST_CONFIG、_jst_request、_jst_load_token 等（须在 jst_query_products 路由之后插入，紧挨在「# ===== 聚水潭前端展示接口」注释之前）。
+  - 仅跑 API、不要页面时：只改 app_cs.py 即可。
+  - 要客服端页面上「拉取店铺 / 订单抽样」按钮：还要合并 index_cs.html 里「聚水潭页 page-jst」整块 + 底部 script 里 jstRefreshToken 到 jstDevFetchOrdersProbe 一段（见下文「三」）。
+
+2）插入位置（app_cs.py）
+  找到函数 jst_query_products，其末尾为：
+    result = _jst_request('items.sku.query', biz)
+    return jsonify(result)
+
+  紧接着的下一行若是空行，在其后粘贴「二、Python 整段」全部内容；
+  再下一行应为：
+    # ===== 聚水潭前端展示接口（带模拟数据兜底） =====
+
+  注意：不要重复粘贴已有的 jst_query_shops / orders_probe（若已合并过）。
+
+
+二、Python 整段（粘贴进 app_cs.py，接在 jst_query_products 之后）
+
+--------------------------------------------------------------------------------
+
+def _jst_shops_list_from_response(result):
+    """解析 shops.query 返回的店铺数组（兼容多种包裹层）。"""
+    if not result or result.get('code') != 0:
+        return []
+    data = result.get('data')
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        for key in ('shops', 'datas', 'shop_list'):
+            v = data.get(key)
+            if isinstance(v, list):
+                return v
+    if isinstance(result.get('shops'), list):
+        return result['shops']
+    return []
+
+
+def _jst_orders_list_from_response(result):
+    """解析 orders.single.query 返回的订单数组。"""
+    if not result or result.get('code') != 0:
+        return []
+    data = result.get('data')
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        for key in ('orders', 'datas', 'order'):
+            v = data.get(key)
+            if isinstance(v, list):
+                return v
+    if isinstance(result.get('orders'), list):
+        return result['orders']
+    return []
+
+
+def _jst_shop_lookup_by_id(max_pages=10):
+    """分页拉取 shops.query，构建 shop_id -> {shop_site, shop_name}。"""
+    out = {}
+    pages = 0
+    for pi in range(1, max(1, min(max_pages, 30)) + 1):
+        r = _jst_request('shops.query', {'page_index': str(pi), 'page_size': '100'})
+        pages += 1
+        if r.get('code') != 0:
+            return out, pages, r
+        shops = _jst_shops_list_from_response(r)
+        for s in shops:
+            sid = str(s.get('shop_id', '') or '')
+            if sid:
+                out[sid] = {
+                    'shop_site': (s.get('shop_site') or s.get('site') or '') or '',
+                    'shop_name': (s.get('shop_name') or '') or '',
+                }
+        if len(shops) < 100:
+            break
+    return out, pages, None
+
+
+def _jst_guess_sales_channel(shop_name, shop_site, extra=''):
+    """根据站点/店名粗分渠道（用于探测展示，非官方枚举）。"""
+    text = ' '.join([str(shop_name or ''), str(shop_site or ''), str(extra or '')])
+    if not text.strip():
+        return ['无站点信息']
+    tl = text.lower()
+    labels = []
+    if '1688' in text or '阿里巴巴' in text or 'alibaba' in tl:
+        labels.append('1688')
+    if '天猫' in text or 'tmall' in tl:
+        labels.append('天猫')
+    if '淘宝' in text or 'taobao' in tl:
+        labels.append('淘宝')
+    if '抖音' in text or 'douyin' in tl:
+        labels.append('抖音')
+    if '拼多多' in text or 'pdd' in tl or 'yangkeduo' in tl:
+        labels.append('拼多多')
+    if '京东' in text or 'jd.com' in tl:
+        labels.append('京东')
+    if not labels and shop_site:
+        labels.append(str(shop_site).strip())
+    return labels or ['未识别']
+
+
+@app.route('/api/jst/shops', methods=['GET'])
+def jst_query_shops():
+    """聚水潭店铺列表 shops.query：核对开放接口是否返回淘宝/天猫/1688 等（shop_site）。
+    官方说明仅返回 ERP 中已启用的店铺。"""
+    page_index = str(request.args.get('page_index', '1') or '1')
+    raw_ps = request.args.get('page_size', '100') or '100'
+    try:
+        page_size_int = max(1, min(100, int(raw_ps)))
+    except ValueError:
+        page_size_int = 100
+    page_size = str(page_size_int)
+    biz = {'page_index': page_index, 'page_size': page_size}
+    nick = (request.args.get('nick') or '').strip()
+    if nick:
+        biz['nicks'] = [nick]
+    result = _jst_request('shops.query', biz)
+    return jsonify(result)
+
+
+@app.route('/api/jst/orders_probe', methods=['GET'])
+def jst_orders_probe():
+    """
+    抽样调用 orders.single.query，按店铺/粗分渠道汇总。
+    用于验证：开放接口能否拉到淘宝/天猫/1688 等线上单（与打单管理是否同源需 ERP 配置一致）。
+    查询参数：
+      page_index, page_size(<=100)
+      modified_begin / modified_end（可选，格式以聚水潭文档为准，常见 yyyy-MM-dd HH:mm:ss）
+      shop_id（可选）
+      enrich_shops=1 时额外分页拉 shops.query，用 shop_id 对齐 shop_site（更准确）
+    """
+    try:
+        page_size = max(1, min(100, int(request.args.get('page_size', '50') or 50)))
+    except ValueError:
+        page_size = 50
+    page_index = str(request.args.get('page_index', '1') or '1')
+    biz = {'page_index': page_index, 'page_size': str(page_size)}
+    mb = (request.args.get('modified_begin') or '').strip()
+    me = (request.args.get('modified_end') or '').strip()
+    if mb:
+        biz['modified_begin'] = mb
+    if me:
+        biz['modified_end'] = me
+    shop_id = (request.args.get('shop_id') or '').strip()
+    if shop_id:
+        biz['shop_id'] = shop_id
+
+    enrich = (request.args.get('enrich_shops') or '').lower() in ('1', 'true', 'yes')
+    lookup = {}
+    shop_pages = 0
+    shop_err = None
+    if enrich:
+        lookup, shop_pages, shop_err = _jst_shop_lookup_by_id()
+
+    raw = _jst_request('orders.single.query', biz)
+    orders = _jst_orders_list_from_response(raw)
+
+    if raw.get('code') != 0:
+        out = {
+            'probe': True,
+            'success': False,
+            'jst_code': raw.get('code'),
+            'jst_msg': raw.get('msg', ''),
+            'request_biz': biz,
+            'enrich_shops': enrich,
+            'shop_lookup_error': shop_err,
+            'raw_excerpt': raw if isinstance(raw, dict) else {'msg': str(raw)},
+        }
+        return jsonify(out)
+
+    by_shop = {}
+    by_guess = {}
+    samples = []
+
+    for o in orders[:500]:
+        sid = str(
+            o.get('shop_id', '')
+            or o.get('shop_i_id', '')
+            or o.get('shop_id_i', '')
+            or ''
+        )
+        sname = o.get('shop_name', '') or ''
+        site = o.get('shop_site', '') or o.get('shop_site_name', '') or ''
+        if enrich and sid and sid in lookup:
+            site = site or lookup[sid].get('shop_site', '')
+            if not sname:
+                sname = lookup[sid].get('shop_name', '') or sname
+        otype = o.get('type', '') or o.get('order_type', '') or ''
+        labels = _jst_guess_sales_channel(sname, site, otype)
+        key = (sid, sname)
+        by_shop[key] = by_shop.get(key, 0) + 1
+        for lb in labels:
+            by_guess[lb] = by_guess.get(lb, 0) + 1
+        if len(samples) < 25:
+            samples.append(
+                {
+                    'so_id': o.get('so_id', o.get('o_id', o.get('id', ''))),
+                    'shop_id': sid,
+                    'shop_name': sname,
+                    'shop_site': site,
+                    'guess': labels,
+                    'status': o.get('status', o.get('order_status', '')),
+                    'modified': o.get('modified', o.get('modified_time', o.get('pay_date', ''))),
+                }
+            )
+
+    online_hit = any(k in by_guess for k in ('1688', '天猫', '淘宝'))
+    if not online_hit:
+        for k in by_guess:
+            if isinstance(k, str) and (
+                '淘宝' in k or '天猫' in k or '1688' in k or 'taobao' in k.lower() or 'tmall' in k.lower()
+            ):
+                online_hit = True
+                break
+
+    return jsonify(
+        {
+            'probe': True,
+            'success': True,
+            'jst_code': raw.get('code'),
+            'jst_msg': raw.get('msg', ''),
+            'request_biz': biz,
+            'enrich_shops': enrich,
+            'shop_lookup_pages': shop_pages if enrich else 0,
+            'shop_lookup_count': len(lookup),
+            'shop_lookup_error': (
+                {'code': shop_err.get('code'), 'msg': shop_err.get('msg')}
+                if enrich and shop_err and shop_err.get('code') != 0
+                else None
+            ),
+            'order_count': len(orders),
+            'by_shop': [
+                {'shop_id': k[0], 'shop_name': k[1], 'count': v}
+                for k, v in sorted(by_shop.items(), key=lambda x: -x[1])
+            ],
+            'by_guess': by_guess,
+            'has_taobao_tmall_1688_hint': online_hit,
+            'samples': samples,
+            'print_integration_note': '打单管理列表来自 /api/production/dashboard（或你们生产分支等价接口）；若此处能识别线上单，则技术上可用聚水潭订单驱动同一套 so_id 打单流程，需把订单入库/同步改为以聚水潭为准。',
+        }
+    )
+
+--------------------------------------------------------------------------------
+
+
+三、index_cs.html（仅当需要浏览器里点按钮测试时）
+
+  因片段较长，建议小马哥用「diff 工具」对照你本地已改好的 index_cs.html，或从你这边拿到完整 index_cs.html 覆盖服务器客服端静态文件。
+
+  必含三块：
+  A) <!-- ===== 聚水潭页（iframe嵌入官网） ===== --> 下整个 <div id="page-jst" ...> … </div>
+     - 内含 id="jstDevToolbar"、jstIframeWrap 高度 calc(100vh - 480px)、订单抽样 jstOrdProbe* 等。
+  B) </script> 前：从「// ===== 聚水潭开发校验」到 jstDevFetchOrdersProbe 函数结束（含 jstRefreshToken、jstExtractShopsFromResponse、jstDevFetchShops、jstDevFetchOrdersProbe）。
+
+  自测 URL（部署客服端后）：
+    GET /api/jst/shops?page_index=1&page_size=100
+    GET /api/jst/orders_probe?page_index=1&page_size=50&enrich_shops=1
+
+
+四、app_production.py（服务器 3f48135）与 Gitee
+
+  说明：当前我这边工作区里的 app_production.py 未包含你服务器上「刀模库/库存/原材料从 app_cs 拷过去」那一版，无法在此文件中凭空生成与 3f48135 一致的完整内容。
+
+  建议流程（任选其一，对齐「只拉 Gitee」）：
+  1）你在服务器上把 /root/app_production.py 拷出 → 发给我方或小马哥 → 提交到 Gitee 一次（commit 信息写清：生产端补齐 dimoldb/inventory/raw API）。
+  2）给服务器 DeployKey 开 Gitee 写权限 → 在服务器 /root 仓库内 git add/commit/push 该文件。
+  3）若你本地已有与服务器一致的 app_production.py，由你本地 push 上 Gitee。
+
+  推上 Gitee 后，小马哥以后 git pull 即可同步，无需再手动对文件。
+
+
+五、你方可回给小马哥的一句话
+
+  「聚水潭路由的 Python 整段在 handoff_小马哥_聚水潭与Gitee同步.txt 第二节；前端对照 index_cs.html 的 page-jst + 底部 jst* 脚本。app_production 我这边仓库没有 3f48135 全量，需要你从服务器导出一次进 Gitee，或开 DeployKey 写权限从服务器 push。」
+
+================================================================================
+文件路径（相对仓库根目录）：handoff_小马哥_聚水潭与Gitee同步.txt
+================================================================================

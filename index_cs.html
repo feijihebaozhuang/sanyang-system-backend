@@ -1021,10 +1021,38 @@
 
     <!-- ===== 聚水潭页（iframe嵌入官网） ===== -->
     <div id="page-jst" class="page-section">
-        <div style="padding:8px 16px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;gap:8px;">
+        <div style="padding:8px 16px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <h3 style="margin:0;font-size:16px;">🔄 聚水潭</h3>
+            <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;">
+                <button type="button" onclick="jstRefreshToken()" style="padding:4px 10px;border:1px solid #d9d9d9;border-radius:4px;background:#fff;cursor:pointer;font-size:12px;">刷新 Token</button>
+            </div>
         </div>
-        <div id="jstIframeWrap" style="width:100%;height:calc(100vh - 140px);overflow:hidden;">
+        <div id="jstDevToolbar" style="padding:10px 16px;background:#fafafa;border-bottom:1px solid #eee;font-size:12px;">
+            <div style="margin-bottom:8px;color:#555;line-height:1.5;">开发校验：请求开放接口 <code style="font-size:11px;">shops.query</code>，看是否含淘宝/天猫/1688 等（字段 <code style="font-size:11px;">shop_site</code>）。聚水潭文档说明仅返回 ERP 里<strong>已启用</strong>的店铺。</div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+                <label>页码 <input type="number" id="jstShopsPage" value="1" min="1" style="width:56px;padding:4px 6px;border:1px solid #d9d9d9;border-radius:4px;"></label>
+                <label>每页 <input type="number" id="jstShopsPageSize" value="100" min="1" max="100" style="width:56px;padding:4px 6px;border:1px solid #d9d9d9;border-radius:4px;"></label>
+                <label title="可选，按主账号精确筛选">主账号 <input type="text" id="jstShopsNick" placeholder="可选" style="width:120px;padding:4px 6px;border:1px solid #d9d9d9;border-radius:4px;"></label>
+                <button type="button" onclick="jstDevFetchShops(false)" style="padding:6px 12px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">拉取本页店铺</button>
+                <button type="button" onclick="jstDevFetchShops(true)" style="padding:6px 12px;background:#722ed1;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">从当前页连续翻页直到无数据</button>
+            </div>
+            <div id="jstShopsDevStatus" style="margin-top:8px;font-size:12px;color:#666;word-break:break-all;"></div>
+            <div id="jstShopsDevTableWrap" style="margin-top:8px;max-height:240px;overflow:auto;border:1px solid #e8e8e8;border-radius:6px;background:#fff;"></div>
+            <div style="margin-top:14px;padding-top:12px;border-top:1px dashed #ddd;">
+                <div style="margin-bottom:8px;color:#555;line-height:1.5;">订单抽样：<code style="font-size:11px;">orders.single.query</code>，看本页样本里是否出现 <strong>淘宝 / 天猫 / 1688</strong>（<code>has_taobao_tmall_1688_hint</code>）。勾选「对齐店铺站点」会用 <code>shops.query</code> 补全 <code>shop_site</code>，更接近真实渠道。</div>
+                <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+                    <label>页 <input type="number" id="jstOrdProbePage" value="1" min="1" style="width:52px;padding:4px 6px;border:1px solid #d9d9d9;border-radius:4px;"></label>
+                    <label>每页 <input type="number" id="jstOrdProbeSize" value="50" min="1" max="100" style="width:52px;padding:4px 6px;border:1px solid #d9d9d9;border-radius:4px;"></label>
+                    <label style="flex:1;min-width:200px;">modified_begin <input type="text" id="jstOrdProbeMb" placeholder="可选 如 2026-05-01 00:00:00" style="width:100%;max-width:220px;padding:4px 6px;border:1px solid #d9d9d9;border-radius:4px;font-size:11px;"></label>
+                    <label style="flex:1;min-width:200px;">modified_end <input type="text" id="jstOrdProbeMe" placeholder="可选" style="width:100%;max-width:220px;padding:4px 6px;border:1px solid #d9d9d9;border-radius:4px;font-size:11px;"></label>
+                    <label title="分页拉取 shops.query 对齐 shop_site"><input type="checkbox" id="jstOrdProbeEnrich"> 对齐店铺站点</label>
+                    <button type="button" onclick="jstDevFetchOrdersProbe()" style="padding:6px 12px;background:#13c2c2;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">拉取订单样本</button>
+                </div>
+                <div id="jstOrdProbeStatus" style="margin-top:8px;font-size:12px;color:#666;word-break:break-all;"></div>
+                <pre id="jstOrdProbeJson" style="margin-top:8px;max-height:200px;overflow:auto;font-size:11px;background:#1a1a2e;color:#e6edf3;padding:10px;border-radius:6px;white-space:pre-wrap;"></pre>
+            </div>
+        </div>
+        <div id="jstIframeWrap" style="width:100%;height:calc(100vh - 480px);overflow:hidden;">
             <iframe id="jstIframe" src="https://zhaccount.scm121.com/user/login" 
                 style="width:100%;height:100%;border:none;" 
                 allow="clipboard-read; clipboard-write" 
@@ -5897,6 +5925,174 @@
         document.getElementById('newShopName').value = '';
         document.getElementById('newShopKefu').value = '';
         loadShopConfig();
+    }
+
+    // ===== 聚水潭开发校验：shops.query / Token =====
+    async function jstRefreshToken() {
+        try {
+            const resp = await fetch('/api/jst/refresh_token');
+            const data = await resp.json();
+            if (data.code === 0) {
+                alert('Token 刷新成功');
+            } else {
+                alert('Token 刷新失败: ' + (data.msg || JSON.stringify(data)));
+            }
+        } catch (e) {
+            alert('请求失败: ' + e.message);
+        }
+    }
+
+    function jstExtractShopsFromResponse(d) {
+        if (!d || typeof d !== 'object') return [];
+        const data = d.data;
+        if (Array.isArray(data)) return data;
+        if (data && Array.isArray(data.shops)) return data.shops;
+        if (data && Array.isArray(data.datas)) return data.datas;
+        if (Array.isArray(d.shops)) return d.shops;
+        return [];
+    }
+
+    async function jstDevFetchShops(multiPage) {
+        var st = document.getElementById('jstShopsDevStatus');
+        var tw = document.getElementById('jstShopsDevTableWrap');
+        if (!st || !tw) return;
+        tw.innerHTML = '';
+        st.textContent = '请求中…';
+        var pageSize = Math.min(100, Math.max(1, parseInt(document.getElementById('jstShopsPageSize').value, 10) || 100));
+        document.getElementById('jstShopsPageSize').value = String(pageSize);
+        var startPage = Math.max(1, parseInt(document.getElementById('jstShopsPage').value, 10) || 1);
+        var nick = (document.getElementById('jstShopsNick') && document.getElementById('jstShopsNick').value || '').trim();
+        var all = [];
+        var lastCode = null;
+        var lastMsg = '';
+        var pages = 0;
+
+        async function onePage(pi) {
+            var q = 'page_index=' + encodeURIComponent(String(pi)) + '&page_size=' + encodeURIComponent(String(pageSize));
+            if (nick) q += '&nick=' + encodeURIComponent(nick);
+            var r = await fetch('/api/jst/shops?' + q);
+            return r.json();
+        }
+
+        try {
+            if (!multiPage) {
+                var d0 = await onePage(startPage);
+                lastCode = d0.code;
+                lastMsg = d0.msg || '';
+                all = jstExtractShopsFromResponse(d0);
+                pages = 1;
+                if (d0.code !== 0) {
+                    st.textContent = '错误 code=' + d0.code + ' ' + (d0.msg || '') + '（若提示 method 不存在，请到聚水潭开放平台核对应用是否开通店铺查询类接口）';
+                    st.style.color = '#e94560';
+                    tw.innerHTML = '<pre style="padding:8px;font-size:11px;white-space:pre-wrap;margin:0;">' + JSON.stringify(d0, null, 2).replace(/</g, '&lt;') + '</pre>';
+                    return;
+                }
+            } else {
+                var pi = startPage;
+                for (var guard = 0; guard < 50; guard++) {
+                    var d = await onePage(pi);
+                    lastCode = d.code;
+                    lastMsg = d.msg || '';
+                    if (d.code !== 0) {
+                        st.textContent = '在第 ' + pi + ' 页停止：code=' + d.code + ' ' + (d.msg || '');
+                        st.style.color = '#e94560';
+                        tw.innerHTML = '<pre style="padding:8px;font-size:11px;white-space:pre-wrap;margin:0;">' + JSON.stringify(d, null, 2).replace(/</g, '&lt;') + '</pre>';
+                        break;
+                    }
+                    var shops = jstExtractShopsFromResponse(d);
+                    pages++;
+                    all = all.concat(shops);
+                    if (shops.length === 0 || shops.length < pageSize) break;
+                    pi++;
+                }
+            }
+
+            var seen = {};
+            var uniq = [];
+            for (var i = 0; i < all.length; i++) {
+                var s = all[i];
+                var id = String(s.shop_id != null ? s.shop_id : '');
+                if (id) {
+                    if (seen[id]) continue;
+                    seen[id] = true;
+                }
+                uniq.push(s);
+            }
+
+            var sites = {};
+            for (var j = 0; j < uniq.length; j++) {
+                var site = (uniq[j].shop_site || uniq[j].site || '(空)').toString();
+                sites[site] = (sites[site] || 0) + 1;
+            }
+            var siteSummary = Object.keys(sites).map(function (k) { return k + ':' + sites[k]; }).join(' · ');
+
+            st.textContent = 'code=' + lastCode + ' · 请求 ' + pages + ' 次 · 去重后 ' + uniq.length + ' 店 · 站点分布: ' + (siteSummary || '无');
+            st.style.color = '#333';
+
+            var esc = function (t) {
+                if (t == null) return '';
+                return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+            };
+            var html = '<table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr style="background:#f5f5f5;">';
+            html += '<th style="padding:6px 8px;text-align:left;border-bottom:1px solid #eee;">shop_id</th>';
+            html += '<th style="padding:6px 8px;text-align:left;border-bottom:1px solid #eee;">shop_name</th>';
+            html += '<th style="padding:6px 8px;text-align:left;border-bottom:1px solid #eee;">shop_site</th>';
+            html += '<th style="padding:6px 8px;text-align:left;border-bottom:1px solid #eee;">nick</th>';
+            html += '<th style="padding:6px 8px;text-align:left;border-bottom:1px solid #eee;">session_expired</th>';
+            html += '</tr></thead><tbody>';
+            for (var k = 0; k < uniq.length; k++) {
+                var row = uniq[k];
+                html += '<tr>';
+                html += '<td style="padding:5px 8px;border-bottom:1px solid #f5f5f5;">' + esc(row.shop_id) + '</td>';
+                html += '<td style="padding:5px 8px;border-bottom:1px solid #f5f5f5;">' + esc(row.shop_name) + '</td>';
+                html += '<td style="padding:5px 8px;border-bottom:1px solid #f5f5f5;">' + esc(row.shop_site) + '</td>';
+                html += '<td style="padding:5px 8px;border-bottom:1px solid #f5f5f5;">' + esc(row.nick) + '</td>';
+                html += '<td style="padding:5px 8px;border-bottom:1px solid #f5f5f5;">' + esc(row.session_expired) + '</td>';
+                html += '</tr>';
+            }
+            html += '</tbody></table>';
+            if (uniq.length === 0) html += '<div style="padding:12px;color:#999;">本页无店铺数据（检查 ERP 店铺是否启用、Token 是否有效）</div>';
+            tw.innerHTML = html;
+        } catch (e) {
+            st.textContent = '请求异常: ' + e.message;
+            st.style.color = '#e94560';
+        }
+    }
+
+    async function jstDevFetchOrdersProbe() {
+        var st = document.getElementById('jstOrdProbeStatus');
+        var pre = document.getElementById('jstOrdProbeJson');
+        if (!st || !pre) return;
+        st.textContent = '请求中…';
+        st.style.color = '#666';
+        pre.textContent = '';
+        var pi = Math.max(1, parseInt(document.getElementById('jstOrdProbePage').value, 10) || 1);
+        var ps = Math.min(100, Math.max(1, parseInt(document.getElementById('jstOrdProbeSize').value, 10) || 50));
+        document.getElementById('jstOrdProbeSize').value = String(ps);
+        var mb = (document.getElementById('jstOrdProbeMb') && document.getElementById('jstOrdProbeMb').value || '').trim();
+        var me = (document.getElementById('jstOrdProbeMe') && document.getElementById('jstOrdProbeMe').value || '').trim();
+        var enrich = document.getElementById('jstOrdProbeEnrich') && document.getElementById('jstOrdProbeEnrich').checked;
+        var q = 'page_index=' + encodeURIComponent(String(pi)) + '&page_size=' + encodeURIComponent(String(ps));
+        if (mb) q += '&modified_begin=' + encodeURIComponent(mb);
+        if (me) q += '&modified_end=' + encodeURIComponent(me);
+        if (enrich) q += '&enrich_shops=1';
+        try {
+            var r = await fetch('/api/jst/orders_probe?' + q);
+            var d = await r.json();
+            var summary = d.success
+                ? ('订单条数(本响应): ' + (d.order_count != null ? d.order_count : '?') +
+                   ' · has_taobao_tmall_1688_hint=' + !!d.has_taobao_tmall_1688_hint +
+                   (d.enrich_shops ? ' · 店铺对照表 ' + (d.shop_lookup_count || 0) + ' 条' : ''))
+                : ('失败 jst_code=' + d.jst_code + ' ' + (d.jst_msg || ''));
+            st.textContent = summary;
+            st.style.color = d.success ? (d.has_taobao_tmall_1688_hint ? '#389e0d' : '#d48806') : '#e94560';
+            var show = Object.assign({}, d);
+            if (show.samples && show.samples.length > 8) show.samples = show.samples.slice(0, 8).concat([{ note: '…其余见 by_shop / by_guess' }]);
+            pre.textContent = JSON.stringify(show, null, 2);
+        } catch (e) {
+            st.textContent = '请求异常: ' + e.message;
+            st.style.color = '#e94560';
+        }
     }
 </script>
 
