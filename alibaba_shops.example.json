@@ -1,6 +1,10 @@
 [
   {
-    "shop_name": "示例店铺",
-    "access_token": "在此填写该店铺授权 token"
+    "shop_name": "正方形包装",
+    "access_token": "从 1688 开放平台该应用授权里复制 access_token，刷新授权后需重新粘贴"
+  },
+  {
+    "shop_name": "南海大鱼包装",
+    "access_token": "同上，每店一条；可与 ALIBABA_APP_KEY / ALIBABA_APP_SECRET 同用一套应用"
   }
 ]
