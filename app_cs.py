@@ -2701,6 +2701,15 @@ def static_files(path):
 
 # ===== 聚水潭对接模块 =====
 
+def _jst_partner_id():
+    """URL 中的 partnerid：与 settings 一致，优先 JST_PARTNER_ID，否则 JST_APP_KEY。"""
+    return (JST_CONFIG.get('partnerid') or JST_CONFIG.get('app_key') or '').strip()
+
+
+def _jst_partner_secret():
+    return (JST_CONFIG.get('app_secret') or '').strip()
+
+
 def _jst_load_token():
     """从MySQL读取缓存的token"""
     try:
@@ -2738,15 +2747,23 @@ def _jst_sign(method, partnerid, token, ts, partnerkey):
     """聚水潭签名算法：MD5(method + partnerid + token + ts + partnerkey)"""
     # sign = MD5(method + partnerid + (key1+value1+key2+value2) + partnerkey)
     # 其中key-value按URL中的传递顺序：token + ts
-    raw = method + partnerid + chr(34) + chr(116) + chr(111) + chr(107) + chr(101) + chr(110) + chr(34) + token + chr(34) + chr(116) + chr(115) + chr(34) + str(ts) + partnerkey
+    raw = method + partnerid + token + str(ts) + partnerkey
     return hashlib.md5(raw.encode('utf-8')).hexdigest()
 
 def _jst_request(method, biz_params=None):
     """通用聚水潭API请求，系统参数放URL，业务参数放POST body JSON"""
     token_data = _jst_load_token()
     token = token_data.get('token', '')
-    partnerid = JST_CONFIG['partnerid']
-    partnerkey = JST_CONFIG['app_secret']
+    partnerid = _jst_partner_id()
+    partnerkey = _jst_partner_secret()
+    if not partnerid:
+        return {
+            'code': 140,
+            'issuccess': False,
+            'msg': '本地配置缺少 partnerid：请在 .env 设置 JST_APP_KEY 或 JST_PARTNER_ID（与聚水潭开放平台应用一致）。',
+        }
+    if not partnerkey:
+        return {'code': -1, 'msg': '本地配置缺少 JST_APP_SECRET'}
     ts = str(int(time.time()))
     
     # 生成签名
@@ -2780,8 +2797,16 @@ def jst_refresh_token():
     """刷新聚水潭token"""
     token_data = _jst_load_token()
     token = token_data.get('token', '')
-    partnerid = JST_CONFIG['partnerid']
-    partnerkey = JST_CONFIG['app_secret']
+    partnerid = _jst_partner_id()
+    partnerkey = _jst_partner_secret()
+    if not partnerid or not partnerkey:
+        return jsonify(
+            {
+                'code': 140,
+                'issuccess': False,
+                'msg': '缺少 partnerid 或 app_secret：请配置 JST_APP_KEY（或 JST_PARTNER_ID）与 JST_APP_SECRET',
+            }
+        )
     ts = str(int(time.time()))
     
     sign = _jst_sign('refresh.token', partnerid, token, ts, partnerkey)
