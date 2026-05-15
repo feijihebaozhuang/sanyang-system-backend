@@ -1493,6 +1493,23 @@ def _has_dimoldb_edit_perm():
         return True
     return False
 
+
+def _dimoldb_infer_inner_outer(dm):
+    """内外径：优先 dim_type；为空时用 name 中 (内)/内径/(外)/外径 及 remark 中的 内/外 字推断。返回 inner|outer|''。"""
+    dt = (dm.get('dim_type') or '').strip()
+    if dt == 'inner':
+        return 'inner'
+    if dt == 'outer':
+        return 'outer'
+    name = dm.get('name') or ''
+    rk = dm.get('remark') or ''
+    if '(内)' in name or '内径' in name or '内' in rk:
+        return 'inner'
+    if '(外)' in name or '外径' in name or '外' in rk:
+        return 'outer'
+    return ''
+
+
 @app.route('/api/dimoldb', methods=['GET'])
 def get_dimoldb():
     """获取刀模列表（支持分页）"""
@@ -1502,16 +1519,15 @@ def get_dimoldb():
     search = request.args.get('search', '').strip()
     dim_type = request.args.get('dim_type', '').strip()
     if ptype:
-        # 兼容 zhengsquare-outer / zhengsquare-inner
-        # 刀模dim_type字段为空，用name里(内)/(外)判断
+        # 兼容 zhengsquare-outer / zhengsquare-inner（dim_type 为空时 name/remark 推断）
         if ptype == 'zhengsquare-outer':
-            data = [d for d in data if d.get('product_type') == 'zhengsquare' and ('(外)' in d.get('name','') or '外径' in d.get('name',''))]
+            data = [d for d in data if d.get('product_type') == 'zhengsquare' and _dimoldb_infer_inner_outer(d) == 'outer']
         elif ptype == 'zhengsquare-inner':
-            data = [d for d in data if d.get('product_type') == 'zhengsquare' and ('(内)' in d.get('name','') or '内径' in d.get('name',''))]
+            data = [d for d in data if d.get('product_type') == 'zhengsquare' and _dimoldb_infer_inner_outer(d) == 'inner']
         else:
             data = [d for d in data if d.get('product_type') == ptype]
     if dim_type and not ptype.startswith('zhengsquare-'):
-        data = [d for d in data if d.get('dim_type') == dim_type]
+        data = [d for d in data if _dimoldb_infer_inner_outer(d) == dim_type]
     if search:
         # 刀模搜索统一用正则提取数字，兼容所有分隔符（x/*/×/空格...）
         nums = re.findall(r'\d+\.?\d*', search.replace(' ', '*'))
@@ -1551,13 +1567,10 @@ def get_dimoldb():
         dm_l = dm.get('length')
         dm_w = dm.get('width')
         dm_h = dm.get('height')
-        dm_dt = dm.get('dim_type', '')
-        # 刀模dim_type字段为空，用name里的(内)/(外)判断
+        dm_dt = (dm.get('dim_type') or '').strip()
+        # 刀模 dim_type 为空：name / remark 推断内外径
         if not dm_dt:
-            if '(内)' in dm.get('name','') or '内径' in dm.get('name',''):
-                dm_dt = 'inner'
-            elif '(外)' in dm.get('name','') or '外径' in dm.get('name',''):
-                dm_dt = 'outer'
+            dm_dt = _dimoldb_infer_inner_outer(dm)
         dm_type = dm.get('product_type', '')
         # 刀模类型→库存类型映射：库存只有 changfang 和 zhengsquare
         _type_map = {
@@ -1893,17 +1906,17 @@ def search_dimoldb():
         ptype_for_dim = data.get('type', '')
         if dim_type and ptype_for_dim == 'zhengsquare':
             if dim_type == 'inner':
-                matches = [d for d in matches if '(内)' in d.get('name', '')]
+                matches = [d for d in matches if _dimoldb_infer_inner_outer(d) == 'inner']
             elif dim_type == 'outer':
-                matches = [d for d in matches if '(外)' in d.get('name', '') or '(外' in d.get('name', '')]
+                matches = [d for d in matches if _dimoldb_infer_inner_outer(d) == 'outer']
         elif dim_type and ptype_for_dim not in ('zhengsquare', '', None):
-            # 非正方形类型：如果name带(内)(外)则过滤，否则不过滤
-            has_inner_outer = any(d for d in matches if '(内)' in d.get('name', '') or '(外)' in d.get('name', ''))
+            # 非正方形类型：若存在内外径信息则过滤
+            has_inner_outer = any(_dimoldb_infer_inner_outer(d) for d in matches)
             if has_inner_outer and dim_type:
                 if dim_type == 'inner':
-                    matches = [d for d in matches if '(内)' in d.get('name', '')]
+                    matches = [d for d in matches if _dimoldb_infer_inner_outer(d) == 'inner']
                 elif dim_type == 'outer':
-                    matches = [d for d in matches if '(外)' in d.get('name', '')]
+                    matches = [d for d in matches if _dimoldb_infer_inner_outer(d) == 'outer']
         return jsonify({"success": True, "matches": matches})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
