@@ -1504,7 +1504,7 @@
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;padding:12px 16px;border-bottom:1px solid #f0f0f0;">
             <div style="display:flex;align-items:center;gap:8px;">
                 <h3 style="margin:0;">📋 实时订单</h3>
-                <span id="rtDataStatus" style="font-size:11px;padding:2px 6px;border-radius:8px;background:#fff3cd;color:#856404;">待加载</span>
+                <span id="rtDataStatus" style="font-size:11px;padding:2px 6px;border-radius:8px;background:#e8e8e8;color:#666;">未加载</span>
                 <span id="rtOrderCount" style="font-size:12px;color:#999;display:none;"></span>
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;">
@@ -1581,7 +1581,7 @@
     </div>
 </div>
 
-<script src="/static/auth_session.js?v=20260518c"></script>
+<script src="/static/auth_session.js?v=20260518d"></script>
 <script>
     // ===== 当前登录用户 =====
     let _currentUser = null;
@@ -1616,6 +1616,9 @@
             
             if (data.success) {
                 _currentUser = data.user;
+                if (data.auth_token && data.user && data.user.username) {
+                    SY_AUTH.saveAuthCredentials(data.user.username, data.auth_token);
+                }
                 // 设置admin标记，用于CSS控制库存数量显示
                 if (_currentUser && _currentUser.role === '超级管理员') {
                     document.body.setAttribute('data-is-admin', 'true');
@@ -1651,6 +1654,7 @@
         if (!confirm('确认退出登录？')) return;
         await SY_AUTH.apiFetch('/api/logout');
         SY_AUTH.clearRoute();
+        SY_AUTH.clearAuthCredentials();
         _currentUser = null;
         document.getElementById('loginOverlay').style.display = 'flex';
         document.getElementById('loginUser').value = '';
@@ -1950,6 +1954,9 @@
                 return;
             }
             _currentUser = data.user;
+            if (data.auth_token && data.user && data.user.username) {
+                SY_AUTH.saveAuthCredentials(data.user.username, data.auth_token);
+            }
             if (_currentUser && _currentUser.role === '超级管理员') {
                 document.body.setAttribute('data-is-admin', 'true');
             } else {
@@ -5775,6 +5782,7 @@
     }
 
     async function rtLoadOrders() {
+        _rtLoaded = false;
         rtSetStatus('加载中…', 'load');
         const list = document.getElementById('rtOrderList');
         if (list) list.innerHTML = '<div style="text-align:center;padding:40px 0;color:#999;font-size:13px;">⏳ 加载中...</div>';
@@ -5784,7 +5792,7 @@
 
             if (data.success) {
                 _rtLoaded = true;
-                _rtCacheStatus = data.cache_status || '';
+                _rtCacheStatus = data.cache_status || (data.orders && data.orders.length ? 'hit' : 'empty');
                 _rtAllOrders = data.orders || [];
                 _rtShopConfig = data.shop_config || [];
                 var unsentEl = document.getElementById('rtUnsentNum');
@@ -5810,9 +5818,19 @@
         try {
             const res = await SY_AUTH.apiFetch('/api/sync/force', { method: 'POST' });
             const data = await res.json();
+            if (res.status === 401 || (data.error && String(data.error).indexOf('未登录') >= 0)) {
+                rtSetStatus('未登录', 'err');
+                alert('未登录：请退出后重新登录，再点同步');
+                return;
+            }
             if (data.success) {
                 await rtLoadOrders();
-                alert(data.message || ('已同步 ' + (data.count || 0) + ' 条'));
+                const rep = data.report || {};
+                const msg = data.message || ('已同步 ' + (data.count || 0) + ' 条');
+                const extra = rep.direct_1688_count != null
+                    ? '\n1688直连:' + rep.direct_1688_count + ' 快麦1688:' + (rep.km_1688_count || 0)
+                    : '';
+                alert(msg + extra);
             } else {
                 rtSetStatus('同步失败', 'err');
                 alert(data.error || data.message || '同步失败');

@@ -1,9 +1,26 @@
 /**
- * 登录会话（Cookie）+ 刷新后恢复当前页
+ * 登录会话（Cookie）+ Header 令牌 + 刷新后恢复当前页
  * 客服端 / 生产端共用
  */
 (function (global) {
     const ROUTE_KEY = 'sanyang_ui_route';
+    const AUTH_USER_KEY = 'sanyang_auth_user';
+    const AUTH_TOKEN_KEY = 'sanyang_auth_token';
+
+    function saveAuthCredentials(user, token) {
+        if (!user) return;
+        try {
+            sessionStorage.setItem(AUTH_USER_KEY, user);
+            if (token) sessionStorage.setItem(AUTH_TOKEN_KEY, token);
+        } catch (e) { /* ignore */ }
+    }
+
+    function clearAuthCredentials() {
+        try {
+            sessionStorage.removeItem(AUTH_USER_KEY);
+            sessionStorage.removeItem(AUTH_TOKEN_KEY);
+        } catch (e) { /* ignore */ }
+    }
 
     function saveRoute(top, sub) {
         const route = { top: top || 'main', sub: sub || null };
@@ -46,10 +63,25 @@
 
     function apiFetch(url, options) {
         const opts = Object.assign({ credentials: 'same-origin' }, options || {});
+        const headers = Object.assign({}, opts.headers || {});
+        try {
+            const u = sessionStorage.getItem(AUTH_USER_KEY);
+            const t = sessionStorage.getItem(AUTH_TOKEN_KEY);
+            if (u && t) {
+                headers['X-Sanyang-User'] = u;
+                headers['X-Sanyang-Token'] = t;
+            }
+        } catch (e) { /* ignore */ }
+        if (!headers['Content-Type'] && opts.method && opts.method.toUpperCase() === 'POST') {
+            headers['Content-Type'] = 'application/json';
+        }
+        if (opts.body === undefined && opts.method && opts.method.toUpperCase() === 'POST') {
+            opts.body = '{}';
+        }
+        opts.headers = headers;
         return fetch(url, opts);
     }
 
-    // 同源 /api/* 自动带 Cookie（生产端 index.html 里大量裸 fetch 会漏 credentials）
     if (global.fetch && !global.__SY_FETCH_PATCHED) {
         global.__SY_FETCH_PATCHED = true;
         const nativeFetch = global.fetch.bind(global);
@@ -76,5 +108,7 @@
         readRoute,
         clearRoute,
         apiFetch,
+        saveAuthCredentials,
+        clearAuthCredentials,
     };
 })(window);

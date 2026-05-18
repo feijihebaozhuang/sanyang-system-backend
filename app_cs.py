@@ -75,10 +75,28 @@ USERS = {
     }
 }
 
+
+def _auth_token_for(username: str) -> str:
+    """与前端 sessionStorage 同步，POST 未带 Cookie 时兜底鉴权。"""
+    return hashlib.sha256(f"{FLASK_SECRET_KEY}:{username}".encode()).hexdigest()[:32]
+
+
+def resolve_login_user() -> str | None:
+    """Session Cookie 或 X-Sanyang-User + X-Sanyang-Token（登录后 /api/me 下发）。"""
+    un = session.get("username")
+    if un and un in USERS:
+        return un
+    hdr_user = (request.headers.get("X-Sanyang-User") or "").strip()
+    hdr_tok = (request.headers.get("X-Sanyang-Token") or "").strip()
+    if hdr_user in USERS and hdr_tok and hdr_tok == _auth_token_for(hdr_user):
+        return hdr_user
+    return None
+
+
 def require_login():
     """检查是否已登录"""
-    if 'username' not in session:
-        return jsonify({"error": "未登录", "code": 401}), 401
+    if not resolve_login_user():
+        return jsonify({"success": False, "error": "未登录", "code": 401}), 401
     return None
 
 def require_admin():
@@ -424,6 +442,7 @@ def login():
     return jsonify({
         "success": True,
         "message": "登录成功",
+        "auth_token": _auth_token_for(username),
         "user": {
             "username": username,
             "name": user['name'],
@@ -470,13 +489,15 @@ def change_password():
 
 @app.route('/api/me')
 def get_current_user():
-    if 'username' in session:
-        user = USERS.get(session['username'])
+    un = resolve_login_user()
+    if un:
+        user = USERS.get(un)
         if user:
             return jsonify({
                 "logged_in": True,
+                "auth_token": _auth_token_for(un),
                 "user": {
-                    "username": session['username'],
+                    "username": un,
                     "name": user['name'],
                     "role": user['role'],
                     "employee_name": user['employee_name']
@@ -3437,56 +3458,61 @@ def api_realtime_orders():
 
     shop_config = load_shop_config()
 
-    # 先尝试读本地缓存
+    # 从本地缓存读取（文件存在即返回，orders 可为空数组）
     try:
         if os.path.exists(ORDERS_CACHE_FILE):
             with open(ORDERS_CACHE_FILE, 'r', encoding='utf-8') as f:
                 cache = json.load(f)
-                cached_orders = cache.get('orders', [])
-            if cached_orders:
-                shops = set()
-                try:
-                    import order_sync as _osync
-                    for o_ in cached_orders:
-                        o_['shop_name'] = _osync.normalize_shop_display(
-                            o_.get('shop_name', '')
-                        )
-                        shops.add(o_.get('shop_name', '?'))
-                except ImportError:
-                    for o_ in cached_orders:
-                        shops.add(o_.get('shop_name', '?'))
+            cached_orders = list(cache.get('orders') or [])
+            report = cache.get('report') or {}
+            shops = set()
+            try:
+                import order_sync as _osync
                 for o_ in cached_orders:
-                    for _it in o_.get('items') or []:
-                        if isinstance(_it, dict) and not _it.get('display'):
-                            _it['display'] = _parse_item_display(
-                                _it.get('spec', ''),
-                                _it.get('name', ''),
-                                _it.get('qty', 0),
-                            )
-
-                # 按时间倒序排列
-                cached_orders.sort(key=lambda x: x.get('created', ''), reverse=True)
-                print(f'[实时订单] 缓存命中: {len(cached_orders)} 条订单, 店铺: {shops}')
-                return jsonify({
-                    'success': True,
-                    'total': len(cached_orders),
-                    'orders': cached_orders,
-                    'platforms': list(set(o.get('platform', '1688') for o in cached_orders)),
-                    'shop_config': shop_config,
-                    'cache_status': 'hit'
-                })
+                    o_['shop_name'] = _osync.normalize_shop_display(
+                        o_.get('shop_name', '')
+                    )
+                    shops.add(o_.get('shop_name', '?'))
+            except ImportError:
+                for o_ in cached_orders:
+                    shops.add(o_.get('shop_name', '?'))
+            for o_ in cached_orders:
+                for _it in o_.get('items') or []:
+                    if isinstance(_it, dict) and not _it.get('display'):
+                        _it['display'] = _parse_item_display(
+                            _it.get('spec', ''),
+                            _it.get('name', ''),
+                            _it.get('qty', 0),
+                        )
+            cached_orders.sort(key=lambda x: x.get('created', ''), reverse=True)
+            status = 'hit' if cached_orders else 'empty'
+            print(
+                f'[实时订单] 缓存 {status}: {len(cached_orders)} 条, 店铺: {shops}'
+            )
+            return jsonify({
+                'success': True,
+                'total': len(cached_orders),
+                'orders': cached_orders,
+                'platforms': list(
+                    set(o.get('platform', '1688') for o in cached_orders)
+                ),
+                'shop_config': shop_config,
+                'cache_status': status,
+                'report': report,
+                'updated_at': cache.get('updated_at'),
+            })
     except Exception as e:
         print(f'[实时订单] 读缓存失败: {e}')
 
-    # 缓存不存在或为空，返回空，不等1688
-    print('[实时订单] 缓存未命中，返回空（后台正在同步）')
+    print('[实时订单] 缓存文件不存在（后台正在同步）')
     return jsonify({
         'success': True,
         'total': 0,
         'orders': [],
         'platforms': [],
         'shop_config': shop_config,
-        'cache_status': 'empty'
+        'cache_status': 'missing',
+        'report': {},
     })
 
 # ==================== 店铺客服配置 API ====================
@@ -3622,7 +3648,9 @@ def api_reset_shop_config():
     return jsonify({'success': True, 'config': list(DEFAULT_SHOP_CONFIG)})
 
 # ========== 后台定时同步订单（快麦 ERP）==========
-ORDERS_CACHE_FILE = 'orders_cache.json'
+ORDERS_CACHE_FILE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "orders_cache.json"
+)
 
 def _km_sync_orders_to_cache(days_back=14):
     """快麦(1688无需奇门) + 1688直连 → orders_cache.json"""
@@ -3650,7 +3678,7 @@ def _sync_orders_task():
 @app.route('/api/sync/force', methods=['POST'])
 def api_sync_force():
     """手动触发快麦订单同步（写入 orders_cache.json）"""
-    if 'username' not in session:
+    if not resolve_login_user():
         return jsonify({'success': False, 'error': '未登录'}), 401
     try:
         import order_sync as _osync
