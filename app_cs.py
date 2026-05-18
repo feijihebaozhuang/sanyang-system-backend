@@ -3104,7 +3104,7 @@ DEFAULT_SHOP_CONFIG = [
     {"id": "shop_1688_3", "platform": "1688", "shop_name": "三羊", "customer_service": "罗怡", "sort_order": 3},
     {"id": "shop_1688_4", "platform": "1688", "shop_name": "正方形", "customer_service": "周井梅", "sort_order": 4},
     {"id": "shop_1688_5", "platform": "1688", "shop_name": "大鱼", "customer_service": "周井梅", "sort_order": 5},
-    {"id": "shop_1688_6", "platform": "1688", "shop_name": "新鑫星", "customer_service": "戴志美", "sort_order": 6},
+    {"id": "shop_1688_6", "platform": "1688", "shop_name": "阿里新鑫星", "customer_service": "戴志美", "sort_order": 6},
     {"id": "shop_tmall_1", "platform": "tmall", "shop_name": "飞机盒彩色专卖店", "customer_service": "廖思美", "sort_order": 7},
     {"id": "shop_tmall_2", "platform": "tmall", "shop_name": "飞机盒正方形专卖店", "customer_service": "廖思美", "sort_order": 8},
     {"id": "shop_tmall_3", "platform": "tmall", "shop_name": "飞机盒止合专卖店", "customer_service": "石梅清", "sort_order": 9},

@@ -5604,7 +5604,14 @@
         if (_rtCurrentFilter) {
             filtered = filtered.filter(o => o.platform === _rtCurrentFilter);
         }
-        if (_rtCurrentShop) { filtered = filtered.filter(o => o.shop_name === _rtCurrentShop); }
+        if (_rtCurrentShop) {
+            filtered = filtered.filter(function(o) {
+                var sn = o.shop_name || '';
+                if (sn.includes(_rtCurrentShop)) return true;
+                if (_rtCurrentShop === '阿里新鑫星' && sn.includes('新鑫星')) return true;
+                return false;
+            });
+        }
         const search = (document.getElementById('rtSearchInput').value || '').trim().toLowerCase();
         if (search) {
             filtered = filtered.filter(o => (o.so_id || '').toLowerCase().includes(search));
