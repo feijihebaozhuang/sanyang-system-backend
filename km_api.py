@@ -388,6 +388,16 @@ def km_resolve_sys_status(trade: dict) -> str:
     return ""
 
 
+def km_to_float(val: Any, default: float = 0.0) -> float:
+    """快麦金额字段常为字符串（如 '360.00'），统一转 float 供前端 toFixed。"""
+    if val is None or val == "":
+        return default
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return default
+
+
 def finalize_cache_order(o: dict) -> dict:
     """写入 orders_cache 前统一 source / status / platform（页面与筛选依赖）。"""
     src = (o.get("source") or o.get("km_source") or "").strip()
@@ -423,6 +433,12 @@ def finalize_cache_order(o: dict) -> dict:
         if plat == "1688"
         else {"tmall": "天猫", "taobao": "淘宝"}.get(plat, plat)
     )
+    o["total_amount"] = km_to_float(o.get("total_amount"))
+    if o.get("shipping_fee") is not None:
+        o["shipping_fee"] = km_to_float(o.get("shipping_fee"))
+    for it in o.get("items") or []:
+        if isinstance(it, dict) and it.get("price") is not None:
+            it["price"] = km_to_float(it.get("price"))
     return o
 
 
@@ -748,7 +764,9 @@ def km_trade_to_cache_order(trade: dict, shops: dict[str, dict] | None = None) -
         "status_label": KM_SYS_STATUS_LABEL.get(sys_status, sys_status) or sys_status,
         "created": _ms_to_date_str(created_ms),
         "pay_time": _ms_to_date_str(pay_ms),
-        "total_amount": trade.get("payAmount") or trade.get("payment") or 0,
+        "total_amount": km_to_float(
+            trade.get("payAmount") or trade.get("payment") or 0
+        ),
         "receiver_name": trade.get("receiverName") or trade.get("buyerNick") or "",
         "receiver_mobile": trade.get("receiverMobile") or trade.get("receiverPhone") or "",
         "receiver_address": addr,

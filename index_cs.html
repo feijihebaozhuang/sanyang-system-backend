@@ -5517,6 +5517,10 @@
     let _rtLoaded = false;
     let _rtCacheStatus = '';
 
+    function rtFmtMoney(v) {
+        return (parseFloat(v) || 0).toFixed(2);
+    }
+
     function rtOrderDateKey(created) {
         const s = String(created || '');
         let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -5694,7 +5698,7 @@
                 '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;max-width:400px;font-size:11px;">' + specHtml + '</td>' +
                 '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;max-width:120px;font-size:11px;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + buyerMemo + '">' + buyerMemo + '</td>' +
                 '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;max-width:120px;font-size:11px;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + sellerMemo + '">' + sellerMemo + '</td>' +
-                '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;text-align:right;">¥' + (o.total_amount || 0).toFixed(2) + '</td>' +
+                '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;text-align:right;">¥' + rtFmtMoney(o.total_amount) + '</td>' +
                 '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;text-align:center;"><span style="color:#1677ff;font-size:11px;">详情</span></td>' +
                 '</tr>';
         }
@@ -5952,7 +5956,7 @@
                 </div>
                 <div style="font-size:13px;margin-bottom:8px;"><b>下单时间：</b>${o.created || ''}</div>
                 <div style="font-size:13px;margin-bottom:8px;"><b>买家：</b>${o.receiver_name || o.buyer_login_id || ''}</div>
-                <div style="font-size:13px;margin-bottom:8px;"><b>实付：</b>¥${(o.total_amount || 0).toFixed(2)} ${o.shipping_fee > 0 ? '(含运费¥' + o.shipping_fee.toFixed(2) + ')' : ''}</div>
+                <div style="font-size:13px;margin-bottom:8px;"><b>实付：</b>¥${rtFmtMoney(o.total_amount)} ${(parseFloat(o.shipping_fee) || 0) > 0 ? '(含运费¥' + rtFmtMoney(o.shipping_fee) + ')' : ''}</div>
                 <div style="font-size:13px;font-weight:600;margin:12px 0 6px;">📦 商品明细</div>
                 <table style="width:100%;border-collapse:collapse;font-size:12px;">
                     <thead><tr style="background:#f5f5f5;">
