@@ -459,6 +459,7 @@ def dashboard():
     total_all = len(all_orders)           # 总发货（所有订单）
     total_waiting = len([o for o in all_orders if o['status'] == '待发货'])  # 待发货
     urgent_count = len([o for o in all_orders if o.get('urgent')])          # 加急单
+    urgent_orders = [o for o in all_orders if o.get('urgent')]
     completed_count = 0                    # 已完成（暂无数据源）
 
     return jsonify({
@@ -469,7 +470,8 @@ def dashboard():
             "urgent_orders": urgent_count,
             "completed": completed_count,
         },
-        "today_orders": today_orders
+        "today_orders": today_orders,
+        "urgent_orders": urgent_orders,
     })
 
 # ==================== 订单生产进度 ====================

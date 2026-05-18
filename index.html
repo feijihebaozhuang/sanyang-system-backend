@@ -402,7 +402,6 @@
         <a onclick="switchTopPage('inventory', this)">📦 成品</a>
         <a onclick="switchTopPage('raw', this)">🧱 原材料</a>
         <a onclick="switchTopPage('employee', this)">👥 员工</a>
-        <a class="nav-erp" href="https://erp.superboss.cc" target="_blank" rel="noopener noreferrer">🔗 ERP</a>
     </div>
     <div class="user" id="userInfo" onclick="showUserMenu()">🔑 登录</div>
 </div>
@@ -823,7 +822,19 @@
         </div>
     </div>
 
-    <!-- ===== 快麦ERP页 ===== -->
+    <!-- ===== 快麦 ERP 嵌入 ===== -->
+    <div id="page-erp" class="page-section">
+        <div style="padding:8px 16px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;gap:8px;">
+            <h3 style="margin:0;font-size:16px;">🔗 快麦 ERP</h3>
+            <a href="https://erp.superboss.cc" target="_blank" rel="noopener noreferrer" style="margin-left:auto;font-size:12px;color:#1677ff;">新窗口打开 ↗</a>
+        </div>
+        <iframe src="https://erp.superboss.cc"
+            style="width:100%;height:calc(100vh - 200px);border:none;"
+            allow="clipboard-read; clipboard-write"
+            sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox">
+        </iframe>
+    </div>
+
     <div id="page-main" class="page-section active">
 
         <!-- 搜索框 -->
@@ -878,8 +889,8 @@
             </div>
         </div>
 
-        <!-- 当日加急订单 -->
-        <div class="order-table-wrap urgent-today-wrap" id="urgentTodayWrap" style="display:none;">
+        <!-- 当日加急订单（生产首页主区块） -->
+        <div class="order-table-wrap urgent-today-wrap" id="urgentTodayWrap">
             <div class="table-title" style="display:flex;justify-content:space-between;align-items:center;">
                 <span>🔴 当日加急订单 <span id="urgentTodayCount" style="font-size:12px;color:#e94560;font-weight:400;"></span></span>
             </div>
@@ -894,9 +905,9 @@
             </div>
         </div>
 
-        <!-- 今日订单列表 -->
-        <div class="order-table-wrap">
-            <div class="table-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
+        <!-- 今日订单列表（管理/客服查看；生产员工默认隐藏） -->
+        <div class="order-table-wrap" id="todayOrdersWrap">
+            <div class="table-title" id="todayOrdersTitle" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
                 <span>📋 今日订单列表</span>
                 <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                     <input type="text" id="todayOrderSearch" placeholder="搜索单号..." style="padding:3px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;width:130px;" onkeydown="if(event.key==='Enter') filterTodayOrders()" onfocus="this.select()">
@@ -1196,6 +1207,11 @@
         <div class="f-title">WPS刀模嵌入</div>
         <div class="f-desc">查看和管理固定刀模</div>
     </div>
+    <div class="footer-card" onclick="openErpEmbed()" data-perm="快麦ERP">
+        <div class="icon">🔗</div>
+        <div class="f-title">快麦 ERP</div>
+        <div class="f-desc">嵌入快麦 ERP 系统</div>
+    </div>
     <div class="footer-card" onclick="openProcessSettings()" data-perm="管理员">
         <div class="icon">⚙️</div>
         <div class="f-title">工序超时设置</div>
@@ -1384,7 +1400,7 @@
             const hasOrderSearch = hasPerm('快麦ERP');
             const isKeFu = role === '客服';
             const hasProd = hasPerm('订单生产进度');
-            const showSearch = hasJST || isKeFu || hasProd;
+            const showSearch = hasOrderSearch || isKeFu || hasProd;
             searchBar.style.display = showSearch ? '' : 'none';
         }
 
@@ -1417,14 +1433,16 @@
             });
         }
 
-        // ===== 员工首页只显示加急单 =====
+        // ===== 员工首页：只显示「当日加急订单」，隐藏今日订单列表 =====
         if (role === '员工') {
             const overviewHeader = document.querySelector('.overview-header');
             if (overviewHeader) overviewHeader.style.display = 'none';
             document.querySelectorAll('.stats-cards').forEach(el => el.style.display = 'none');
-            const tableTitle = document.querySelector('.table-title');
-            if (tableTitle) tableTitle.style.display = 'none';
-            const orderTable = document.querySelector('.order-table-wrap table');
+            const todayWrap = document.getElementById('todayOrdersWrap');
+            if (todayWrap) todayWrap.style.display = 'none';
+            const urgentWrap = document.getElementById('urgentTodayWrap');
+            if (urgentWrap) urgentWrap.style.display = '';
+            const orderTable = document.querySelector('#todayOrdersWrap table');
             if (orderTable) {
                 const headers = orderTable.querySelectorAll('thead th');
                 headers.forEach((th, idx) => {
@@ -1447,7 +1465,7 @@
             'dimoldb': '刀模库',
             'inventory': '库存',
             'raw': '库存',
-            '__removed__': '快麦ERP',
+            'erp': '快麦ERP',
             'production': '订单生产进度',
             'scan': '扫码报工',
             'report': '日报表',
@@ -1771,10 +1789,21 @@
             document.getElementById('page-main').classList.remove('active');
             document.getElementById('page-raw').classList.add('active');
             loadRaw();
-                } else {
+        } else if (name === 'erp') {
+            document.getElementById('page-main').classList.remove('active');
+            document.getElementById('page-erp').classList.add('active');
+        } else {
             document.body.classList.remove('dark-bg');
             document.querySelector('.content').classList.remove('databoard-mode');
         }
+    }
+
+    function openErpEmbed() {
+        if (!hasPerm('快麦ERP')) {
+            alert('无快麦 ERP 权限');
+            return;
+        }
+        switchSubPage('erp', null);
     }
 
     // ===== 从底部功能栏进入订单搜索（跳到首页聚焦搜索框）=====
@@ -1808,13 +1837,14 @@
         const tbody = document.getElementById('urgentTodayList');
         const countEl = document.getElementById('urgentTodayCount');
         if (!wrap || !tbody) return;
-        if (!urgentList || urgentList.length === 0) {
-            wrap.style.display = 'none';
+        wrap.style.display = '';
+        const list = urgentList || [];
+        if (countEl) countEl.textContent = list.length ? `（${list.length} 单）` : '（暂无）';
+        if (list.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:#999;">暂无加急单</td></tr>';
             return;
         }
-        wrap.style.display = '';
-        if (countEl) countEl.textContent = `（${urgentList.length} 单）`;
-        tbody.innerHTML = urgentList.map(o => {
+        tbody.innerHTML = list.map(o => {
             let dateStr = '—';
             if (o.pay_time) {
                 const p = String(o.pay_time);
@@ -2141,11 +2171,7 @@
         });
         const data = await res.json();
         if (data.success) {
-            o.urgent = newUrgent;
-            const urgentCount = allOrders.filter(x => x.urgent).length;
-            document.getElementById('statUrgent').textContent = urgentCount;
-            renderUrgentTodayOrders(allOrders.filter(x => x.urgent));
-            renderOrderPage();
+            await loadDashboard();
         }
     }
 
@@ -2234,24 +2260,24 @@
         document.getElementById('statUrgent').textContent = summary.urgent_orders ?? '--';
         document.getElementById('statDone').textContent = summary.completed ?? '--';
 
+        const urgentList = data.urgent_orders || (data.today_orders || []).filter(o => o.urgent);
+        renderUrgentTodayOrders(urgentList);
         allOrders = data.today_orders || [];
-        renderUrgentTodayOrders(allOrders.filter(o => o.urgent));
-        // 重置筛选和下拉框
+
+        const todayWrap = document.getElementById('todayOrdersWrap');
+        const isWorker = _currentUser && _currentUser.role === '员工';
+
+        if (isWorker) {
+            if (todayWrap) todayWrap.style.display = 'none';
+            return;
+        }
+
+        if (todayWrap) todayWrap.style.display = '';
         document.getElementById('filterStore').innerHTML = '<option value="">全部店铺</option>';
         document.getElementById('filterWorker').innerHTML = '<option value="">全部客服</option>';
-        // 美丽湾员工首页只显示加急单
-        if (_currentUser && _currentUser.role === '员工') {
-            filteredOrders = allOrders.filter(o => o.urgent);
-            // 隐藏总的订单列表标题和筛选栏
-            const orderTitle = document.querySelector('.table-title');
-            if (orderTitle) orderTitle.style.display = 'none';
-            // 显示"仅显示加急单"提示
-            document.getElementById('orderCount').textContent = `加急单 ${filteredOrders.length} 单`;
-        } else {
-            filteredOrders = [...allOrders];
-            const orderTitle = document.querySelector('.table-title');
-            if (orderTitle) orderTitle.style.display = '';
-        }
+        filteredOrders = [...allOrders];
+        const orderTitle = document.getElementById('todayOrdersTitle');
+        if (orderTitle) orderTitle.style.display = '';
         curPage = 1;
         renderOrderPage();
     }
