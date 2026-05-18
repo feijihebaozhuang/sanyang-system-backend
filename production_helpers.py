@@ -42,13 +42,96 @@ def ensure_scan_logs_table(db_config: dict) -> None:
         print(f"[scan_logs] 建表失败: {e}")
 
 
+def order_date_key(o: dict) -> str:
+    for field in ("pay_time", "created", "consign_time", "updTime", "updated"):
+        raw = str(o.get(field) or "").strip()
+        if not raw:
+            continue
+        if len(raw) >= 10 and raw[4] == "-" and raw[7] == "-":
+            return raw[:10]
+        digits = "".join(c for c in raw if c.isdigit())
+        if len(digits) >= 8:
+            return f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}"
+    return ""
+
+
 def order_on_date(o: dict, date_yyyy_mm_dd: str) -> bool:
-    raw = str(o.get("created") or o.get("pay_time") or "")
-    if raw.startswith(date_yyyy_mm_dd):
-        return True
-    digits = "".join(c for c in raw if c.isdigit())
-    want = date_yyyy_mm_dd.replace("-", "")
-    return len(digits) >= 8 and digits[:8] == want
+    return order_date_key(o) == date_yyyy_mm_dd
+
+
+def filter_orders_by_range(orders: list, range_type: str) -> list:
+    now = datetime.now()
+    today = now.date()
+    out = []
+    for o in orders:
+        dk = order_date_key(o)
+        if not dk:
+            continue
+        try:
+            od = datetime.strptime(dk, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        if range_type == "live":
+            if od != today:
+                continue
+        elif range_type == "yesterday":
+            if od != today - timedelta(days=1):
+                continue
+        elif range_type == "week":
+            if od < today - timedelta(days=today.weekday()):
+                continue
+        elif range_type == "month":
+            if od.year != today.year or od.month != today.month:
+                continue
+        elif range_type == "last30":
+            if od < today - timedelta(days=29):
+                continue
+        elif range_type == "quarter":
+            qm = ((today.month - 1) // 3) * 3 + 1
+            if od < date(today.year, qm, 1):
+                continue
+        else:
+            if od < today - timedelta(days=6):
+                continue
+        out.append(o)
+    return out
+
+
+def template_steps_for_order(process_tree: list, order_type: str) -> list[dict]:
+    dept = get_process_dept(process_tree, order_type)
+    return steps_from_dept(dept)
+
+
+def merge_flow_with_tree(
+    existing_steps: list[dict],
+    process_tree: list,
+    order_type: str,
+) -> list[dict]:
+    """按工序树重建步骤列表，保留同名工序的完成状态。"""
+    template = template_steps_for_order(process_tree, order_type)
+    done_map = {}
+    person_map = {}
+    time_map = {}
+    for s in existing_steps or []:
+        name = s.get("step") or s.get("name") or ""
+        if not name:
+            continue
+        if s.get("done"):
+            done_map[name] = True
+            person_map[name] = s.get("person") or ""
+            time_map[name] = s.get("time") or "-"
+    merged = []
+    for t in template:
+        nm = t.get("step") or ""
+        merged.append(
+            {
+                "step": nm,
+                "done": bool(done_map.get(nm)),
+                "time": time_map.get(nm, "-"),
+                "person": person_map.get(nm, ""),
+            }
+        )
+    return merged
 
 
 def internal_order_id(o: dict) -> str:
@@ -205,6 +288,31 @@ def save_flow_row(
         db.close()
     except Exception as e:
         print(f"[production_flows] 保存失败: {e}")
+
+
+def resync_active_flows_from_tree(db_config: dict, process_tree: list) -> int:
+    """未完工工单按工序树重建步骤，保留同名工序完成状态。"""
+    updated = 0
+    try:
+        db = pymysql.connect(**db_config, cursorclass=pymysql.cursors.DictCursor)
+        cur = db.cursor()
+        cur.execute("SELECT order_id, product_type, steps_json FROM production_flows WHERE status='active'")
+        rows = cur.fetchall()
+        cur.close()
+        db.close()
+        for row in rows:
+            oid = row.get("order_id") or ""
+            order_type = row.get("product_type") or "飞机盒"
+            existing = parse_flow_steps(row.get("steps_json"))
+            merged = merge_flow_with_tree(existing, process_tree, order_type)
+            old_names = [s.get("step") for s in existing]
+            new_names = [s.get("step") for s in merged]
+            if old_names != new_names or len(existing) != len(merged):
+                save_flow_row(db_config, oid, order_type, merged)
+                updated += 1
+    except Exception as e:
+        print(f"[resync_active_flows] {e}")
+    return updated
 
 
 def get_or_create_flow_steps(
@@ -520,26 +628,23 @@ def build_databoard(
     order_extra: dict,
 ) -> dict[str, Any]:
     now = datetime.now()
-    if range_type == "month":
-        start = now - timedelta(days=30)
-    elif range_type == "quarter":
-        start = now - timedelta(days=90)
-    else:
-        start = now - timedelta(days=7)
-
     orders = load_cache_orders(cache_file)
-    in_range = []
-    for o in orders:
-        raw = str(o.get("created") or o.get("pay_time") or "")
-        digits = "".join(c for c in raw if c.isdigit())
-        if len(digits) < 8:
-            continue
-        try:
-            dt = datetime.strptime(digits[:8], "%Y%m%d")
-        except ValueError:
-            continue
-        if dt >= start.replace(hour=0, minute=0, second=0, microsecond=0):
-            in_range.append(o)
+    in_range = filter_orders_by_range(orders, range_type)
+    if range_type == "live":
+        days_span = 1
+    elif range_type == "yesterday":
+        days_span = 1
+    elif range_type == "week":
+        days_span = max(1, now.date().weekday() + 1)
+    elif range_type == "month":
+        days_span = now.day
+    elif range_type == "last30":
+        days_span = 30
+    elif range_type == "quarter":
+        qm = ((now.month - 1) // 3) * 3 + 1
+        days_span = max(1, (now.date() - date(now.year, qm, 1)).days + 1)
+    else:
+        days_span = 7
 
     try:
         import km_api as _km
@@ -562,7 +667,6 @@ def build_databoard(
         plat = (o.get("platform_label") or o.get("platform") or "其他").strip()
         platform_counts[plat] += 1
 
-    days_span = max(1, (now.date() - start.date()).days + 1)
     trend = []
     for i in range(min(14, days_span) - 1, -1, -1):
         d = (now - timedelta(days=i)).date()

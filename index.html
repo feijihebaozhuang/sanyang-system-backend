@@ -772,7 +772,9 @@
     <div id="page-raw" class="page-section">
         <div class="overview-header">
             <h3>🧱 原材料</h3>
-            <div style="display:flex;gap:8px;align-items:center;">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                <input type="text" id="rawScanInput" placeholder="扫码枪扫条码后回车入库..." style="padding:6px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;width:220px;" onkeydown="if(event.key==='Enter') rawScanRegister()" onfocus="this.select()">
+                <button onclick="openRawScanner()" style="padding:6px 12px;background:#52c41a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;" title="摄像头扫码入库">📷 扫码入库</button>
                 <button onclick="rawSearch()" style="padding:6px 16px;background:#1a1a2e;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">🔍 查询</button>
                 <button onclick="rawAdd()" style="padding:6px 16px;background:#1677ff;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">➕ 来料登记</button>
             </div>
@@ -1080,8 +1082,11 @@
             <div style="display:flex;gap:12px;align-items:center;">
                 <span id="boardLiveTime" style="font-size:14px;color:rgba(255,255,255,0.6);font-family:monospace;"></span>
                 <select id="boardRange" style="padding:6px 12px;border:1px solid rgba(255,255,255,0.2);border-radius:6px;font-size:13px;background:rgba(255,255,255,0.1);color:#fff;outline:none;" onchange="loadDataBoard()">
+                    <option value="live" style="background:#1a1a2e;color:#fff;">实时（今日）</option>
+                    <option value="yesterday" style="background:#1a1a2e;color:#fff;">昨天</option>
                     <option value="week" style="background:#1a1a2e;color:#fff;">本周</option>
                     <option value="month" style="background:#1a1a2e;color:#fff;">本月</option>
+                    <option value="last30" style="background:#1a1a2e;color:#fff;">最近30天</option>
                     <option value="quarter" style="background:#1a1a2e;color:#fff;">本季度</option>
                 </select>
             </div>
@@ -3298,7 +3303,8 @@
                         <th>组别</th>
                         <th>厂区</th>
                         <th>手机号</th>
-                        <th style="width:100px;">操作</th>
+                        <th>登录账号</th>
+                        <th style="width:140px;">操作</th>
                     </tr></thead>
                     <tbody>
         `;
@@ -3312,9 +3318,11 @@
                 <td><span style="background:#f0f2ff;padding:1px 6px;border-radius:4px;font-size:11px;">${e.group || '—'}</span></td>
                 <td>${e.dept === '美丽湾工厂部' ? '🏭 美丽湾' : '🏢 洋坑塘'}</td>
                 <td>${e.phone || '—'}</td>
+                <td style="font-size:11px;color:#666;">${e.username || '—'}</td>
                 <td>
-                    <button onclick="editSingleEmployee('${e.name}')" style="padding:2px 8px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:10px;">✏️</button>
-                    <button onclick="deleteSingleEmployee('${e.name}')" style="padding:2px 8px;background:#ff4d4f;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:10px;">🗑️</button>
+                    <button onclick="editSingleEmployee('${e.name.replace(/'/g, "\\'")}')" style="padding:2px 8px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:10px;">✏️</button>
+                    <button onclick="resetEmployeePassword('${(e.username || '').replace(/'/g, "\\'")}', '${e.name.replace(/'/g, "\\'")}')" style="padding:2px 8px;background:#722ed1;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:10px;">🔑</button>
+                    <button onclick="deleteSingleEmployee('${e.name.replace(/'/g, "\\'")}')" style="padding:2px 8px;background:#ff4d4f;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:10px;">🗑️</button>
                 </td>
             </tr>`;
         });
@@ -3388,6 +3396,26 @@
     }
 
     // ===== 删除员工 =====
+    async function resetEmployeePassword(username, displayName) {
+        if (!username) {
+            alert('该员工暂无登录账号，请先通过「新增员工」创建账号');
+            return;
+        }
+        const pwd = prompt(`重置「${displayName}」的登录密码（账号 ${username}）：`);
+        if (!pwd || !pwd.trim()) return;
+        if (pwd.trim().length < 4) {
+            alert('密码至少4位');
+            return;
+        }
+        const res = await fetch('/api/admin/reset_password', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({username, new_password: pwd.trim()})
+        });
+        const data = await res.json();
+        alert(data.message || (data.success ? '密码已重置' : '操作失败'));
+    }
+
     async function deleteSingleEmployee(name) {
         if (!confirm(`确认删除员工「${name}」？`)) return;
         const res = await fetch('/api/employee/delete', {
@@ -3628,6 +3656,10 @@
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({processes: _permData.processes})
+        }).then(r => r.json()).then(d => {
+            if (d.flows_resynced > 0 && typeof loadProdDashboard === 'function') {
+                loadProdDashboard();
+            }
         }).catch(e => console.error('保存工序树失败', e));
     }
 
@@ -3707,12 +3739,7 @@
     }
 
     function addProcessItem() {
-        const name = prompt('请输入新流程名称：');
-        if (name && name.trim()) {
-            if (!_permData) return;
-            _permData.processes.push(name.trim());
-            renderPermProcesses(_permData.processes);
-        }
+        addProcessDept();
     }
 
     function addPositionItem() {
@@ -4439,7 +4466,7 @@
                 container.innerHTML = '<div style="text-align:center;padding:40px;color:#999;">暂无固定刀模数据，在右侧录入</div>';
                 return;
             }
-                html = '<div style="display:flex;flex-direction:column;gap:2px;">';
+            let html = '<div style="display:flex;flex-direction:column;gap:2px;">';
             items.forEach(item => {
                 const tlabel = _dmTypeLabels[item.product_type] || item.product_type;
                 html += `
@@ -5265,11 +5292,52 @@
         loadRaw({date, name, supplier, paper_width: pw, paper_length: pl});
     }
 
+    async function rawScanRegister(code) {
+        const el = document.getElementById('rawScanInput');
+        const barcode = (code || (el && el.value) || '').trim();
+        if (!barcode) {
+            alert('请先扫描或输入条码');
+            return;
+        }
+        try {
+            const res = await fetch('/api/raw/scan_register', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({code: barcode, qty: 1})
+            });
+            const data = await res.json();
+            if (data.success) {
+                if (el) el.value = '';
+                const st = document.getElementById('rawStatus');
+                if (st) {
+                    st.textContent = '✅ ' + (data.message || '入库成功');
+                    st.style.color = '#52c41a';
+                }
+                rawSearch();
+            } else {
+                alert(data.error || data.message || '扫码入库失败');
+            }
+        } catch (e) {
+            alert('扫码入库失败: ' + e.message);
+        }
+    }
+
+    function openRawScanner() {
+        document.getElementById('scannerModal').style.display = 'flex';
+        const container = document.getElementById('scannerContainer');
+        startScanning(container, (code) => {
+            closeScanner();
+            const el = document.getElementById('rawScanInput');
+            if (el) el.value = code;
+            rawScanRegister(code);
+        });
+    }
+
     async function loadRaw(params) {
         const container = document.getElementById('rawList');
         container.innerHTML = '<div class="loading"><div class="spinner"></div>加载中...</div>';
         try {
-                url = '/api/raw';
+            let url = '/api/raw';
             const query = [];
             if (params) {
                 if (params.date) query.push('date=' + encodeURIComponent(params.date));

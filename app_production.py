@@ -350,33 +350,64 @@ def logout():
 
 @app.route('/api/change_password', methods=['POST'])
 def change_password():
-    """修改当前登录用户的密码"""
-    if 'username' not in session:
+    """仅允许修改当前登录账号自己的密码。"""
+    username = resolve_login_user()
+    if not username:
         return jsonify({"success": False, "message": "未登录"}), 401
-    
-    data = request.get_json()
+
+    data = request.get_json() or {}
+    target = (data.get('username') or data.get('target_user') or '').strip()
+    if target and target != username:
+        return jsonify({"success": False, "message": "只能修改自己的密码"}), 403
+
     old_pwd = data.get('old_password', '').strip()
     new_pwd = data.get('new_password', '').strip()
-    
+
     if not old_pwd or not new_pwd:
         return jsonify({"success": False, "message": "请填写旧密码和新密码"})
-    
+
     if len(new_pwd) < 4:
         return jsonify({"success": False, "message": "新密码至少4位"})
-    
-    username = session['username']
+
     user = USERS.get(username)
     if not user:
         return jsonify({"success": False, "message": "用户不存在"})
-    
+
     old_hash = hashlib.sha256(old_pwd.encode()).hexdigest()
     if user['password'] != old_hash:
         return jsonify({"success": False, "message": "旧密码错误"})
-    
-    # 更新密码
+
     user['password'] = hashlib.sha256(new_pwd.encode()).hexdigest()
-    persist()  # 持久化到文件，重启不丢
+    persist()
     return jsonify({"success": True, "message": "密码修改成功"})
+
+
+@app.route('/api/admin/reset_password', methods=['POST'])
+def admin_reset_password():
+    """超级管理员重置他人密码。"""
+    un = resolve_login_user()
+    if not un:
+        return jsonify({"success": False, "message": "未登录"}), 401
+    actor = USERS.get(un)
+    if not actor or actor.get('role') != '超级管理员':
+        return jsonify({"success": False, "message": "无权限"}), 403
+
+    data = request.get_json() or {}
+    target = (data.get('username') or '').strip()
+    new_pwd = (data.get('new_password') or '').strip()
+    if not target or not new_pwd:
+        return jsonify({"success": False, "message": "请指定账号和新密码"})
+    if len(new_pwd) < 4:
+        return jsonify({"success": False, "message": "新密码至少4位"})
+    if target == un:
+        return jsonify({"success": False, "message": "请使用「修改密码」修改自己的密码"})
+
+    user = USERS.get(target)
+    if not user:
+        return jsonify({"success": False, "message": "目标账号不存在"})
+    user['password'] = hashlib.sha256(new_pwd.encode()).hexdigest()
+    persist()
+    return jsonify({"success": True, "message": f"已重置账号 {target} 的密码"})
 
 @app.route('/api/me')
 def get_current_user():
@@ -765,7 +796,19 @@ def employees():
     # 只过滤掉纯system用户的员工名
     exclude_names = system_emp_names - real_emp_names
     filtered = [e for e in _employees_master_list if e["name"] not in exclude_names]
-    return jsonify({"employees": filtered})
+    emp_users = {}
+    for un, u in USERS.items():
+        if u.get("is_system"):
+            continue
+        en = u.get("employee_name") or u.get("name", "")
+        if en:
+            emp_users[en] = un
+    out = []
+    for e in filtered:
+        row = dict(e)
+        row["username"] = emp_users.get(e["name"], "")
+        out.append(row)
+    return jsonify({"employees": out})
 
 
 # ==================== 员工编辑API ====================
@@ -789,16 +832,30 @@ def update_employee():
     if not old_name or not new_name:
         return jsonify({"success": False, "message": "请提供员工姓名"})
     
-    # 更新雇员列表
     for emp in _employees_master_list:
         if emp['name'] == old_name:
             emp['name'] = new_name
-            if position: emp['position'] = position
-            if group: emp['group'] = group
-            if phone: emp['phone'] = phone
-            if dept: emp['dept'] = dept
+            if position:
+                emp['position'] = position
+            if group:
+                emp['group'] = group
+            if phone:
+                emp['phone'] = phone
+            if dept:
+                emp['dept'] = dept
+            for u in USERS.values():
+                if u.get('employee_name') == old_name:
+                    u['employee_name'] = new_name
+                    u['name'] = new_name
+            perms = _permission_data.setdefault('permissions', {})
+            if old_name in perms and old_name != new_name:
+                perms[new_name] = perms.pop(old_name)
+            enabled = _permission_data.setdefault('employee_enabled', {})
+            if old_name in enabled and old_name != new_name:
+                enabled[new_name] = enabled.pop(old_name)
+            persist()
             return jsonify({"success": True, "message": f"员工 {old_name} 信息已更新"})
-    
+
     return jsonify({"success": False, "message": f"未找到员工 {old_name}"})
 
 @app.route('/api/employee/add', methods=['POST'])
@@ -913,8 +970,15 @@ def delete_employee():
     for i, emp in enumerate(_employees_master_list):
         if emp['name'] == name:
             _employees_master_list.pop(i)
+            for un in list(USERS.keys()):
+                u = USERS[un]
+                if u.get('employee_name') == name and not u.get('is_system'):
+                    del USERS[un]
+            _permission_data.get('permissions', {}).pop(name, None)
+            _permission_data.get('employee_enabled', {}).pop(name, None)
+            persist()
             return jsonify({"success": True, "message": f"员工 {name} 已删除"})
-    
+
     return jsonify({"success": False, "message": f"未找到员工 {name}"})
 
 
@@ -1407,10 +1471,16 @@ def get_my_permissions():
 def save_processes():
     global _permission_data
     data = request.get_json()
+    flows_resynced = 0
     if data and 'processes' in data:
         _permission_data['processes'] = data['processes']
         persist()
-    return jsonify({"success": True, "message": "流程已保存"})
+        flows_resynced = ph.resync_active_flows_from_tree(DB_CONFIG, data['processes'])
+    return jsonify({
+        "success": True,
+        "message": "流程已保存",
+        "flows_resynced": flows_resynced,
+    })
 
 # ==================== 扫码报工-可选操作人（按角色过滤） ====================
 @app.route('/api/scan_workers')
@@ -3131,6 +3201,103 @@ def raw_stock():
             return jsonify({"success": True, "data": item, "message": f"{'入库' if op=='in' else '出库'}成功"})
     return jsonify({"success": False, "error": "未找到该材料"})
 
+
+def _parse_raw_barcode(code: str) -> dict:
+    code = (code or "").strip()
+    if not code:
+        return {}
+    if code.startswith("{") and code.endswith("}"):
+        try:
+            return json.loads(code)
+        except json.JSONDecodeError:
+            pass
+    if "|" in code:
+        parts = [p.strip() for p in code.split("|") if p.strip()]
+        if parts and parts[0].upper() == "RAW":
+            parts = parts[1:]
+        keys = ("name", "supplier", "paper_width", "paper_length")
+        out = {}
+        for i, p in enumerate(parts):
+            if i < len(keys):
+                out[keys[i]] = p
+        return out
+    return {"name": code}
+
+
+@app.route('/api/raw/scan_register', methods=['POST'])
+def raw_scan_register():
+    """扫码登记原材料入库（每张+1，可指定数量）。"""
+    if not resolve_login_user():
+        return jsonify({"success": False, "error": "未登录"}), 401
+    body = request.get_json() or {}
+    code = (body.get("code") or body.get("barcode") or "").strip()
+    qty = int(body.get("qty") or 1)
+    if not code:
+        return jsonify({"success": False, "error": "请扫描或输入条码"})
+    if qty <= 0:
+        return jsonify({"success": False, "error": "数量须大于0"})
+
+    data = load_raw_data()
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    today = datetime.date.today().isoformat()
+
+    for item in data:
+        if item.get("id") == code:
+            item["qty"] = (item.get("qty", 0) or 0) + qty
+            item["updated_at"] = now
+            save_raw_data(data)
+            return jsonify({
+                "success": True,
+                "data": item,
+                "message": f"「{item.get('name')}」扫码入库 +{qty} 张",
+            })
+
+    parsed = _parse_raw_barcode(code)
+    name = (parsed.get("name") or code).strip()
+    supplier = (parsed.get("supplier") or "").strip()
+    pw = str(parsed.get("paper_width") or "")
+    pl = str(parsed.get("paper_length") or "")
+
+    for item in data:
+        if (
+            item.get("name") == name
+            and (item.get("supplier") or "") == supplier
+            and str(item.get("paper_width") or "") == pw
+            and str(item.get("paper_length") or "") == pl
+        ):
+            item["qty"] = (item.get("qty", 0) or 0) + qty
+            if not item.get("date"):
+                item["date"] = today
+            item["updated_at"] = now
+            save_raw_data(data)
+            return jsonify({
+                "success": True,
+                "data": item,
+                "message": f"「{name}」扫码入库 +{qty} 张（累计 {item['qty']}）",
+            })
+
+    new_id = str(int(time.time() * 1000)) + str(len(data))
+    entry = {
+        "id": new_id,
+        "date": today,
+        "name": name,
+        "supplier": supplier,
+        "paper_width": pw,
+        "paper_length": pl,
+        "qty": qty,
+        "remark": "扫码登记",
+        "created_at": now,
+        "updated_at": now,
+    }
+    data.append(entry)
+    save_raw_data(data)
+    return jsonify({
+        "success": True,
+        "data": entry,
+        "message": f"已登记新材料「{name}」+{qty} 张",
+    })
+
+
 # ==================== 静态文件 ====================
 @app.route('/')
 def index():
@@ -3679,9 +3846,9 @@ def production_dashboard():
         
         progress = 0
         steps = []
+        process_tree = _permission_data.get("processes", [])
         if flow:
             parsed = ph.parse_flow_steps(flow.get('steps_json'))
-            current_idx = flow.get('current_step_index', 0) or 0
             total_s = flow.get('total_steps', 0) or len(parsed)
             done_n = sum(1 for s in parsed if s.get('done'))
             progress = round(done_n / total_s * 100) if total_s > 0 else 0
@@ -3690,6 +3857,15 @@ def production_dashboard():
                     "name": s.get('step') or s.get('name'),
                     "done": bool(s.get('done')),
                     "active": (not s.get('done')) and i == done_n,
+                })
+        else:
+            template = ph.template_steps_for_order(process_tree, order_type)
+            for i, s in enumerate(template):
+                nm = s.get("step") or ""
+                steps.append({
+                    "name": nm,
+                    "done": False,
+                    "active": i == 0,
                 })
         
         total_qty = sum(i.get('qty', 0) for i in (o.get('items') or []))
