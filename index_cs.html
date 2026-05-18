@@ -594,7 +594,7 @@
         <a onclick="switchTopPage('dimoldb', this)">🔩 刀模</a>
         <a onclick="switchTopPage('inventory', this)">📦 库存</a>
         <a onclick="switchTopPage('employee', this)">👥 员工</a>
-        <a class="nav-erp" href="https://erp.superboss.cc" target="_blank" rel="noopener noreferrer">🔗 ERP</a>
+        <a class="nav-erp" onclick="switchTopPage('erp', this)">🔗 快麦ERP</a>
     </div>
     <div class="user" id="userInfo" onclick="showUserMenu()">🔑 登录</div>
 </div>
@@ -677,6 +677,18 @@
             </div>
         </div>
         <iframe class="iframe-container" data-src="https://www.kdocs.cn/l/cdIlitRGKpMw" allow="clipboard-read; clipboard-write" style="width:100%;height:calc(100vh - 160px);border:none;border-radius:8px;"></iframe>
+    </div>
+
+    <!-- ===== 快麦 ERP 嵌入 ===== -->
+    <div id="page-erp" class="page-section">
+        <div class="overview-header">
+            <h3>🔗 快麦 ERP</h3>
+            <span style="font-size:12px;color:#888;">系统内嵌入，需登录快麦账号</span>
+        </div>
+        <iframe class="iframe-container" data-src="https://erp.superboss.cc"
+            allow="clipboard-read; clipboard-write"
+            sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+            style="width:100%;height:calc(100vh - 160px);border:none;border-radius:8px;"></iframe>
     </div>
 
     <!-- ===== 聚水潭嵌入 ===== -->
@@ -1667,6 +1679,8 @@
                 a.style.display = hasPerm('刀模库') ? '' : 'none';
             } else if (onclick.includes('inventory') || onclick.includes('raw')) {
                 a.style.display = hasPerm('库存') ? '' : 'none';
+            } else if (onclick.includes('erp')) {
+                a.style.display = hasPerm('快麦ERP') ? '' : 'none';
             } else if (onclick.includes('main') || text.includes('首页')) {
                 a.style.display = '';  // 首页永远显示
             } else {
@@ -1766,6 +1780,7 @@
             'inventory': '库存',
             'raw': '库存',
             'jst': '快麦ERP',
+            'erp': '快麦ERP',
             'production': '订单生产进度',
             'scan': '扫码报工',
             'report': '日报表',
@@ -2021,7 +2036,7 @@
         }
 
         // iframe懒加载
-        if (name === 'diemold') {
+        if (name === 'diemold' || name === 'erp' || name === 'jst') {
             const targetIframe = document.querySelector(`#page-${name} iframe[data-src]`);
             if (targetIframe && !targetIframe.src) {
                 targetIframe.src = targetIframe.dataset.src;
