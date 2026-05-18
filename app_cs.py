@@ -3691,7 +3691,7 @@ def api_km_refresh_token():
 import threading as _th
 _sync_thread = _th.Thread(target=_sync_orders_task, daemon=True)
 _sync_thread.start()
-print('[订单同步] 快麦后台同步线程已启动（每5分钟）')
+print('[订单同步] 快麦+1688 后台同步已启动（每5分钟）')
 
 # ==================== 缺失API补充（客服端）====================
 

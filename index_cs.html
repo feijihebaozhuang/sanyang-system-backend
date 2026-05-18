@@ -37,6 +37,10 @@
             font-size: 16px; border-radius: 6px; cursor: pointer; transition: all 0.3s;
         }
         .topbar .top-nav a:hover, .topbar .top-nav a.active { background: rgba(255,255,255,0.1); color: #fff; }
+        .topbar .top-nav a.nav-erp {
+            background: #1677ff; color: #fff !important; font-weight: 600; margin-left: 6px;
+        }
+        .topbar .top-nav a.nav-erp:hover { background: #4096ff; color: #fff !important; }
         .topbar .user { font-size: 13px; color: rgba(255,255,255,0.7); cursor: pointer; display: flex; align-items: center; gap: 6px; }
         .topbar .user:hover { color: #fff; }
 
@@ -590,6 +594,7 @@
         <a onclick="switchTopPage('dimoldb', this)">🔩 刀模</a>
         <a onclick="switchTopPage('inventory', this)">📦 库存</a>
         <a onclick="switchTopPage('employee', this)">👥 员工</a>
+        <a class="nav-erp" href="https://erp.superboss.cc" target="_blank" rel="noopener noreferrer">🔗 ERP</a>
     </div>
     <div class="user" id="userInfo" onclick="showUserMenu()">🔑 登录</div>
 </div>

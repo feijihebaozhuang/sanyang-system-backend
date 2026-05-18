@@ -1,15 +1,15 @@
 #!/bin/bash
 # ============================================================
-# deploy.sh — 三羊系统部署脚本 v1
-# 用法: ./deploy.sh stable        # 部署正式环境 (3001/3002)
-#       ./deploy.sh dev           # 部署开发环境 (3003/3004)
+# deploy.sh — 三羊系统部署（仅 main → stable 3001/3002）
+# 用法: ./deploy.sh [stable] [--branch=main]
+# 本地开发: git pull origin main（见 pull-main.ps1）
 # ============================================================
 set -euo pipefail
 
 REPO_DIR="/www/feijihe/repo"
 REMOTE="origin"
-DEFAULT_BRANCH_MAIN="main"
-DEFAULT_BRANCH_DEV="dev"
+BRANCH="main"
+TARGET_DIR="/www/feijihe/stable"
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -20,50 +20,32 @@ warn() { echo -e "${YELLOW}[$(date '+%H:%M:%S')] ${NC} $1"; }
 err()  { echo -e "${RED}[$(date '+%H:%M:%S')] ${NC} $1"; }
 
 get_port_entry() {
-    local env="$1" app="$2"
-    case "${env}:${app}" in
-        stable:cs)    echo "3001:/www/feijihe/stable:app_cs.py" ;;
-        stable:prod)  echo "3002:/www/feijihe/stable:app_production.py" ;;
-        dev:cs)       echo "3003:/www/feijihe/dev:app_cs.py" ;;
-        dev:prod)     echo "3004:/www/feijihe/dev:app_production.py" ;;
-    esac
-}
-
-get_env_dir() {
     case "$1" in
-        stable) echo "/www/feijihe/stable" ;;
-        dev)    echo "/www/feijihe/dev" ;;
+        cs)   echo "3001:/www/feijihe/stable:app_cs.py" ;;
+        prod) echo "3002:/www/feijihe/stable:app_production.py" ;;
     esac
 }
 
-# 注意：勿在 ${1:?...} 的提示语里写「{stable|dev}」，否则「}」会提前结束参数展开，导致 ENV 变成「dev}」等异常值。
-if [ $# -lt 1 ]; then
-    err "Usage: $0 stable   OR   $0 dev   [--branch=xxx]"
-    exit 1
-fi
-ENV="$1"
-if [ "$ENV" != "stable" ] && [ "$ENV" != "dev" ]; then
-    err "Environment must be stable or dev (got: $ENV)"
-    exit 1
-fi
-
-BRANCH=""
-if [ "$ENV" = "stable" ]; then
-    BRANCH="$DEFAULT_BRANCH_MAIN"
-else
-    BRANCH="$DEFAULT_BRANCH_DEV"
-fi
 for arg in "$@"; do
-    if [[ "$arg" == --branch=* ]]; then
-        BRANCH="${arg#*=}"
-    fi
+    case "$arg" in
+        stable|--stable) ;;
+        --branch=*) BRANCH="${arg#*=}" ;;
+        dev)
+            err "已取消开发环境。请使用: ./deploy.sh"
+            exit 1
+            ;;
+        *)
+            if [ "$arg" != "stable" ] && [[ "$arg" != --branch=* ]]; then
+                err "未知参数: $arg"
+                err "用法: $0 [stable] [--branch=main]"
+                exit 1
+            fi
+            ;;
+    esac
 done
 
-TARGET_DIR=$(get_env_dir "$ENV")
+log "=== Deploy: branch=$BRANCH target=$TARGET_DIR (3001/3002) ==="
 
-log "=== Deploy: env=$ENV branch=$BRANCH target=$TARGET_DIR ==="
-
-# Step 1
 log "[1/5] Git pull..."
 cd "$REPO_DIR"
 git fetch $REMOTE 2>&1 || { err "fetch failed"; exit 1; }
@@ -71,7 +53,6 @@ git checkout "$BRANCH" 2>&1 || { err "checkout failed"; exit 1; }
 git pull $REMOTE "$BRANCH" 2>&1 || { err "pull failed"; exit 1; }
 COMMIT=$(git rev-parse --short HEAD)
 log "  Commit: $COMMIT ($BRANCH)"
-# 勿同步删除本机密钥与店铺 token（.env / alibaba_shops.json 在目标目录由运维单独维护）
 rsync -a --delete \
   --exclude=venv/ --exclude=__pycache__/ --exclude='*.pyc' \
   --exclude=orders_cache.json --exclude=data.json --exclude=dimoldb.json --exclude=inventory.json \
@@ -80,18 +61,15 @@ rsync -a --delete \
   "$REPO_DIR/" "$TARGET_DIR/"
 log "  Code synced"
 
-# Step 2
 log "[2/5] pip install..."
 VENV_DIR="$TARGET_DIR/venv"
 [ ! -f "$VENV_DIR/bin/activate" ] && python3 -m venv "$VENV_DIR"
 source "$VENV_DIR/bin/activate"
 [ -f "$TARGET_DIR/requirements.txt" ] && pip install -r "$TARGET_DIR/requirements.txt" -q
 
-# Step 3
 log "[3/5] Stop old processes..."
 for app in cs prod; do
-    entry=$(get_port_entry "$ENV" "$app")
-    [ -z "$entry" ] && continue
+    entry=$(get_port_entry "$app")
     port=$(echo "$entry" | cut -d: -f1)
     pids=$(lsof -ti :"$port" 2>/dev/null || true)
     [ -z "$pids" ] && log "  port $port: not running" && continue
@@ -101,28 +79,23 @@ for app in cs prod; do
     log "  port $port: stopped"
 done
 
-# Step 4
 log "[4/5] Start new processes..."
 for app in cs prod; do
-    entry=$(get_port_entry "$ENV" "$app")
-    [ -z "$entry" ] && continue
+    entry=$(get_port_entry "$app")
     IFS=':' read -r port dir script <<< "$entry"
     logfile="/tmp/app_${port}.log"
     log "  Starting: $dir/$script -> :$port"
     cd "$dir"
     source "$VENV_DIR/bin/activate"
-    # setsid 在部分环境会被安全策略拦截，nohup 更通用
     nohup python3 "$script" > "$logfile" 2>&1 &
     log "  PID=$! log=$logfile"
 done
 sleep 3
 
-# Step 5
 log "[5/5] Health check..."
 FAIL=0
 for app in cs prod; do
-    entry=$(get_port_entry "$ENV" "$app")
-    [ -z "$entry" ] && continue
+    entry=$(get_port_entry "$app")
     port=$(echo "$entry" | cut -d: -f1)
     ok=0
     for i in $(seq 1 6); do
@@ -133,5 +106,5 @@ for app in cs prod; do
     [ "$ok" -eq 1 ] && log "  OK :$port" || { err "  FAIL :$port"; FAIL=1; }
 done
 
-[ "$FAIL" -eq 0 ] && log "SUCCESS env=$ENV commit=$COMMIT" || err "FAILURE - check logs, no auto-rollback"
+[ "$FAIL" -eq 0 ] && log "SUCCESS commit=$COMMIT" || err "FAILURE - check logs"
 exit $FAIL

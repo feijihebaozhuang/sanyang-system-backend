@@ -37,7 +37,12 @@
             font-size: 16px; border-radius: 6px; cursor: pointer; transition: all 0.3s;
         }
         .topbar .top-nav a:hover, .topbar .top-nav a.active { background: rgba(255,255,255,0.1); color: #fff; }
+        .topbar .top-nav a.nav-erp {
+            background: #1677ff; color: #fff !important; font-weight: 600; margin-left: 6px;
+        }
+        .topbar .top-nav a.nav-erp:hover { background: #4096ff; color: #fff !important; }
         .topbar .user { font-size: 13px; color: rgba(255,255,255,0.7); cursor: pointer; display: flex; align-items: center; gap: 6px; }
+        .urgent-today-wrap { border: 1px solid #fecaca; background: #fff5f5; border-radius: 10px; margin: 12px 0; }
         .topbar .user:hover { color: #fff; }
 
         /* ===== 二级导航 ===== */
@@ -397,6 +402,7 @@
         <a onclick="switchTopPage('inventory', this)">📦 成品</a>
         <a onclick="switchTopPage('raw', this)">🧱 原材料</a>
         <a onclick="switchTopPage('employee', this)">👥 员工</a>
+        <a class="nav-erp" href="https://erp.superboss.cc" target="_blank" rel="noopener noreferrer">🔗 ERP</a>
     </div>
     <div class="user" id="userInfo" onclick="showUserMenu()">🔑 登录</div>
 </div>
@@ -872,6 +878,22 @@
             </div>
         </div>
 
+        <!-- 当日加急订单 -->
+        <div class="order-table-wrap urgent-today-wrap" id="urgentTodayWrap" style="display:none;">
+            <div class="table-title" style="display:flex;justify-content:space-between;align-items:center;">
+                <span>🔴 当日加急订单 <span id="urgentTodayCount" style="font-size:12px;color:#e94560;font-weight:400;"></span></span>
+            </div>
+            <div style="max-height:200px;overflow-y:auto;">
+                <table style="width:100%;table-layout:fixed;">
+                    <colgroup><col style="width:12%"><col style="width:14%"><col style="width:10%"><col style="width:24%"><col style="width:8%"><col style="width:32%"></colgroup>
+                    <thead><tr>
+                        <th>日期</th><th>单号</th><th>店铺</th><th>属性/商品</th><th>数量</th><th>状态</th>
+                    </tr></thead>
+                    <tbody id="urgentTodayList"></tbody>
+                </table>
+            </div>
+        </div>
+
         <!-- 今日订单列表 -->
         <div class="order-table-wrap">
             <div class="table-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
@@ -1219,6 +1241,7 @@
     </div>
 </div>
 
+<script src="/static/auth_session.js"></script>
 <script>
     // ===== 当前登录用户 =====
     let _currentUser = null;
@@ -1241,7 +1264,7 @@
         errEl.style.display = 'none';
         
         try {
-            const res = await fetch('/api/login', {
+            const res = await SY_AUTH.apiFetch('/api/login', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({username, password})
@@ -1258,8 +1281,8 @@
                     await loadPermissions();
                 } catch(e) { console.error('loadPermissions error:', e); }
                 try {
-                    initPages();
-                } catch(e) { console.error('initPages error:', e); }
+                    restorePageAfterLogin();
+                } catch(e) { console.error('restorePage error:', e); }
                 updateUserInfo();
                 // 兜底：确保登录框已隐藏
                 document.getElementById('loginOverlay').style.display = 'none';
@@ -1280,7 +1303,8 @@
     // ===== 登出 =====
     async function doLogout() {
         if (!confirm('确认退出登录？')) return;
-        await fetch('/api/logout');
+        await SY_AUTH.apiFetch('/api/logout');
+        SY_AUTH.clearRoute();
         _currentUser = null;
         document.getElementById('loginOverlay').style.display = 'flex';
         document.getElementById('loginUser').value = '';
@@ -1544,18 +1568,36 @@
         }
     }
 
+    // ===== 刷新后恢复当前页 =====
+    function restorePageAfterLogin() {
+        const route = SY_AUTH.readRoute();
+        initPages();
+        if (route.sub && document.getElementById('page-' + route.sub)) {
+            const subEl = document.querySelector(
+                ".subnav a[onclick*=\"switchSubPage('" + route.sub + "'\"]"
+            );
+            switchSubPage(route.sub, subEl);
+            return;
+        }
+        if (route.top && route.top !== 'main' && document.getElementById('page-' + route.top)) {
+            const topEl = document.querySelector(
+                "#topNav a[onclick*=\"switchTopPage('" + route.top + "'\"]"
+            );
+            switchTopPage(route.top, topEl);
+        }
+    }
+
     // ===== 检查登录状态并初始化 =====
     async function checkLogin() {
         try {
-            const res = await fetch('/api/me');
+            const res = await SY_AUTH.apiFetch('/api/me');
             const data = await res.json();
             if (data.logged_in) {
                 _currentUser = data.user;
                 document.getElementById('loginOverlay').style.display = 'none';
                 updateUserInfo();
-                // 加载权限数据
                 await loadPermissions();
-                initPages();
+                restorePageAfterLogin();
             } else {
                 document.getElementById('loginOverlay').style.display = 'flex';
             }
@@ -1605,6 +1647,7 @@
     // ===== 页面切换 =====
     function switchTopPage(name, el) {
         if (!checkPagePerm(name)) return;
+        SY_AUTH.saveRoute(name, null);
 
         document.querySelectorAll('#topNav a').forEach(a => a.classList.remove('active'));
         if (el) el.classList.add('active');
@@ -1655,6 +1698,7 @@
 
     function switchSubPage(name, el) {
         if (!checkPagePerm(name)) return;
+        SY_AUTH.saveRoute('main', name);
 
         document.querySelectorAll('.subnav a').forEach(a => a.classList.remove('active'));
         if (el) el.classList.add('active');
@@ -1749,8 +1793,41 @@
     }
     // ===== API 调用 =====
     async function getAPI(url) {
-        const res = await fetch(url);
+        const res = await SY_AUTH.apiFetch(url);
         return res.json();
+    }
+
+    function renderUrgentTodayOrders(urgentList) {
+        const wrap = document.getElementById('urgentTodayWrap');
+        const tbody = document.getElementById('urgentTodayList');
+        const countEl = document.getElementById('urgentTodayCount');
+        if (!wrap || !tbody) return;
+        if (!urgentList || urgentList.length === 0) {
+            wrap.style.display = 'none';
+            return;
+        }
+        wrap.style.display = '';
+        if (countEl) countEl.textContent = `（${urgentList.length} 单）`;
+        tbody.innerHTML = urgentList.map(o => {
+            let dateStr = '—';
+            if (o.pay_time) {
+                const p = String(o.pay_time);
+                if (p.length === 8) dateStr = p.substring(4, 6) + '-' + p.substring(6, 8);
+                else dateStr = p;
+            }
+            let attrStr = o.product || o.name || '';
+            if (o.items && o.items.length > 0) {
+                attrStr = o.items.map(item => (item.display || item.spec || item.name || '') + ' ×' + (item.qty || 0)).join('；');
+            }
+            return `<tr>
+                <td style="font-size:11px;color:#888;">${dateStr}</td>
+                <td style="font-family:monospace;font-size:12px;">${o.id}</td>
+                <td>${o.store || '—'}</td>
+                <td style="font-size:11px;">${attrStr}</td>
+                <td>${o.qty || '—'}</td>
+                <td><span class="urgent-badge">🔴加急</span> ${o.status || ''}</td>
+            </tr>`;
+        }).join('');
     }
 
     // ===== 搜索 =====
@@ -2059,9 +2136,9 @@
         const data = await res.json();
         if (data.success) {
             o.urgent = newUrgent;
-            // 刷新首页统计
             const urgentCount = allOrders.filter(x => x.urgent).length;
             document.getElementById('statUrgent').textContent = urgentCount;
+            renderUrgentTodayOrders(allOrders.filter(x => x.urgent));
             renderOrderPage();
         }
     }
@@ -2151,6 +2228,7 @@
         document.getElementById('statDone').textContent = data.summary.completed;
 
         allOrders = data.today_orders;
+        renderUrgentTodayOrders(allOrders.filter(o => o.urgent));
         // 重置筛选和下拉框
         document.getElementById('filterStore').innerHTML = '<option value="">全部店铺</option>';
         document.getElementById('filterWorker').innerHTML = '<option value="">全部客服</option>';

@@ -12,22 +12,14 @@ from datetime import timedelta
 from pypinyin import lazy_pinyin
 import pymysql
 
-DB_CONFIG = {
-    'host': '127.0.0.1',
-    'port': 3306,
-    'user': 'root',
-    'password': 'Jiangjunyan2015',
-    'database': 'sanyang',
-    'charset': 'utf8mb4',
-    'autocommit': True
-}
+from settings import DB_CONFIG, FLASK_SECRET_KEY
 
 def get_db():
     """获取数据库连接，每次调用新建（线程安全）"""
     return pymysql.connect(**DB_CONFIG, cursorclass=pymysql.cursors.DictCursor)
 
 app = Flask(__name__, static_folder='.')
-app.secret_key = 'feijihe_sanyang_2026_secret_key_!@#'
+app.secret_key = FLASK_SECRET_KEY
 CORS(app, supports_credentials=True)
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=31)
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
@@ -3989,8 +3981,20 @@ def api_sync_force():
     if 'username' not in session:
         return jsonify({'success': False, 'error': '未登录'}), 401
     try:
-        n = _km_sync_orders_to_cache(days_back=30)
-        return jsonify({'success': True, 'count': n, 'message': f'已同步 {n} 条待发货订单'})
+        import order_sync as _osync
+        report = _osync.sync_orders_to_cache(
+            ORDERS_CACHE_FILE,
+            days_back=30,
+            memo_getter=get_order_memo,
+            include_1688_direct=True,
+        )
+        n = report.get('pending_count', 0)
+        return jsonify({
+            'success': True,
+            'count': n,
+            'report': report,
+            'message': f'已同步 {n} 条待发货订单（1688含快麦+直连）',
+        })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -4112,7 +4116,11 @@ def production_dashboard():
         elif '扣底盒' in prod_name or '双插盒' in prod_name: order_type = '扣底盒'
         elif '现货' in prod_name or '现' in prod_name: order_type = '现货'
         
-        shop = o.get('shop_name', '亚润')
+        try:
+            import order_sync as _osync
+            shop = _osync.normalize_shop_display(o.get('shop_name', '') or '')
+        except ImportError:
+            shop = (o.get('shop_name') or '').strip() or '未知店铺'
         created_date = (o.get('created') or '')[:10]
         
         shops.add(shop)
@@ -4377,5 +4385,5 @@ def production_flow_step():
 
 if __name__ == '__main__':
     print("🏭 飞机盒智能生产管理系统启动中...")
-    print("📡 http://0.0.0.0:3001")
-    app.run(host='0.0.0.0', port=3004, threaded=True)
+    print("📡 http://0.0.0.0:3002")
+    app.run(host='0.0.0.0', port=3002, threaded=True)
