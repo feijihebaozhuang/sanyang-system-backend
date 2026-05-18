@@ -463,33 +463,64 @@ def logout():
 
 @app.route('/api/change_password', methods=['POST'])
 def change_password():
-    """修改当前登录用户的密码"""
-    if 'username' not in session:
+    """仅允许修改当前登录账号自己的密码。"""
+    username = resolve_login_user()
+    if not username:
         return jsonify({"success": False, "message": "未登录"}), 401
-    
-    data = request.get_json()
+
+    data = request.get_json() or {}
+    target = (data.get('username') or data.get('target_user') or '').strip()
+    if target and target != username:
+        return jsonify({"success": False, "message": "只能修改自己的密码"}), 403
+
     old_pwd = data.get('old_password', '').strip()
     new_pwd = data.get('new_password', '').strip()
-    
+
     if not old_pwd or not new_pwd:
         return jsonify({"success": False, "message": "请填写旧密码和新密码"})
-    
+
     if len(new_pwd) < 4:
         return jsonify({"success": False, "message": "新密码至少4位"})
-    
-    username = session['username']
+
     user = USERS.get(username)
     if not user:
         return jsonify({"success": False, "message": "用户不存在"})
-    
+
     old_hash = hashlib.sha256(old_pwd.encode()).hexdigest()
     if user['password'] != old_hash:
         return jsonify({"success": False, "message": "旧密码错误"})
-    
-    # 更新密码
+
     user['password'] = hashlib.sha256(new_pwd.encode()).hexdigest()
-    persist()  # 持久化到文件，重启不丢
+    persist()
     return jsonify({"success": True, "message": "密码修改成功"})
+
+
+@app.route('/api/admin/reset_password', methods=['POST'])
+def admin_reset_password():
+    """超级管理员重置他人密码（普通员工不可用）。"""
+    un = resolve_login_user()
+    if not un:
+        return jsonify({"success": False, "message": "未登录"}), 401
+    actor = USERS.get(un)
+    if not actor or actor.get('role') != '超级管理员':
+        return jsonify({"success": False, "message": "无权限"}), 403
+
+    data = request.get_json() or {}
+    target = (data.get('username') or '').strip()
+    new_pwd = (data.get('new_password') or '').strip()
+    if not target or not new_pwd:
+        return jsonify({"success": False, "message": "请指定账号和新密码"})
+    if len(new_pwd) < 4:
+        return jsonify({"success": False, "message": "新密码至少4位"})
+    if target == un:
+        return jsonify({"success": False, "message": "请使用「修改密码」修改自己的密码"})
+
+    user = USERS.get(target)
+    if not user:
+        return jsonify({"success": False, "message": "目标账号不存在"})
+    user['password'] = hashlib.sha256(new_pwd.encode()).hexdigest()
+    persist()
+    return jsonify({"success": True, "message": f"已重置账号 {target} 的密码"})
 
 @app.route('/api/me')
 def get_current_user():
@@ -634,14 +665,64 @@ def _parse_item_display(spec, name, qty=0):
     s = spec.replace(';', ' ').replace('；', ' ').strip()
     return s[:40]
 
+def _order_date_key(o: dict) -> str:
+    """从订单字段提取 YYYY-MM-DD（本地日历日）。"""
+    for field in ('pay_time', 'created', 'consign_time', 'updTime', 'updated'):
+        raw = str(o.get(field) or '').strip()
+        if not raw:
+            continue
+        if len(raw) >= 10 and raw[4] == '-' and raw[7] == '-':
+            return raw[:10]
+        digits = ''.join(c for c in raw if c.isdigit())
+        if len(digits) >= 8:
+            return f'{digits[:4]}-{digits[4:6]}-{digits[6:8]}'
+    return ''
+
+
 def _order_on_date(o: dict, date_yyyy_mm_dd: str) -> bool:
-    """匹配订单日期（created/pay_time 支持 yyyy-MM-dd 或 yyyyMMdd）。"""
-    raw = str(o.get('created') or o.get('pay_time') or '')
-    if raw.startswith(date_yyyy_mm_dd):
-        return True
-    digits = ''.join(c for c in raw if c.isdigit())
-    want = date_yyyy_mm_dd.replace('-', '')
-    return len(digits) >= 8 and digits[:8] == want
+    return _order_date_key(o) == date_yyyy_mm_dd
+
+
+def _filter_orders_by_range(orders: list, range_type: str) -> list:
+    """店铺看板时间筛选：live/yesterday/week/month/last30/quarter。"""
+    now = datetime.datetime.now()
+    today = now.date()
+    out = []
+    for o in orders:
+        dk = _order_date_key(o)
+        if not dk:
+            continue
+        try:
+            od = datetime.datetime.strptime(dk, '%Y-%m-%d').date()
+        except ValueError:
+            continue
+        if range_type == 'live':
+            if od != today:
+                continue
+        elif range_type == 'yesterday':
+            y = today - datetime.timedelta(days=1)
+            if od != y:
+                continue
+        elif range_type == 'week':
+            week_start = today - datetime.timedelta(days=today.weekday())
+            if od < week_start:
+                continue
+        elif range_type == 'month':
+            if od.year != today.year or od.month != today.month:
+                continue
+        elif range_type == 'last30':
+            if od < today - datetime.timedelta(days=29):
+                continue
+        elif range_type == 'quarter':
+            q_start_month = ((today.month - 1) // 3) * 3 + 1
+            q_start = datetime.date(today.year, q_start_month, 1)
+            if od < q_start:
+                continue
+        else:
+            if od < today - datetime.timedelta(days=6):
+                continue
+        out.append(o)
+    return out
 
 
 def _dashboard_shop_info(shop_name: str) -> dict:
@@ -671,9 +752,11 @@ def dashboard():
     
     # 读取订单缓存
     orders = []
+    total_sales = 0.0
     try:
-        if os.path.exists(ORDERS_CACHE_FILE):
-            with open(ORDERS_CACHE_FILE, 'r', encoding='utf-8') as f:
+        cache_path = _orders_cache_path()
+        if os.path.exists(cache_path):
+            with open(cache_path, 'r', encoding='utf-8') as f:
                 cache = json.load(f)
             raw_orders = cache.get('orders', [])
             try:
@@ -682,6 +765,10 @@ def dashboard():
                     _km.finalize_cache_order(o)
             except ImportError:
                 pass
+            prod_by_id = {
+                x['inner_id']: x
+                for x in _build_production_orders_for_cs()
+            }
             today_orders_raw = [o for o in raw_orders if _order_on_date(o, date)]
             
             for o in today_orders_raw:
@@ -715,6 +802,17 @@ def dashboard():
                     })
                 
                 ex = _order_extra.get(oid, {})
+                flow = (prod_by_id.get(oid) or {}).get('flow') or []
+                ps = _production_status_from_flow(flow)
+                try:
+                    import km_api as _km
+                    amt = _km.km_to_float(o.get('total_amount'))
+                except ImportError:
+                    try:
+                        amt = float(o.get('total_amount') or 0)
+                    except (TypeError, ValueError):
+                        amt = 0.0
+                total_sales += amt
                 orders.append({
                     'id': oid,
                     'store': shop_info['store'],
@@ -722,12 +820,16 @@ def dashboard():
                     'product': product_names[:50] if product_names else (items[0].get('name','?')[:30] if items else '？'),
                     'qty': sum(i.get('qty', 0) for i in items),
                     'items': detail_items,  # 返回结构化items
-                    'process': '待处理',
-                    'status': '待发货',
+                    'process': ps.get('current_process', '待处理'),
+                    'status': ps.get('status', '待发货'),
+                    'progress': ps.get('progress', 0),
+                    'province': (o.get('receiver_province') or '').strip(),
+                    'city': (o.get('receiver_city') or '').strip(),
                     'urgent': bool(ex.get('urgent')),
                     'remark': o.get('seller_memo', '') or o.get('buyer_memo', ''),
                     'pay_time': _pay_yyyymmdd,
                     'created': o.get('created', ''),
+                    'total_amount': amt,
                 })
     except Exception as e:
         print(f'[今日订单] 读取缓存失败: {e}')
@@ -736,11 +838,12 @@ def dashboard():
         'date': date,
         'summary': {
             'total_orders': len(orders),
-            'in_production': len([o for o in orders if o['status'] not in ('已完成',)]),
-            'urgent_orders': len([o for o in orders if o['urgent']]),
-            'completed': len([o for o in orders if o['status'] == '已完成']),
+            'in_production': len([o for o in orders if o.get('status') not in ('已完成',)]),
+            'urgent_orders': len([o for o in orders if o.get('urgent')]),
+            'completed': len([o for o in orders if o.get('status') == '已完成']),
+            'total_sales': round(total_sales, 2),
         },
-        'today_orders': orders
+        'today_orders': orders,
     })
 
 
@@ -751,12 +854,6 @@ def shop_databoard():
 
     range_type = request.args.get('range', 'week')
     now = datetime.datetime.now()
-    if range_type == 'month':
-        start = now - datetime.timedelta(days=30)
-    elif range_type == 'quarter':
-        start = now - datetime.timedelta(days=90)
-    else:
-        start = now - datetime.timedelta(days=7)
 
     raw_orders: list = []
     try:
@@ -773,21 +870,22 @@ def shop_databoard():
     except Exception as e:
         print(f'[店铺看板] 读取缓存失败: {e}')
 
-    def _order_dt(o: dict) -> datetime.datetime | None:
-        raw = str(o.get('created') or o.get('pay_time') or '')
-        digits = ''.join(c for c in raw if c.isdigit())
-        if len(digits) < 8:
-            return None
-        try:
-            return datetime.datetime.strptime(digits[:8], '%Y%m%d')
-        except ValueError:
-            return None
-
-    in_range = []
-    for o in raw_orders:
-        dt = _order_dt(o)
-        if dt and dt >= start.replace(hour=0, minute=0, second=0, microsecond=0):
-            in_range.append(o)
+    in_range = _filter_orders_by_range(raw_orders, range_type)
+    if range_type == 'live':
+        days_span = 1
+    elif range_type == 'yesterday':
+        days_span = 1
+    elif range_type == 'week':
+        days_span = max(1, now.date().weekday() + 1)
+    elif range_type == 'month':
+        days_span = now.day
+    elif range_type == 'last30':
+        days_span = 30
+    elif range_type == 'quarter':
+        q_start_month = ((now.month - 1) // 3) * 3 + 1
+        days_span = max(1, (now.date() - datetime.date(now.year, q_start_month, 1)).days + 1)
+    else:
+        days_span = 7
 
     try:
         import km_api as _km
@@ -807,7 +905,6 @@ def shop_databoard():
         plat = (o.get('platform_label') or o.get('platform') or '其他').strip()
         platform_counts[plat] += 1
 
-    days_span = max(1, (now.date() - start.date()).days + 1)
     trend = []
     for i in range(min(14, days_span) - 1, -1, -1):
         d = (now - datetime.timedelta(days=i)).date()
@@ -1018,7 +1115,13 @@ def _order_detail_from_cache(o):
     if len(items) > 1:
         product += f" 等{len(items)}种"
     qty = sum(int(i.get("qty", 0) or 0) for i in items)
-    amount = o.get("payment") or o.get("pay_amount") or o.get("total_fee") or 0
+    try:
+        import km_api as _km
+        amount = _km.km_to_float(o.get("total_amount"))
+    except ImportError:
+        amount = o.get("payment") or o.get("pay_amount") or o.get("total_fee") or 0
+    province = (o.get("receiver_province") or "").strip()
+    city = (o.get("receiver_city") or "").strip()
     return {
         "order_id": o.get("km_sid") or o.get("so_id", ""),
         "store": o.get("shop_name", ""),
@@ -1026,8 +1129,10 @@ def _order_detail_from_cache(o):
         "product": product,
         "qty": qty,
         "amount": amount,
-        "order_date": (o.get("created") or o.get("pay_time") or "")[:10],
+        "order_date": _order_date_key(o) or (o.get("created") or o.get("pay_time") or "")[:10],
         "delivery_date": (o.get("plan_delivery_date") or o.get("consign_time") or "")[:10],
+        "province": province,
+        "city": city,
         "address": o.get("receiver_address", "") or "",
         "logistics": o.get("logistics_company", "") or o.get("express", "") or "",
     }
@@ -1042,7 +1147,7 @@ def search_order():
     o = _find_cached_order(query)
     if not o:
         return jsonify({"found": False, "message": "未找到该订单"})
-    so_id = o.get("so_id", "")
+    so_id = str(o.get("km_sid") or o.get("so_id") or "")
     extra = _order_extra.get(so_id, {})
     prod_list = _build_production_orders_for_cs()
     prod = next((x for x in prod_list if x.get("inner_id") == so_id), None)
@@ -3497,94 +3602,15 @@ print('[订单同步] 快麦+1688 后台同步已启动（每5分钟）')
 # ==================== 缺失API补充（客服端）====================
 
 def _build_production_orders_for_cs():
-    """与 app.py 生产进度同源：读 orders_cache + 工序树 + 加急状态；供客服端列表/进度条使用。"""
-    process_tree = _permission_data.get("processes", [])
+    """读 orders_cache + production_flows（生产端扫码报工）+ 工序树。"""
+    import production_helpers as ph
 
-    def get_flow_for_order(order_type):
-        if not process_tree:
-            return [{"step": "客服接单", "done": False, "time": "-", "person": ""}]
-        is_tree = isinstance(process_tree[0], dict) and "dept" in process_tree[0]
-        if not is_tree:
-            return [{"step": s, "done": False, "time": "-", "person": ""} for s in process_tree]
-        target_dept = None
-        if order_type == "纸箱":
-            for d in process_tree:
-                if "纸箱" in d.get("dept", ""):
-                    target_dept = d
-                    break
-        else:
-            for d in process_tree:
-                if "美丽湾" in d.get("dept", "") or "飞机盒" in d.get("dept", ""):
-                    target_dept = d
-                    break
-        if not target_dept:
-            target_dept = process_tree[0]
-        if not target_dept or not target_dept.get("steps"):
-            return [{"step": "客服接单", "done": False, "time": "-", "person": ""}]
-        return [
-            {"step": s["name"], "done": False, "time": "-", "person": ""}
-            for s in target_dept.get("steps", [])
-        ]
-
-    orders_data = []
-    try:
-        if os.path.exists(ORDERS_CACHE_FILE):
-            with open(ORDERS_CACHE_FILE, "r", encoding="utf-8") as f:
-                cache = json.load(f)
-            for o in cache.get("orders", []):
-                first_item = (o.get("items") or [{}])[0]
-                prod_name = first_item.get("name", "")
-                order_type = "纸箱" if "纸箱" in prod_name else "飞机盒"
-                specs = []
-                for item in o.get("items") or []:
-                    spec = item.get("spec", "") or ""
-                    qty = item.get("qty", 0) or 0
-                    specs.append({"spec": spec, "qty": qty})
-                total_qty = sum(i.get("qty", 0) for i in (o.get("items") or []))
-                addr = o.get("receiver_address", "")
-                addr_parts = addr.split() if addr else []
-                province = addr_parts[0] if len(addr_parts) > 0 else ""
-                city = addr_parts[1] if len(addr_parts) > 1 else ""
-                so_id = o.get("so_id", "")
-                extra = _order_extra.get(so_id, {})
-                product_parts = []
-                for item in o.get("items") or []:
-                    label = (item.get("spec") or item.get("name") or "?")[:40]
-                    q = item.get("qty", 0) or 0
-                    product_parts.append(f"{label} x{q}")
-                product_str = "; ".join(product_parts[:3])
-                if len(product_parts) > 3:
-                    product_str += f" …共{len(product_parts)}行"
-                orders_data.append(
-                    {
-                        "inner_id": so_id,
-                        "store": o.get("shop_name", ""),
-                        "province": province,
-                        "city": city,
-                        "specs": specs,
-                        "product": product_str or "?",
-                        "seller_memo": o.get("seller_memo", "") or "",
-                        "buyer_memo": o.get("buyer_memo", "") or "",
-                        "qty": total_qty,
-                        "type": order_type,
-                        "urgent": bool(extra.get("urgent")),
-                        "flow": get_flow_for_order(order_type),
-                    }
-                )
-    except Exception as e:
-        print(f"[生产进度 CS] 读取缓存失败: {e}")
-
-    # 与主站一致：演示用进度填充（后续可改为读扫码报工表）
-    for i, order in enumerate(orders_data):
-        flow = order.get("flow") or []
-        if not flow:
-            continue
-        n = min(i % 4 + 1, len(flow))
-        for j in range(n):
-            flow[j]["done"] = True
-            flow[j]["time"] = "2026-04-28 09:00"
-            flow[j]["person"] = "张慧平"
-    return orders_data
+    return ph.build_production_orders(
+        _orders_cache_path(),
+        DB_CONFIG,
+        _permission_data.get("processes", []),
+        _order_extra,
+    )
 
 
 @app.route("/api/production_orders")

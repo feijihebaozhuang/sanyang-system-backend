@@ -1056,7 +1056,7 @@
             <div class="stat-card total"><div class="num" id="statTotal">--</div><div class="label">总单数</div></div>
             <div class="stat-card production"><div class="num" id="statProduction">--</div><div class="label">生产中</div></div>
             <div class="stat-card urgent"><div class="num" id="statUrgent">--</div><div class="label">加急单</div></div>
-            <div class="stat-card done"><div class="num" id="statDone">--</div><div class="label">总完成</div></div>
+            <div class="stat-card done"><div class="num" id="statDone">--</div><div class="label">销售额</div></div>
         </div>
 
         <!-- 刀模快速查询 -->
@@ -1227,8 +1227,11 @@
             <div style="display:flex;gap:12px;align-items:center;">
                 <span id="boardLiveTime" style="font-size:14px;color:rgba(255,255,255,0.6);font-family:monospace;"></span>
                 <select id="boardRange" style="padding:6px 12px;border:1px solid rgba(255,255,255,0.2);border-radius:6px;font-size:13px;background:rgba(255,255,255,0.1);color:#fff;outline:none;" onchange="loadDataBoard()">
+                    <option value="live" style="background:#1a1a2e;color:#fff;">实时（今日）</option>
+                    <option value="yesterday" style="background:#1a1a2e;color:#fff;">昨天</option>
                     <option value="week" style="background:#1a1a2e;color:#fff;">本周</option>
                     <option value="month" style="background:#1a1a2e;color:#fff;">本月</option>
+                    <option value="last30" style="background:#1a1a2e;color:#fff;">最近30天</option>
                     <option value="quarter" style="background:#1a1a2e;color:#fff;">本季度</option>
                 </select>
             </div>
@@ -1385,7 +1388,7 @@
                     <button onclick="doQuote()" style="width:100%;padding:10px;background:linear-gradient(135deg,#1677ff,#4096ff);color:#fff;border:none;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer;">🚀 开始报价</button>
                     
                     <div id="quoteTipBox" style="margin-top:12px;padding:10px;background:#fff7e6;border-radius:8px;font-size:12px;color:#d48806;border:1px solid #ffe58f;">
-                        💡 <b>报价小贴士：</b>1000个左右按1.7倍利润，3000个按1.5倍，5000个按1.35倍。大尺寸成本高的适当再优惠。
+                        💡 <b>报价小贴士：</b>1000个左右按85%折扣，3000个按75%折扣，5000个按65%折扣。大尺寸成本高的适当再优惠。
                     </div>
                 </div>
                 
@@ -1842,7 +1845,7 @@
         }
 
         try {
-            const res = await fetch('/api/change_password', {
+            const res = await SY_AUTH.apiFetch('/api/change_password', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({old_password: oldPwd, new_password: newPwd})
@@ -1954,9 +1957,16 @@
         return false;
     }
 
+    function localTodayStr() {
+        const d = new Date();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return d.getFullYear() + '-' + m + '-' + day;
+    }
+
     // ===== 初始化所有页面（登录后）=====
     function initPages() {
-        document.getElementById('datePicker').value = new Date().toISOString().split('T')[0];
+        document.getElementById('datePicker').value = localTodayStr();
         updateNavByRole();
         loadDashboard();
         loadQuoteConfig(); // 加载报价配置
@@ -1975,7 +1985,9 @@
 
         // 切到实时订单页时自动加载（有缓存直接显示，后台刷新）
         if (name === 'realtime') {
-            setTimeout(() => rtLoadOrders(), 50);
+            setTimeout(() => { rtLoadOrders(); startRtAutoRefresh(); }, 50);
+        } else {
+            stopRtAutoRefresh();
         }
 
         // 切到页面时回顶部
@@ -2062,6 +2074,7 @@
             document.getElementById('page-main').classList.remove('active');
             document.getElementById('page-realtime').classList.add('active');
             rtLoadOrders();
+            startRtAutoRefresh();
         } else if (name === 'diemold') {
             document.getElementById('page-main').classList.remove('active');
             document.getElementById('page-diemold').classList.add('active');
@@ -2217,6 +2230,7 @@
                 <div class="info-row"><span class="label">金额</span><span>¥${d.amount}</span></div>
                 <div class="info-row"><span class="label">下单日期</span><span>${d.order_date}</span></div>
                 <div class="info-row"><span class="label">交货日期</span><span>${d.delivery_date}</span></div>
+                <div class="info-row"><span class="label">省/市</span><span>${((d.province || '') + ' ' + (d.city || '')).trim() || '—'}</span></div>
                 <div class="info-row"><span class="label">收货地址</span><span>${d.address}</span></div>
                 <div class="info-row"><span class="label">物流</span><span>${d.logistics}</span></div>
             `;
@@ -2317,6 +2331,10 @@
             } else {
                 attrStr = o.product || o.name || '';
             }
+            const region = [o.province, o.city].filter(Boolean).join(' ');
+            if (region) {
+                attrStr += '<div style="font-size:10px;color:#888;margin-top:4px;">📍 ' + region + '</div>';
+            }
             // 卖家备注
             const sellerMemo = o.remark || '';
             return `
@@ -2327,7 +2345,7 @@
                 <td data-label="客服"${isEmployee?' style="display:none"':''}>${o.worker || '—'}</td>
                 <td data-label="属性/商品" style="font-size:11px;line-height:1.6;white-space:normal;word-break:break-all;">${attrStr}</td>
                 <td data-label="数量">${o.qty}</td>
-                <td data-label="工序">${o.process}</td>
+                <td data-label="工序">${o.process || '—'}${o.progress != null ? '<div style="font-size:10px;color:#1677ff;">' + o.progress + '%</div>' : ''}</td>
                 <td data-label="状态">
                     <span class="tag ${o.status==='已完成'?'tag-done':o.status==='待审单'?'tag-pending':'tag-production'}">${o.status}</span>
                     ${o.urgent ? '<span class="urgent-badge">🔴加急</span>' : ''}
@@ -2511,13 +2529,22 @@
 
     async function loadDashboard() {
         const date = document.getElementById('datePicker').value;
-        const data = await getAPI('/api/dashboard?date=' + date);
-        document.getElementById('statTotal').textContent = data.summary.total_orders;
-        document.getElementById('statProduction').textContent = data.summary.in_production;
-        document.getElementById('statUrgent').textContent = data.summary.urgent_orders;
-        document.getElementById('statDone').textContent = data.summary.completed;
+        let data;
+        try {
+            data = await getAPI('/api/dashboard?date=' + encodeURIComponent(date));
+        } catch (e) {
+            console.error('loadDashboard', e);
+            alert('加载首页数据失败，请稍后重试');
+            return;
+        }
+        const summary = data.summary || {};
+        document.getElementById('statTotal').textContent = summary.total_orders ?? 0;
+        document.getElementById('statProduction').textContent = summary.in_production ?? 0;
+        document.getElementById('statUrgent').textContent = summary.urgent_orders ?? 0;
+        const sales = summary.total_sales;
+        document.getElementById('statDone').textContent = sales != null ? ('¥' + Number(sales).toLocaleString('zh-CN', {maximumFractionDigits: 0})) : '--';
 
-        allOrders = data.today_orders;
+        allOrders = data.today_orders || [];
         // 重置筛选和下拉框
         document.getElementById('filterStore').innerHTML = '<option value="">全部店铺</option>';
         document.getElementById('filterWorker').innerHTML = '<option value="">全部客服</option>';
@@ -5756,11 +5783,31 @@
         rtRenderOrders();
     }
 
-    async function rtLoadOrders() {
-        _rtLoaded = false;
-        rtSetStatus('加载中…', 'load');
-        const list = document.getElementById('rtOrderList');
-        if (list) list.innerHTML = '<div style="text-align:center;padding:40px 0;color:#999;font-size:13px;">⏳ 加载中...</div>';
+
+    let _rtAutoTimer = null;
+    function startRtAutoRefresh() {
+        stopRtAutoRefresh();
+        _rtAutoTimer = setInterval(function() {
+            var page = document.getElementById('page-realtime');
+            if (page && page.classList.contains('active')) {
+                rtLoadOrders(true);
+            }
+        }, 30000);
+    }
+    function stopRtAutoRefresh() {
+        if (_rtAutoTimer) {
+            clearInterval(_rtAutoTimer);
+            _rtAutoTimer = null;
+        }
+    }
+
+    async function rtLoadOrders(silent) {
+        if (!silent) {
+            _rtLoaded = false;
+            rtSetStatus('加载中…', 'load');
+            const list = document.getElementById('rtOrderList');
+            if (list) list.innerHTML = '<div style="text-align:center;padding:40px 0;color:#999;font-size:13px;">⏳ 加载中...</div>';
+        }
         try {
             const resp = await SY_AUTH.apiFetch('/api/realtime/orders');
             const data = await resp.json();

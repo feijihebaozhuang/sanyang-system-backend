@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 import operator
 import os
 import time
@@ -481,6 +482,30 @@ def finalize_cache_order(o: dict) -> dict:
         if isinstance(it, dict) and it.get("price") is not None:
             it["price"] = km_to_float(it.get("price"))
     km_normalize_so_id_fields(o)
+    km_enrich_receiver_region(o)
+    return o
+
+
+def km_enrich_receiver_region(o: dict) -> dict:
+    """补全省/市（旧缓存或仅有拼接地址时）。"""
+    p = (o.get("receiver_province") or "").strip()
+    c = (o.get("receiver_city") or "").strip()
+    if p and c:
+        return o
+    addr = (o.get("receiver_address") or "").strip()
+    if not p and addr:
+        m = re.match(r"^(.{2,12}?(?:省|自治区|特别行政区))", addr)
+        if m:
+            p = m.group(1)
+    if not c and addr:
+        rest = addr[len(p) :] if p else addr
+        m2 = re.match(r"^(.{2,12}?(?:市|自治州|地区|盟))", rest)
+        if m2:
+            c = m2.group(1)
+    if p:
+        o["receiver_province"] = p
+    if c:
+        o["receiver_city"] = c
     return o
 
 
