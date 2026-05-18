@@ -15,7 +15,7 @@ try:
 except Exception:
     ALIBABA_SHOPS = []
 
-from km_api import merge_1688_sku_infos
+from km_api import km_platform_item_attrs
 
 
 def alibaba_configured() -> bool:
@@ -97,15 +97,16 @@ def format_order(o: dict, memo_getter: Callable[[str], str] | None = None) -> di
     for item in items:
         if not isinstance(item, dict):
             continue
-        spec = merge_1688_sku_infos(item.get("skuInfos"))
+        attrs = km_platform_item_attrs(item)
         product_list.append(
             {
                 "name": item.get("name", ""),
                 "sku": item.get("productCargoNumber", ""),
                 "qty": item.get("quantity", 0),
                 "price": item.get("price", 0),
-                "spec": spec,
-                "display": spec,
+                "spec": attrs,
+                "display": attrs,
+                "platform_attrs": attrs,
                 "skuId": item.get("skuID", ""),
                 "productId": item.get("productID", ""),
             }

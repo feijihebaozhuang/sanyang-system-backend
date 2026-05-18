@@ -2342,43 +2342,14 @@
                 } else {
                     var lines = [];
                     specs.forEach(function(item, idx) {
-                        // 从name和spec里提取材料
-                        var nameLow = (item.name || '').toLowerCase();
-                        var specStr = item.spec || '';
-                        // 用映射匹配材料名
-                        var mat = '—';
-                        var mapping = _prodMappingData || [];
-                        for (var mi = 0; mi < mapping.length; mi++) {
-                            var kwList = (mapping[mi].keywords || '').split(',').map(function(k) { return k.trim().toLowerCase(); });
-                            for (var ki = 0; ki < kwList.length; ki++) {
-                                if (kwList[ki] && nameLow.includes(kwList[ki])) {
-                                    mat = mapping[mi].material_name || kwList[0];
-                                    break;
-                                }
-                            }
-                            if (mat !== '—') break;
-                        }
-                        // 颜色
-                        var color = '—';
-                        if (nameLow.includes('牛皮')) color = '牛皮';
-                        else if (nameLow.includes('原色')) color = '原色';
-                        else if (nameLow.includes('黄') && nameLow.includes('纸')) color = '黄纸';
-                        else if (nameLow.includes('白')) color = '白';
-                        // 从spec里提取尺寸
-                        var dimMatch = specStr.match(/(\d+[\.\d]*)\s*[*×xX]\s*(\d+[\.\d]*)/);
-                        var heightMatch = specStr.match(/(?:高|高度)[【]?(\d+[\.\d]*)/) || specStr.match(/(\d+[\.\d]*)cm高/);
-                        var dim = dimMatch ? dimMatch[1]+'×'+dimMatch[2] : (specStr || '').substring(0, 15);
-                        var h = heightMatch ? heightMatch[1]+'cm' : '';
-                        var skuLabel = (item.sku || '').replace('外尺寸','').replace('内尺寸','');
-                        var label = mat + ' ' + color;
-                        // 尺寸高亮
-                        var sizeStr = dim + (h ? '×'+h : '');
-                        lines.push('<div style="font-size:11px;line-height:1.6;padding:1px 0;border-bottom:' + (idx < specs.length-1 ? '1px dashed #eee' : 'none') + ';">' +
-                            '<span style="color:#666;">' + label + '</span> ' +
-                            '<strong style="color:#333;">' + sizeStr + '</strong>' +
-                            '<span style="color:#999;margin-left:4px;">×' + item.qty + '</span>' +
-                            (skuLabel ? ' <span style="font-size:10px;color:#aaa;">' + skuLabel + '</span>' : '') +
-                            ' <span style="font-size:10px;' + (item.has_stock ? 'color:#52c41a;' : 'color:#e94560;') + 'font-weight:500;">' + (item.has_stock ? '✅现货' : '📦需生产') + '</span>' +
+                        var attrs = (item.display || item.platform_attrs || item.spec || '').trim();
+                        var _escProd = function(s) {
+                            return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                        };
+                        lines.push('<div style="font-size:11px;line-height:1.5;padding:2px 0;border-bottom:' + (idx < specs.length-1 ? '1px dashed #eee' : 'none') + ';white-space:normal;word-break:break-word;">' +
+                            '<span style="color:#333;">' + _escProd(attrs || '—') + '</span> ' +
+                            '<strong style="color:#e94560;">×' + (item.qty || 0) + '</strong> ' +
+                            '<span style="font-size:10px;' + (item.has_stock ? 'color:#52c41a;' : 'color:#e94560;') + 'font-weight:500;">' + (item.has_stock ? '✅现货' : '📦需生产') + '</span>' +
                             '</div>');
                     });
                     itemsHtml = lines.join('');
@@ -2462,17 +2433,10 @@
         if (fullItems.length) {
             var itemRows = [];
             fullItems.forEach(function(item, idx) {
-                var nameLow = (item.name || '').toLowerCase();
-                var specStr = item.spec || '';
-                // 弹窗优先用后端返回的material_name，没有再用映射匹配
-                var mat = item.material_name || '—';
-                var color = nameLow.includes('牛皮') ? '牛皮' : (nameLow.includes('原色') ? '原色' : (nameLow.includes('白') ? '白' : ''));
-                var dimMatch = specStr.match(/(\d+[\.\d]*)\s*[*×xX]\s*(\d+[\.\d]*)/);
-                var heightMatch = specStr.match(/(?:高|高度)[【]?(\d+[\.\d]*)/) || specStr.match(/(\d+[\.\d]*)cm高/);
-                var dim = dimMatch ? dimMatch[1]+'×'+dimMatch[2] : specStr;
-                var ht = heightMatch ? heightMatch[1]+'cm' : '';
-                var sizeStr = dim + (ht ? '×'+ht : '');
-                var labelStr = (mat !== '—' ? mat : '') + (color ? ' '+color : '');
+                var attrs = (item.display || item.platform_attrs || item.spec || '').trim();
+                var escA = function(s) {
+                    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                };
                 var stockBadge = item.has_stock
                     ? '<span style="font-size:10px;color:#52c41a;font-weight:bold;">✅现货</span>'
                     : '<span style="font-size:10px;color:#e94560;font-weight:bold;">📦需生产 <span style="font-weight:400;color:#999;">(库存'+item.stock_qty+')</span></span>';
@@ -2480,8 +2444,7 @@
                     '<div style="display:flex;align-items:center;justify-content:space-between;">' +
                     '<div style="flex:1;">' +
                     '<span style="font-size:12px;color:#888;">#'+(idx+1)+'</span> ' +
-                    (labelStr ? '<span style="font-size:12px;color:#555;">'+labelStr+'</span> ' : '') +
-                    '<strong style="font-size:13px;color:#333;">'+sizeStr+'</strong> ' +
+                    '<span style="font-size:12px;color:#333;line-height:1.5;white-space:normal;word-break:break-word;">'+escA(attrs || '—')+'</span> ' +
                     '<span style="font-size:12px;color:#e94560;font-weight:bold;">×'+item.qty+'</span>' +
                     ' '+stockBadge +
                     '</div>' +

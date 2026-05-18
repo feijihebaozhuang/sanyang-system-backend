@@ -3876,22 +3876,27 @@ def production_dashboard():
         specs = []
         full_items = []
         for item in (o.get('items') or []):
-            spec = item.get('spec', '') or ''
+            attrs = (
+                (item.get('display') or item.get('platform_attrs') or item.get('spec') or '')
+                .strip()
+            )
             qty = item.get('qty', 0) or 0
             sku = item.get('sku', '') or ''
-            specs.append({'spec': spec, 'qty': qty})
-            # 库存判定
-            has_stock, stock_qty, stock_info = match_inventory(spec, item.get('name', ''), qty)
+            specs.append({'spec': attrs, 'qty': qty})
+            # 库存判定（用下单属性解析尺寸，不用商品标题）
+            has_stock, stock_qty, stock_info = match_inventory(attrs, '', qty)
             full_items.append({
                 'name': item.get('name', '') or '',
-                'spec': spec,
+                'spec': attrs,
+                'display': attrs,
+                'platform_attrs': attrs,
                 'qty': qty,
                 'sku': sku,
                 'skuId': item.get('skuId', '') or '',
                 'has_stock': has_stock,
                 'stock_qty': stock_qty,
                 'stock_info': stock_info,
-                'material_name': match_material(item.get('name', ''))
+                'material_name': match_material(attrs or item.get('name', ''))
             })
         
         is_printed = so_id in printed_ids

@@ -3245,7 +3245,7 @@ def _1688_api(api_uri, biz_params=None):
 
 def _km_merge_1688_spec(item: dict) -> str:
     import km_api as _km
-    return _km.merge_1688_sku_infos(item.get('skuInfos'))
+    return _km.km_platform_item_attrs(item)
 
 
 def _1688_format_order(o):
@@ -3360,12 +3360,8 @@ def api_realtime_orders():
                 pass
             for o_ in cached_orders:
                 for _it in o_.get('items') or []:
-                    if isinstance(_it, dict) and not _it.get('display'):
-                        _it['display'] = _parse_item_display(
-                            _it.get('spec', ''),
-                            _it.get('name', ''),
-                            _it.get('qty', 0),
-                        )
+                    if isinstance(_it, dict) and not (_it.get('display') or '').strip():
+                        _it['display'] = (_it.get('spec') or '').strip()
             cached_orders.sort(key=lambda x: x.get('created', ''), reverse=True)
             status = 'hit' if cached_orders else 'empty'
             print(

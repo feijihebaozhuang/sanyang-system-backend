@@ -2363,7 +2363,7 @@
             let attrStr = '';
             if (o.items && o.items.length > 0) {
                 attrStr = o.items.map(item => {
-                    const label = (item.display || item.spec || '').trim() || '—';
+                    const label = (item.display || item.platform_attrs || item.spec || '').trim() || '—';
                     const qty = item.qty || 0;
                     return '<div style="line-height:1.4;margin:2px 0;white-space:normal;word-break:break-word;">' + label +
                         '<span style="color:#e94560;margin-left:6px;font-weight:600;">×' + qty + '</span></div>';
@@ -5886,7 +5886,7 @@
             var specHtml = '';
             if (o.items && o.items.length > 0) {
                 specHtml = o.items.map(function(itm) {
-                    var label = (itm.display || itm.spec || '').trim();
+                    var label = (itm.display || itm.platform_attrs || itm.spec || '').trim();
                     if (!label) label = '—';
                     return '<div style="line-height:1.35;margin:2px 0;white-space:normal;word-break:break-word;">' +
                         rtEscHtml(label) + ' <b style="color:#e94560;">×' + (itm.qty || 0) + '</b></div>';
@@ -6169,7 +6169,7 @@
 
         const itemsHtml = (o.items || []).map(item => {
             return '<tr>' +
-                '<td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;font-size:12px;white-space:normal;word-break:break-word;">' + rtEscHtml((item.display || item.spec || '').trim() || '—') + '</td>' +
+                '<td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;font-size:12px;white-space:normal;word-break:break-word;">' + rtEscHtml((item.display || item.platform_attrs || item.spec || '').trim() || '—') + '</td>' +
                 '<td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;text-align:center;font-size:12px;">' + (item.qty || 0) + '</td>' +
                 '<td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;text-align:right;font-size:12px;">¥' + rtFmtMoney(item.price) + '</td>' +
                 '</tr>';

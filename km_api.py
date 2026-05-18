@@ -483,11 +483,13 @@ def finalize_cache_order(o: dict) -> dict:
             continue
         if it.get("price") is not None:
             it["price"] = km_to_float(it.get("price"))
-        full_spec = km_merge_line_item_spec(it)
-        if full_spec:
-            it["spec"] = full_spec
-        if not (it.get("display") or "").strip():
-            it["display"] = it.get("spec") or ""
+        attrs = km_platform_item_attrs(it)
+        if attrs:
+            it["spec"] = attrs
+            it["display"] = attrs
+            it["platform_attrs"] = attrs
+        elif not (it.get("display") or "").strip():
+            it["display"] = (it.get("spec") or "").strip()
     km_normalize_so_id_fields(o)
     km_enrich_receiver_region(o)
     return o
@@ -1086,7 +1088,7 @@ def _spec_parts_add_segments(parts: list[str], seen: set[str], text: str) -> Non
 
 
 def merge_1688_sku_infos(sku_infos: Any) -> str:
-    """1688 productItems.skuInfos → 仅 SKU 属性（规格/颜色/材料等）。"""
+    """1688 productItems.skuInfos → 买家下单属性（原样拼接，仅去掉扩展字段污染）。"""
     if not isinstance(sku_infos, list):
         return ""
     parts: list[str] = []
@@ -1102,19 +1104,85 @@ def merge_1688_sku_infos(sku_infos: Any) -> str:
             or name.lower() in _SKIP_ATTR_LABELS
         ):
             continue
-        if value and (_is_product_listing_title(value) or not _is_order_spec_segment(value)):
-            continue
-        if name and _is_product_listing_title(name):
+        if value and _is_junk_spec_segment(value):
             continue
         if name and value:
             piece = f"{name}:{value}"
         else:
             piece = value or name
-        if piece and _is_product_listing_title(piece):
+        if not piece or _is_junk_spec_segment(piece):
             continue
-        if piece and _is_order_spec_segment(piece):
-            _spec_parts_add(parts, seen, piece)
+        key = _norm_spec_seg_key(piece)
+        if key in seen:
+            continue
+        seen.add(key)
+        parts.append(piece)
     return "；".join(parts)
+
+
+def _dedupe_attr_segments(segments: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for seg in segments:
+        s = _norm_spec_text(seg)
+        if not s or _is_junk_spec_segment(s):
+            continue
+        k = _norm_spec_seg_key(s)
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(s)
+    return out
+
+
+def _strip_attrs_pollution(text: str) -> str:
+    """只去掉 tid/sid/JSON 等污染，保留平台买家可见属性原文。"""
+    if not text:
+        return ""
+    parts: list[str] = []
+    for seg in re.split(r"[;；\n]+", text.replace("：", ":")):
+        s = _norm_spec_text(seg)
+        if s and not _is_junk_spec_segment(s):
+            parts.append(s)
+    return "；".join(_dedupe_attr_segments(parts))
+
+
+def km_platform_item_attrs(it: dict) -> str:
+    """
+    各平台买家下单时选择的 SKU 属性（与店铺后台子订单一致）。
+    1688: skuInfos；淘系: skuPropertiesName；兜底 sysSkuPropertiesName / 备注。
+    """
+    if not isinstance(it, dict):
+        return ""
+
+    ali = merge_1688_sku_infos(it.get("skuInfos"))
+    if ali:
+        return _strip_attrs_pollution(ali)
+
+    plat = _norm_spec_text(it.get("skuPropertiesName"))
+    sys = _norm_spec_text(it.get("sysSkuPropertiesName"))
+    alias = _norm_spec_text(it.get("sysSkuPropertiesAlias"))
+
+    chunks: list[str] = []
+    if plat:
+        chunks.extend(_dedupe_attr_segments(re.split(r"[;；]+", plat)))
+    if sys and _norm_spec_seg_key(sys) not in {_norm_spec_seg_key(c) for c in chunks}:
+        chunks.extend(_dedupe_attr_segments(re.split(r"[;；]+", sys)))
+    if alias and _norm_spec_seg_key(alias) not in {_norm_spec_seg_key(c) for c in chunks}:
+        chunks.append(alias)
+
+    for key in ("sysSkuRemark", "sysItemRemark"):
+        remark = _norm_spec_text(it.get(key))
+        if remark and not _is_junk_spec_segment(remark):
+            rk = _norm_spec_seg_key(remark)
+            if rk not in {_norm_spec_seg_key(c) for c in chunks}:
+                chunks.append(remark)
+
+    legacy = _norm_spec_text(it.get("spec"))
+    if legacy and not chunks:
+        return _strip_attrs_pollution(legacy)
+
+    return "；".join(_dedupe_attr_segments(chunks))
 
 
 def km_sanitize_spec_text(spec: str) -> str:
@@ -1126,53 +1194,8 @@ def km_sanitize_spec_text(spec: str) -> str:
 
 
 def km_merge_line_item_spec(it: dict) -> str:
-    """快麦/1688/天猫/淘宝：合并 SKU 规格 + 从标题/备注/编码补全尺寸。"""
-    if not isinstance(it, dict):
-        return ""
-    parts: list[str] = []
-    seen: set[str] = set()
-    qty = int(it.get("num") or it.get("quantity") or it.get("qty") or 0)
-
-    spec_fields = (
-        it.get("sysSkuPropertiesName"),
-        it.get("skuPropertiesName"),
-        it.get("sysSkuPropertiesAlias"),
-        it.get("sysSkuRemark"),
-        it.get("sysItemRemark"),
-    )
-    for raw in spec_fields:
-        _spec_parts_add_from_blob(parts, seen, _norm_spec_text(raw))
-
-    ali = merge_1688_sku_infos(it.get("skuInfos"))
-    if ali:
-        _spec_parts_add_from_blob(parts, seen, ali)
-
-    legacy = _norm_spec_text(it.get("spec"))
-    if legacy:
-        _spec_parts_add_from_blob(parts, seen, legacy)
-
-    if not _parts_have_dimensions(parts):
-        # 只从标题/编码里「提取」尺寸片段，绝不把整段商品标题写入 spec
-        extra_texts = [
-            it.get("sysTitle"),
-            it.get("title"),
-            it.get("shortTitle"),
-            it.get("sysOuterId"),
-            it.get("outerId"),
-        ]
-        combined = " ".join(_norm_spec_text(x) for x in extra_texts if x)
-        dim = km_format_dimensions_from_text(combined, qty=qty)
-        if dim:
-            for seg in re.split(r"[;；]+", dim):
-                _spec_parts_add(parts, seen, seg)
-        for raw in extra_texts:
-            text = _norm_spec_text(raw)
-            if not text or _is_product_listing_title(text):
-                continue
-            for snip in _extract_dimension_snippets(text):
-                _spec_parts_add(parts, seen, snip)
-
-    return "；".join(parts)
+    """兼容旧名：返回平台买家下单属性原文。"""
+    return km_platform_item_attrs(it)
 
 
 def _ms_to_date_str(ms: Any) -> str:
@@ -1208,15 +1231,16 @@ def km_trade_to_cache_order(trade: dict, shops: dict[str, dict] | None = None) -
     for it in lines:
         if not isinstance(it, dict):
             continue
-        spec = km_merge_line_item_spec(it)
+        attrs = km_platform_item_attrs(it)
         items.append(
             {
                 "name": (it.get("sysTitle") or it.get("title") or it.get("shortTitle") or ""),
                 "sku": (it.get("sysOuterId") or it.get("outerId") or ""),
                 "qty": int(it.get("num") or it.get("quantity") or 0),
                 "price": it.get("price") or it.get("payment") or 0,
-                "spec": spec,
-                "display": spec,
+                "spec": attrs,
+                "display": attrs,
+                "platform_attrs": attrs,
             }
         )
 
