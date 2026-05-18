@@ -3444,25 +3444,26 @@ def api_realtime_orders():
                 cache = json.load(f)
                 cached_orders = cache.get('orders', [])
             if cached_orders:
-                # 不再硬编码为亚润，使用缓存中实际的shop_name
-                # 匹配客服配置中的店铺名做映射
                 shops = set()
-                for o_ in cached_orders:
-                    shops.add(o_.get('shop_name', '?'))
-                
-                # 构建1688店铺名到简称的映射（"三羊包装"→"三羊"）
                 try:
                     import order_sync as _osync
                     for o_ in cached_orders:
-                        o_['shop_name'] = _osync.normalize_shop_display(o_.get('shop_name', ''))
+                        o_['shop_name'] = _osync.normalize_shop_display(
+                            o_.get('shop_name', '')
+                        )
+                        shops.add(o_.get('shop_name', '?'))
                 except ImportError:
-                    pass
-                    # 给items加display字段
-                    if 'items' in o_:
-                        for _it in o_['items']:
-                            if not _it.get('display'):
-                                _it['display'] = _parse_item_display(_it.get('spec', ''), _it.get('name', ''), _it.get('qty', 0))
-                
+                    for o_ in cached_orders:
+                        shops.add(o_.get('shop_name', '?'))
+                for o_ in cached_orders:
+                    for _it in o_.get('items') or []:
+                        if isinstance(_it, dict) and not _it.get('display'):
+                            _it['display'] = _parse_item_display(
+                                _it.get('spec', ''),
+                                _it.get('name', ''),
+                                _it.get('qty', 0),
+                            )
+
                 # 按时间倒序排列
                 cached_orders.sort(key=lambda x: x.get('created', ''), reverse=True)
                 print(f'[实时订单] 缓存命中: {len(cached_orders)} 条订单, 店铺: {shops}')

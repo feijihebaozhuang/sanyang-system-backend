@@ -1509,6 +1509,7 @@
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;">
                 <span id="rtUnsentCount" style="padding:4px 10px;background:#fff3cd;border-radius:12px;font-size:12px;font-weight:600;color:#856404;">🕐 待发货：<span id="rtUnsentNum">0</span></span>
+                <button type="button" onclick="rtSyncForce()" style="padding:4px 12px;background:#1677ff;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;">🔄 同步订单</button>
             </div>
         </div>
 
@@ -1580,7 +1581,7 @@
     </div>
 </div>
 
-<script src="/static/auth_session.js"></script>
+<script src="/static/auth_session.js?v=20260518c"></script>
 <script>
     // ===== 当前登录用户 =====
     let _currentUser = null;
@@ -1959,6 +1960,7 @@
             try {
                 await loadPermissions();
                 restorePageAfterLogin();
+                rtLoadOrders();
             } catch (e) {
                 console.error('登录后初始化失败（仍保持登录）:', e);
             }
@@ -2021,15 +2023,7 @@
 
         // 切到实时订单页时自动加载（有缓存直接显示，后台刷新）
         if (name === 'realtime') {
-            setTimeout(() => {
-                if (_rtAllOrders.length > 0) {
-                    rtRenderOrders();
-                    // 后台刷新（不阻塞界面）
-                    rtRefreshSilent();
-                } else {
-                    rtLoadOrders();
-                }
-            }, 50);
+            setTimeout(() => rtLoadOrders(), 50);
         }
 
         // 切到页面时回顶部
@@ -2115,7 +2109,7 @@
         } else if (name === 'realtime') {
             document.getElementById('page-main').classList.remove('active');
             document.getElementById('page-realtime').classList.add('active');
-            rtRenderOrders();
+            rtLoadOrders();
         } else if (name === 'diemold') {
             document.getElementById('page-main').classList.remove('active');
             document.getElementById('page-diemold').classList.add('active');
@@ -5573,6 +5567,36 @@
     let _rtCurrentShop = '';
     let _rtPageSize = 10;
     let _rtCurrentPage = 1;
+    let _rtLoaded = false;
+    let _rtCacheStatus = '';
+
+    function rtOrderDateKey(created) {
+        const s = String(created || '');
+        let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (m) return m[1] + '-' + m[2] + '-' + m[3];
+        m = s.match(/^(\d{4})(\d{2})(\d{2})/);
+        if (m) return m[1] + '-' + m[2] + '-' + m[3];
+        return '';
+    }
+
+    function rtSetStatus(text, kind) {
+        const statusEl = document.getElementById('rtDataStatus');
+        if (!statusEl) return;
+        statusEl.textContent = text;
+        if (kind === 'ok') {
+            statusEl.style.background = '#d4edda';
+            statusEl.style.color = '#155724';
+        } else if (kind === 'err') {
+            statusEl.style.background = '#f8d7da';
+            statusEl.style.color = '#721c24';
+        } else if (kind === 'load') {
+            statusEl.style.background = '#cce5ff';
+            statusEl.style.color = '#004085';
+        } else {
+            statusEl.style.background = '#fff3cd';
+            statusEl.style.color = '#856404';
+        }
+    }
 
     function rtFilter(el) {
         document.querySelectorAll('.rt-filter').forEach(x => {
@@ -5625,8 +5649,8 @@
         var dateFilter = dateInput ? dateInput.value : '';
         if (dateFilter) {
             filtered = filtered.filter(function(o) {
-                var d = (o.created || '').replace(/^(\d{4})(\d{2})(\d{2}).*/, '$1-$2-$3');
-                return d >= dateFilter;
+                const d = rtOrderDateKey(o.created);
+                return d && d >= dateFilter;
             });
         }
 
@@ -5639,21 +5663,31 @@
             filtered = filtered.filter(o => (o.so_id || '').toLowerCase().includes(search));
         }
 
-        const statusEl = document.getElementById('rtDataStatus');
         const countEl = document.getElementById('rtOrderCount');
 
-        if (filtered.length === 0) {
-            list.innerHTML = '<div style="text-align:center;padding:40px 0;color:#999;font-size:13px;">📭 暂无订单</div>';
-            statusEl.textContent = _rtAllOrders.length > 0 ? '已加载' : '待加载';
-            statusEl.style.background = _rtAllOrders.length > 0 ? '#d4edda' : '#fff3cd';
-            statusEl.style.color = _rtAllOrders.length > 0 ? '#155724' : '#856404';
+        if (!_rtLoaded) {
+            list.innerHTML = '<div style="text-align:center;padding:40px 0;color:#999;font-size:13px;">⏳ 加载中...</div>';
+            rtSetStatus('加载中…', 'load');
             countEl.style.display = 'none';
             return;
         }
 
-        statusEl.textContent = '已加载 ' + _rtAllOrders.length + ' 条';
-        statusEl.style.background = '#d4edda';
-        statusEl.style.color = '#155724';
+        if (filtered.length === 0) {
+            if (_rtAllOrders.length === 0) {
+                const hint = _rtCacheStatus === 'empty'
+                    ? '📭 缓存暂无订单<br><span style="font-size:12px;color:#888;">请点击「同步订单」</span>'
+                    : '📭 暂无待发货订单';
+                list.innerHTML = '<div style="text-align:center;padding:40px 0;color:#999;font-size:13px;">' + hint + '</div>';
+                rtSetStatus('已加载 0 条', 'ok');
+            } else {
+                list.innerHTML = '<div style="text-align:center;padding:40px 0;color:#999;font-size:13px;">📭 当前筛选无订单</div>';
+                rtSetStatus('已加载 ' + _rtAllOrders.length + ' 条', 'ok');
+            }
+            countEl.style.display = 'none';
+            return;
+        }
+
+        rtSetStatus('已加载 ' + _rtAllOrders.length + ' 条', 'ok');
         countEl.style.display = 'inline';
         countEl.textContent = '（筛选后 ' + filtered.length + ' 条）';
 
@@ -5741,30 +5775,55 @@
     }
 
     async function rtLoadOrders() {
+        rtSetStatus('加载中…', 'load');
+        const list = document.getElementById('rtOrderList');
+        if (list) list.innerHTML = '<div style="text-align:center;padding:40px 0;color:#999;font-size:13px;">⏳ 加载中...</div>';
         try {
-            const resp = await fetch('/api/realtime/orders');
+            const resp = await SY_AUTH.apiFetch('/api/realtime/orders');
             const data = await resp.json();
 
             if (data.success) {
+                _rtLoaded = true;
+                _rtCacheStatus = data.cache_status || '';
                 _rtAllOrders = data.orders || [];
                 _rtShopConfig = data.shop_config || [];
-                // 更新待发货数量
                 var unsentEl = document.getElementById('rtUnsentNum');
                 if (unsentEl) unsentEl.textContent = _rtAllOrders.length;
                 // 根据shop_config生成店铺按钮
                 rtBuildShopFilter();
                 rtRenderOrders();
             } else {
-                const list = document.getElementById('rtOrderList');
-                list.innerHTML = '<div style="text-align:center;padding:40px 0;color:#e94560;font-size:13px;">❌ ' + (data.error || '获取失败') + '</div>';
+                _rtLoaded = true;
+                rtSetStatus('加载失败', 'err');
+                if (list) list.innerHTML = '<div style="text-align:center;padding:40px 0;color:#e94560;font-size:13px;">❌ ' + (data.error || '获取失败') + '</motion div>';
             }
         } catch(e) {
-            const list = document.getElementById('rtOrderList');
-            list.innerHTML = '<div style="text-align:center;padding:40px 0;color:#e94560;font-size:13px;">❌ ' + e.message + '</div>';
+            _rtLoaded = true;
+            rtSetStatus('加载失败', 'err');
+            if (list) list.innerHTML = '<div style="text-align:center;padding:40px 0;color:#e94560;font-size:13px;">❌ ' + e.message + '</motion div>';
         }
     }
 
-    // 根据shop_config和当前平台筛选，生成店铺按钮
+    async function rtSyncForce() {
+        if (!_currentUser) { alert('请先登录'); return; }
+        rtSetStatus('同步中…', 'load');
+        try {
+            const res = await SY_AUTH.apiFetch('/api/sync/force', { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                await rtLoadOrders();
+                alert(data.message || ('已同步 ' + (data.count || 0) + ' 条'));
+            } else {
+                rtSetStatus('同步失败', 'err');
+                alert(data.error || data.message || '同步失败');
+            }
+        } catch (e) {
+            rtSetStatus('同步失败', 'err');
+            alert('同步失败: ' + e.message);
+        }
+    }
+
+        // 根据shop_config和当前平台筛选，生成店铺按钮
     function rtBuildShopFilter() {
         var shopFilter = document.getElementById('rtShopFilter');
         if (!shopFilter) return;
@@ -5811,13 +5870,14 @@
         if (_rtRefreshing) return;
         _rtRefreshing = true;
         try {
-            const resp = await fetch('/api/realtime/orders');
+            const resp = await SY_AUTH.apiFetch('/api/realtime/orders');
             const data = await resp.json();
             if (data.success) {
+                _rtLoaded = true;
+                _rtCacheStatus = data.cache_status || '';
                 _rtAllOrders = data.orders || [];
                 _rtShopConfig = data.shop_config || [];
                 rtBuildShopFilter();
-                // 刷新时保持当前筛选状态
                 rtRenderOrders();
             }
         } catch(e) {
@@ -5828,7 +5888,7 @@
 
     // 页面加载后立即自动加载实时订单
     // 这样切到实时订单页时已经有数据了
-    rtLoadOrders();  // 直接加载，不延迟！有缓存则毫秒返回
+    // 登录成功后 checkLogin 内会 rtLoadOrders；未登录时不请求
 
     // 刷新店铺过滤按钮 + 重新加载订单数据（联动客服配置变更）
     function rtReloadShopFilter() {
