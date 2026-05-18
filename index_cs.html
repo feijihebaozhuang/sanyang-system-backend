@@ -2363,9 +2363,9 @@
             let attrStr = '';
             if (o.items && o.items.length > 0) {
                 attrStr = o.items.map(item => {
-                    const label = item.display || item.spec || '';
+                    const label = item.display || item.spec || item.name || '';
                     const qty = item.qty || 0;
-                    return '<div style="line-height:1.8;">' + label + '<span style="color:#999;margin-left:6px;">×' + qty + '</span></div>';
+                    return '<div style="line-height:1.35;white-space:normal;word-break:break-word;">' + label + '<span style="color:#999;margin-left:6px;">×' + qty + '</span></div>';
                 }).join('');
             } else {
                 attrStr = '';
@@ -5881,12 +5881,13 @@
                 '<span style="background:#ff6a00;color:#fff;padding:1px 5px;border-radius:3px;font-size:10px;">1688</span>' :
                 '<span style="background:#1677ff;color:#fff;padding:1px 5px;border-radius:3px;font-size:10px;">' + (o.platform || '线下') + '</span>';
 
-            // 生成商品属性多行显示（优先display，回退到spec或name）
+            // 生成商品属性多行显示（完整规格/颜色/材料等）
             var specHtml = '';
             if (o.items && o.items.length > 0) {
                 specHtml = o.items.map(function(itm) {
-                    var label = itm.display || itm.spec || '';
-                    return '<div style="white-space:nowrap;">' + label + ' <b style="color:#e94560;">×' + (itm.qty || 0) + '</b></div>';
+                    var label = itm.display || itm.spec || itm.name || '';
+                    return '<div style="line-height:1.35;margin:2px 0;white-space:normal;word-break:break-word;">' +
+                        rtEscHtml(label) + ' <b style="color:#e94560;">×' + (itm.qty || 0) + '</b></div>';
                 }).join('');
             }
             var orderNo = rtOrderNo(o);
@@ -6166,7 +6167,7 @@
 
         const itemsHtml = (o.items || []).map(item => {
             return '<tr>' +
-                '<td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;font-size:12px;">' + (item.display || item.spec || '') + '</td>' +
+                '<td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;font-size:12px;white-space:normal;word-break:break-word;">' + rtEscHtml(item.display || item.spec || item.name || '') + '</td>' +
                 '<td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;text-align:center;font-size:12px;">' + (item.qty || 0) + '</td>' +
                 '<td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;text-align:right;font-size:12px;">¥' + rtFmtMoney(item.price) + '</td>' +
                 '</tr>';

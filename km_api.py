@@ -479,8 +479,15 @@ def finalize_cache_order(o: dict) -> dict:
     if o.get("shipping_fee") is not None:
         o["shipping_fee"] = km_to_float(o.get("shipping_fee"))
     for it in o.get("items") or []:
-        if isinstance(it, dict) and it.get("price") is not None:
+        if not isinstance(it, dict):
+            continue
+        if it.get("price") is not None:
             it["price"] = km_to_float(it.get("price"))
+        full_spec = km_merge_line_item_spec(it)
+        if full_spec:
+            it["spec"] = full_spec
+        if not (it.get("display") or "").strip():
+            it["display"] = it.get("spec") or ""
     km_normalize_so_id_fields(o)
     km_enrich_receiver_region(o)
     return o
@@ -756,6 +763,92 @@ def km_fetch_trades(
     return all_orders, errors
 
 
+def _norm_spec_text(val: Any) -> str:
+    if val is None:
+        return ""
+    return re.sub(r"\s+", " ", str(val).strip())
+
+
+def merge_1688_sku_infos(sku_infos: Any) -> str:
+    """1688 productItems.skuInfos → 规格:值；颜色:值 …（合并全部 SKU 属性）。"""
+    if not isinstance(sku_infos, list):
+        return ""
+    parts: list[str] = []
+    seen: set[str] = set()
+    for info in sku_infos:
+        if not isinstance(info, dict):
+            continue
+        name = _norm_spec_text(info.get("name") or info.get("attributeName") or "")
+        value = _norm_spec_text(info.get("value") or info.get("attributeValue") or "")
+        if name and value:
+            piece = f"{name}:{value}"
+        else:
+            piece = value or name
+        if piece and piece not in seen:
+            seen.add(piece)
+            parts.append(piece)
+    return "；".join(parts)
+
+
+def _spec_parts_add(parts: list[str], seen: set[str], raw: Any) -> None:
+    t = _norm_spec_text(raw)
+    if not t:
+        return
+    if t in seen:
+        return
+    for p in list(parts):
+        if p == t or (len(t) > 8 and t in p):
+            return
+    parts[:] = [p for p in parts if not (p in t and p != t)]
+    parts.append(t)
+    seen.add(t)
+
+
+def km_merge_line_item_spec(it: dict) -> str:
+    """快麦/1688 子订单：合并平台规格、系统规格、备注等为完整属性串。"""
+    if not isinstance(it, dict):
+        return ""
+    parts: list[str] = []
+    seen: set[str] = set()
+
+    for key in (
+        "sysSkuPropertiesName",
+        "skuPropertiesName",
+        "sysSkuPropertiesAlias",
+        "propertiesName",
+        "saleProperties",
+    ):
+        _spec_parts_add(parts, seen, it.get(key))
+
+    for key in ("sysSkuRemark", "sysItemRemark", "skuRemark", "itemRemark"):
+        _spec_parts_add(parts, seen, it.get(key))
+
+    ext = it.get("orderExt")
+    if isinstance(ext, dict):
+        _spec_parts_add(parts, seen, ext.get("orderRemark"))
+        for k, v in ext.items():
+            if k == "orderRemark" or v is None:
+                continue
+            vs = _norm_spec_text(v)
+            if vs:
+                kn = _norm_spec_text(k)
+                _spec_parts_add(parts, seen, f"{kn}:{vs}" if kn else vs)
+    elif ext:
+        _spec_parts_add(parts, seen, ext)
+
+    ali = merge_1688_sku_infos(it.get("skuInfos"))
+    if ali:
+        for seg in re.split(r"[；;]+", ali):
+            _spec_parts_add(parts, seen, seg)
+
+    legacy = _norm_spec_text(it.get("spec"))
+    if legacy:
+        for seg in re.split(r"[；;]+", legacy):
+            _spec_parts_add(parts, seen, seg)
+
+    return "；".join(parts)
+
+
 def _ms_to_date_str(ms: Any) -> str:
     try:
         v = int(ms)
@@ -789,7 +882,7 @@ def km_trade_to_cache_order(trade: dict, shops: dict[str, dict] | None = None) -
     for it in lines:
         if not isinstance(it, dict):
             continue
-        spec = (it.get("sysSkuPropertiesName") or it.get("skuPropertiesName") or "").strip()
+        spec = km_merge_line_item_spec(it)
         items.append(
             {
                 "name": (it.get("sysTitle") or it.get("title") or it.get("shortTitle") or ""),
@@ -797,6 +890,7 @@ def km_trade_to_cache_order(trade: dict, shops: dict[str, dict] | None = None) -
                 "qty": int(it.get("num") or it.get("quantity") or 0),
                 "price": it.get("price") or it.get("payment") or 0,
                 "spec": spec,
+                "display": spec,
             }
         )
 

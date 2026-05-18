@@ -791,14 +791,16 @@ def dashboard():
                     sku = i.get('sku', '') or ''
                     qty = i.get('qty', 0) or 0
                     
-                    # 从spec解析材质+尺寸
-                    display = _parse_item_display(spec, '', qty)
-                    
+                    full_spec = (spec or sku or '').strip()
+                    if not full_spec and name:
+                        full_spec = _parse_item_display('', name, qty)
+                    else:
+                        full_spec = full_spec or _parse_item_display(spec, name, qty)
                     detail_items.append({
                         'name': name,
-                        'spec': spec or sku or name,
+                        'spec': full_spec or name,
                         'qty': qty,
-                        'display': display,  # 前端直接显示这个
+                        'display': full_spec or name,
                     })
                 
                 ex = _order_extra.get(oid, {})
@@ -3245,18 +3247,25 @@ def _1688_api(api_uri, biz_params=None):
         return {}
 
 
+def _km_merge_1688_spec(item: dict) -> str:
+    import km_api as _km
+    return _km.merge_1688_sku_infos(item.get('skuInfos'))
+
+
 def _1688_format_order(o):
     """格式化1688订单为统一格式"""
     info = o.get('baseInfo', {})
     items = o.get('productItems', [])
     product_list = []
     for item in items:
+        spec = _km_merge_1688_spec(item)
         product_list.append({
             'name': item.get('name', ''),
             'sku': item.get('productCargoNumber', ''),
             'qty': item.get('quantity', 0),
             'price': item.get('price', 0),
-            'spec': item.get('skuInfos', [{'value': ''}])[0].get('value', ''),
+            'spec': spec,
+            'display': spec,
             'skuId': item.get('skuID', ''),
             'productId': item.get('productID', '')
         })
