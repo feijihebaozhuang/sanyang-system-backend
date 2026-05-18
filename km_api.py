@@ -1147,6 +1147,99 @@ def _strip_attrs_pollution(text: str) -> str:
     return "；".join(_dedupe_attr_segments(parts))
 
 
+# 买家要看的片段（不要平台属性名前缀）
+_BUYER_DIM_SNIPPET_RE = re.compile(
+    r"长\s*x?\s*宽\s*【[^】]+】|高度?\s*【[^】]+】",
+    re.I,
+)
+_BUYER_NUM_DIM_RE = re.compile(
+    r"\d+\.?\d*\s*[*×xX]\s*\d+\.?\d*\s*[*×xX]\s*\d+\.?\d*\s*(?:mm|MM|厘米|cm|CM)?",
+    re.I,
+)
+_BUYER_MATERIAL_KEY_RE = re.compile(r"颜色|材质|材料|硬度|瓦楞|层次|规格", re.I)
+_BUYER_SKIP_NAME_KEY_RE = re.compile(
+    r"编码|货号|标题|名称|链接|定制链接|商品|sku|条形码",
+    re.I,
+)
+
+
+def _buyer_spec_pieces_from_text(text: str) -> list[str]:
+    """从一段文字抽出展示片段（仅值：尺寸数字或特硬/【外尺寸】等）。"""
+    t = _norm_spec_text(text)
+    if (
+        not t
+        or _is_junk_spec_segment(t)
+        or _is_product_listing_title(t)
+        or _is_product_code_segment(t)
+    ):
+        return []
+
+    found: list[str] = []
+    for m in _BUYER_DIM_SNIPPET_RE.finditer(t):
+        s = m.group(0).strip()
+        if s:
+            found.append(s)
+    for m in _BUYER_NUM_DIM_RE.finditer(t):
+        s = m.group(0).strip()
+        if not s or _is_product_code_segment(s):
+            continue
+        if any(s in f or f in s for f in found):
+            continue
+        found.append(s)
+    if found:
+        return found
+
+    if ":" in t or "：" in t:
+        key, _, val = t.partition(":") if ":" in t else t.partition("：")
+        key, val = key.strip(), val.strip()
+        if not val or _is_product_listing_title(val) or _is_junk_spec_segment(val):
+            return []
+        if _BUYER_SKIP_NAME_KEY_RE.search(key):
+            return []
+        sub = _buyer_spec_pieces_from_text(val)
+        if sub:
+            return sub
+        # 颜色/材质类：只要值（如 特硬、优质特硬【外尺寸】单个）
+        if len(val) <= 56 and (
+            _BUYER_MATERIAL_KEY_RE.search(key) or "【" in val or "单个" in val
+        ):
+            if not _is_product_listing_title(val):
+                return [val]
+        return []
+
+    if _is_product_listing_title(t):
+        return []
+    if re.search(r"【|单个|外尺寸|内尺寸", t) and len(t) <= 56:
+        return [t]
+    if _BUYER_NUM_DIM_RE.search(t):
+        return [t]
+    if len(t) <= 24 and re.search(
+        r"特硬|优质|牛皮|白色|三层|加硬|台湾|超硬", t
+    ):
+        return [t]
+    return []
+
+
+def km_format_buyer_spec_display(raw: str) -> str:
+    """
+    客服/生产展示：仅尺寸与选项值。
+    例：210*210*100 mm；优质特硬【外尺寸】单个
+    不要：材质硬度等级:、尺寸:、10厘米-27厘米-正方形【零售】
+    """
+    if not raw:
+        return ""
+    parts: list[str] = []
+    seen: set[str] = set()
+    for seg in re.split(r"[;；]+", raw):
+        for piece in _buyer_spec_pieces_from_text(seg):
+            k = _norm_spec_seg_key(piece)
+            if k in seen:
+                continue
+            seen.add(k)
+            parts.append(piece)
+    return "；".join(parts)
+
+
 def km_platform_item_attrs(it: dict) -> str:
     """
     各平台买家下单时选择的 SKU 属性（与店铺后台子订单一致）。
@@ -1157,7 +1250,7 @@ def km_platform_item_attrs(it: dict) -> str:
 
     ali = merge_1688_sku_infos(it.get("skuInfos"))
     if ali:
-        return _strip_attrs_pollution(ali)
+        return km_format_buyer_spec_display(_strip_attrs_pollution(ali))
 
     plat = _norm_spec_text(it.get("skuPropertiesName"))
     sys = _norm_spec_text(it.get("sysSkuPropertiesName"))
@@ -1166,8 +1259,11 @@ def km_platform_item_attrs(it: dict) -> str:
     chunks: list[str] = []
     if plat:
         chunks.extend(_dedupe_attr_segments(re.split(r"[;；]+", plat)))
-    if sys and _norm_spec_seg_key(sys) not in {_norm_spec_seg_key(c) for c in chunks}:
-        chunks.extend(_dedupe_attr_segments(re.split(r"[;；]+", sys)))
+    if sys and plat != sys:
+        for seg in re.split(r"[;；]+", sys):
+            s = _norm_spec_text(seg)
+            if s and _norm_spec_seg_key(s) not in {_norm_spec_seg_key(c) for c in chunks}:
+                chunks.append(s)
     if alias and _norm_spec_seg_key(alias) not in {_norm_spec_seg_key(c) for c in chunks}:
         chunks.append(alias)
 
@@ -1179,10 +1275,10 @@ def km_platform_item_attrs(it: dict) -> str:
                 chunks.append(remark)
 
     legacy = _norm_spec_text(it.get("spec"))
-    if legacy and not chunks:
-        return _strip_attrs_pollution(legacy)
-
-    return "；".join(_dedupe_attr_segments(chunks))
+    raw = "；".join(_dedupe_attr_segments(chunks)) if chunks else legacy
+    if not raw:
+        return ""
+    return km_format_buyer_spec_display(_strip_attrs_pollution(raw))
 
 
 def km_sanitize_spec_text(spec: str) -> str:
