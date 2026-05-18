@@ -1,0 +1,6 @@
+{
+  "app_key": "与 KM_APP_KEY 相同，可省略若已配环境变量",
+  "app_secret": "与 KM_APP_SECRET 相同",
+  "access_token": "邮件中的 accessToken，对应接口参数 session",
+  "refresh_token": "邮件中的 refreshToken，用于 open.token.refresh"
+}

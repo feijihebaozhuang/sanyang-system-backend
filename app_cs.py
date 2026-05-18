@@ -3441,13 +3441,12 @@ def api_realtime_orders():
                     shops.add(o_.get('shop_name', '?'))
                 
                 # 构建1688店铺名到简称的映射（"三羊包装"→"三羊"）
-                shop_alias = {
-                    '三羊包装': '三羊', '友尚包装': '友尚', '正方形包装': '正方形',
-                    '大鱼包装': '大鱼', '亚润包装': '亚润', '新鑫星包装': '新鑫星',
-                }
-                for o_ in cached_orders:
-                    full = o_.get('shop_name', '')
-                    o_['shop_name'] = shop_alias.get(full, full)
+                try:
+                    import order_sync as _osync
+                    for o_ in cached_orders:
+                        o_['shop_name'] = _osync.normalize_shop_display(o_.get('shop_name', ''))
+                except ImportError:
+                    pass
                     # 给items加display字段
                     if 'items' in o_:
                         for _it in o_['items']:
@@ -3611,41 +3610,79 @@ def api_reset_shop_config():
     save_shop_config(DEFAULT_SHOP_CONFIG)
     return jsonify({'success': True, 'config': list(DEFAULT_SHOP_CONFIG)})
 
-# ========== 后台定时同步1688订单 ==========
+# ========== 后台定时同步订单（快麦 ERP）==========
 ORDERS_CACHE_FILE = 'orders_cache.json'
 
+def _km_sync_orders_to_cache(days_back=14):
+    """快麦(1688无需奇门) + 1688直连 → orders_cache.json"""
+    import order_sync as _osync
+    r = _osync.sync_orders_to_cache(
+        ORDERS_CACHE_FILE,
+        days_back=days_back,
+        memo_getter=get_order_memo,
+        include_1688_direct=True,
+    )
+    return r.get('pending_count', 0)
+
+
 def _sync_orders_task():
-    """后台线程：从1688拉订单存到本地缓存"""
+    """后台线程：从快麦拉订单存到本地缓存"""
     import time as _t
     while True:
         try:
-            print(f'[订单同步] 开始从1688同步订单...')
-            orders = _1688_fetch_all_shops_orders()
-            if orders:
-                # 格式化订单为统一格式
-                formatted = []
-                for o in orders:
-                    info = o.get('baseInfo', {})
-                    status = info.get('status', '')
-                    if status not in ('waitsellersend',):
-                        continue
-                    item = _1688_format_order(o)
-                    item['platform_label'] = '1688'
-                    formatted.append(item)
-                with open(ORDERS_CACHE_FILE, 'w', encoding='utf-8') as f:
-                    json.dump({'orders': formatted, 'updated_at': _t.time()}, f, ensure_ascii=False, default=str)
-                print(f'[订单同步] 同步完成: {len(formatted)} 条订单')
-            else:
-                print(f'[订单同步] 未拉取到订单，缓存不变')
+            _km_sync_orders_to_cache(days_back=14)
         except Exception as ex:
             print(f'[订单同步] 错误: {ex}')
         _t.sleep(300)  # 5分钟同步一次
 
-# 启动后台同步线程（非守护，确保能写入文件）
+
+@app.route('/api/sync/force', methods=['POST'])
+def api_sync_force():
+    """手动触发快麦订单同步（写入 orders_cache.json）"""
+    if 'username' not in session:
+        return jsonify({'success': False, 'error': '未登录'}), 401
+    try:
+        import order_sync as _osync
+        report = _osync.sync_orders_to_cache(
+            ORDERS_CACHE_FILE,
+            days_back=30,
+            memo_getter=get_order_memo,
+            include_1688_direct=True,
+        )
+        n = report.get('pending_count', 0)
+        return jsonify({
+            'success': True,
+            'count': n,
+            'report': report,
+            'message': f'已同步 {n} 条待发货订单（1688含快麦+直连）',
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/km/probe', methods=['GET'])
+def api_km_probe():
+    """快麦连通性探测（店铺数、近3天订单抽样）"""
+    if 'username' not in session:
+        return jsonify({'success': False, 'error': '未登录'}), 401
+    import km_api as _km
+    return jsonify({'success': True, 'data': _km.km_probe()})
+
+
+@app.route('/api/km/refresh_token', methods=['POST'])
+def api_km_refresh_token():
+    """刷新快麦 session（open.token.refresh）"""
+    if 'username' not in session:
+        return jsonify({'success': False, 'error': '未登录'}), 401
+    import km_api as _km
+    return jsonify(_km.km_refresh_token())
+
+
+# 启动后台同步线程
 import threading as _th
 _sync_thread = _th.Thread(target=_sync_orders_task, daemon=True)
 _sync_thread.start()
-print('[订单同步] 后台同步线程已启动（每5分钟同步一次）')
+print('[订单同步] 快麦后台同步线程已启动（每5分钟）')
 
 # ==================== 缺失API补充（客服端）====================
 

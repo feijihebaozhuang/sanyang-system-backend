@@ -1,4 +1,5 @@
 .env
+km_token.json
 .cursor/mcp.json
 alibaba_shops.json
 __pycache__/

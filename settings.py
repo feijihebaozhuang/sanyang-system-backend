@@ -65,6 +65,16 @@ def get_wechat_token() -> str:
     return os.getenv("WECHAT_TOKEN", "").strip()
 
 
+def get_km_config() -> dict:
+    return {
+        "app_key": os.getenv("KM_APP_KEY", "").strip(),
+        "app_secret": os.getenv("KM_APP_SECRET", "").strip(),
+        "session": os.getenv("KM_SESSION", "").strip(),
+        "api_url": os.getenv("KM_API_URL", "https://gw.superboss.cc/router").strip(),
+        "token_file": os.getenv("KM_TOKEN_FILE", str(_ROOT / "km_token.json")).strip(),
+    }
+
+
 def get_alibaba_api_defaults() -> dict:
     key_s = os.getenv("ALIBABA_APP_KEY", "").strip()
     app_key = int(key_s) if key_s.isdigit() else 0
