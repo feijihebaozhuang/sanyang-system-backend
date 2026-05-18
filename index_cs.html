@@ -5795,12 +5795,12 @@
             } else {
                 _rtLoaded = true;
                 rtSetStatus('加载失败', 'err');
-                if (list) list.innerHTML = '<div style="text-align:center;padding:40px 0;color:#e94560;font-size:13px;">❌ ' + (data.error || '获取失败') + '</motion div>';
+                if (list) list.innerHTML = '<div style="text-align:center;padding:40px 0;color:#e94560;font-size:13px;">❌ ' + (data.error || '获取失败') + '</div>';
             }
         } catch(e) {
             _rtLoaded = true;
             rtSetStatus('加载失败', 'err');
-            if (list) list.innerHTML = '<div style="text-align:center;padding:40px 0;color:#e94560;font-size:13px;">❌ ' + e.message + '</motion div>';
+            if (list) list.innerHTML = '<div style="text-align:center;padding:40px 0;color:#e94560;font-size:13px;">❌ ' + e.message + '</div>';
         }
     }
 
