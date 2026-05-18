@@ -791,16 +791,12 @@ def dashboard():
                     sku = i.get('sku', '') or ''
                     qty = i.get('qty', 0) or 0
                     
-                    full_spec = (spec or sku or '').strip()
-                    if not full_spec and name:
-                        full_spec = _parse_item_display('', name, qty)
-                    else:
-                        full_spec = full_spec or _parse_item_display(spec, name, qty)
+                    full_spec = (i.get('display') or spec or sku or '').strip()
                     detail_items.append({
                         'name': name,
-                        'spec': full_spec or name,
+                        'spec': full_spec,
                         'qty': qty,
-                        'display': full_spec or name,
+                        'display': full_spec,
                     })
                 
                 ex = _order_extra.get(oid, {})

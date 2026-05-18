@@ -170,11 +170,9 @@ def sync_orders_to_cache(
 
 
 def _parse_item_display(spec: str, name: str, qty: int) -> str:
-    """列表展示用：完整规格属性（长宽高/颜色/材料等），不含商品长标题。"""
-    t = (spec or "").strip()
-    if t:
-        return t
-    return (name or "").strip()[:120]
+    """列表展示用：仅 SKU 规格，无规格时不回退商品标题。"""
+    del name, qty  # 保留参数兼容旧调用
+    return (spec or "").strip()
 
 
 _force_sync_lock = threading.Lock()

@@ -833,7 +833,27 @@ _SKIP_ATTR_LABELS = frozenset(
         "sku",
         "款号",
         "条形码",
+        "商品名称",
+        "产品名称",
+        "标题",
     }
+)
+
+# 1688/天猫商品页长标题（非买家下单尺寸）
+_LISTING_TITLE_HINTS = (
+    "批发",
+    "现货",
+    "瓦楞",
+    "包装盒",
+    "快递纸箱",
+    "丝印",
+    "服饰",
+    "内衣",
+    "饰品",
+    "定制链接",
+    "飞机盒",
+    "纸盒",
+    "大市场",
 )
 
 _ORDER_SPEC_HINT = re.compile(
@@ -855,11 +875,28 @@ _DIM_SNIPPET_PATTERNS = (
 )
 
 
+def _is_product_listing_title(text: str) -> bool:
+    """店铺商品长标题，不是买家选的 SKU 规格（1688 定制链接常见）。"""
+    t = _norm_spec_text(text)
+    if not t or len(t) < 18:
+        return False
+    if re.search(r"长\s*x?\s*宽|高度?\s*【", t, re.I):
+        return False
+    if re.search(
+        r"\d+\.?\d*\s*(?:cm|CM|厘米|mm)?\s*[*×xX]\s*\d+\.?\d*", t, re.I
+    ):
+        return False
+    hits = sum(1 for h in _LISTING_TITLE_HINTS if h in t)
+    return hits >= 2 or (len(t) >= 32 and hits >= 1)
+
+
 def _is_product_code_segment(seg: str) -> bool:
     """如 10厘米-27厘米-正方形【零售】 等货号/标题，不是订单尺寸属性。"""
     t = _norm_spec_text(seg)
     if not t:
         return False
+    if _is_product_listing_title(t):
+        return True
     if re.search(r"【(?:零售|批发|现货|包邮|定制链接)", t):
         return True
     head = t.split(":", 1)[0].strip() if ":" in t else ""
@@ -1065,12 +1102,16 @@ def merge_1688_sku_infos(sku_infos: Any) -> str:
             or name.lower() in _SKIP_ATTR_LABELS
         ):
             continue
-        if value and not _is_order_spec_segment(value):
+        if value and (_is_product_listing_title(value) or not _is_order_spec_segment(value)):
+            continue
+        if name and _is_product_listing_title(name):
             continue
         if name and value:
             piece = f"{name}:{value}"
         else:
             piece = value or name
+        if piece and _is_product_listing_title(piece):
+            continue
         if piece and _is_order_spec_segment(piece):
             _spec_parts_add(parts, seen, piece)
     return "；".join(parts)
@@ -1111,6 +1152,7 @@ def km_merge_line_item_spec(it: dict) -> str:
         _spec_parts_add_from_blob(parts, seen, legacy)
 
     if not _parts_have_dimensions(parts):
+        # 只从标题/编码里「提取」尺寸片段，绝不把整段商品标题写入 spec
         extra_texts = [
             it.get("sysTitle"),
             it.get("title"),
@@ -1123,9 +1165,12 @@ def km_merge_line_item_spec(it: dict) -> str:
         if dim:
             for seg in re.split(r"[;；]+", dim):
                 _spec_parts_add(parts, seen, seg)
-        else:
-            for raw in extra_texts:
-                _spec_parts_add_from_blob(parts, seen, _norm_spec_text(raw))
+        for raw in extra_texts:
+            text = _norm_spec_text(raw)
+            if not text or _is_product_listing_title(text):
+                continue
+            for snip in _extract_dimension_snippets(text):
+                _spec_parts_add(parts, seen, snip)
 
     return "；".join(parts)
 
