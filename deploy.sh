@@ -57,7 +57,7 @@ rsync -a --delete \
   --exclude=venv/ --exclude=__pycache__/ --exclude='*.pyc' \
   --exclude=orders_cache.json --exclude=data.json --exclude=dimoldb.json --exclude=inventory.json \
   --exclude='*.log' --exclude=.git/ \
-  --exclude=.env --exclude=alibaba_shops.json \
+  --exclude=.env --exclude=alibaba_shops.json --exclude=km_token.json \
   "$REPO_DIR/" "$TARGET_DIR/"
 log "  Code synced"
 
