@@ -49,6 +49,28 @@
         return fetch(url, opts);
     }
 
+    // 同源 /api/* 自动带 Cookie（生产端 index.html 里大量裸 fetch 会漏 credentials）
+    if (global.fetch && !global.__SY_FETCH_PATCHED) {
+        global.__SY_FETCH_PATCHED = true;
+        const nativeFetch = global.fetch.bind(global);
+        global.fetch = function (url, options) {
+            const opts = options ? Object.assign({}, options) : {};
+            let path = '';
+            if (typeof url === 'string') {
+                path = url;
+            } else if (url && url.url) {
+                path = url.url;
+            }
+            if (
+                path.startsWith('/api/') ||
+                (global.location && path.startsWith(global.location.origin + '/api/'))
+            ) {
+                opts.credentials = opts.credentials || 'same-origin';
+            }
+            return nativeFetch(url, opts);
+        };
+    }
+
     global.SY_AUTH = {
         saveRoute,
         readRoute,

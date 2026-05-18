@@ -412,7 +412,8 @@ def login():
     session['user_name'] = user['name']
     session['role'] = user['role']
     session['employee_name'] = user['employee_name']
-    
+    session.modified = True
+
     # 查找用户所属部门
     emp_dept = ''
     for emp in _employees_master_list:

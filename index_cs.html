@@ -1936,25 +1936,35 @@
 
     // ===== 检查登录状态并初始化 =====
     async function checkLogin() {
+        const overlay = document.getElementById('loginOverlay');
         try {
             const res = await SY_AUTH.apiFetch('/api/me');
+            if (!res.ok) {
+                overlay.style.display = 'flex';
+                return;
+            }
             const data = await res.json();
-            if (data.logged_in) {
-                _currentUser = data.user;
-                if (_currentUser && _currentUser.role === '超级管理员') {
-                    document.body.setAttribute('data-is-admin', 'true');
-                } else {
-                    document.body.removeAttribute('data-is-admin');
-                }
-                document.getElementById('loginOverlay').style.display = 'none';
-                updateUserInfo();
+            if (!data.logged_in) {
+                overlay.style.display = 'flex';
+                return;
+            }
+            _currentUser = data.user;
+            if (_currentUser && _currentUser.role === '超级管理员') {
+                document.body.setAttribute('data-is-admin', 'true');
+            } else {
+                document.body.removeAttribute('data-is-admin');
+            }
+            overlay.style.display = 'none';
+            updateUserInfo();
+            try {
                 await loadPermissions();
                 restorePageAfterLogin();
-            } else {
-                document.getElementById('loginOverlay').style.display = 'flex';
+            } catch (e) {
+                console.error('登录后初始化失败（仍保持登录）:', e);
             }
-        } catch(e) {
-            document.getElementById('loginOverlay').style.display = 'flex';
+        } catch (e) {
+            console.error('checkLogin:', e);
+            overlay.style.display = 'flex';
         }
     }
 

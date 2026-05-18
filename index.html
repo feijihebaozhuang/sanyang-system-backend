@@ -1571,7 +1571,11 @@
     // ===== 刷新后恢复当前页 =====
     function restorePageAfterLogin() {
         const route = SY_AUTH.readRoute();
-        initPages();
+        try {
+            initPages();
+        } catch (e) {
+            console.error('initPages:', e);
+        }
         if (route.sub && document.getElementById('page-' + route.sub)) {
             const subEl = document.querySelector(
                 ".subnav a[onclick*=\"switchSubPage('" + route.sub + "'\"]"
@@ -1589,20 +1593,31 @@
 
     // ===== 检查登录状态并初始化 =====
     async function checkLogin() {
+        const overlay = document.getElementById('loginOverlay');
         try {
             const res = await SY_AUTH.apiFetch('/api/me');
+            if (!res.ok) {
+                console.warn('checkLogin /api/me HTTP', res.status);
+                overlay.style.display = 'flex';
+                return;
+            }
             const data = await res.json();
-            if (data.logged_in) {
-                _currentUser = data.user;
-                document.getElementById('loginOverlay').style.display = 'none';
-                updateUserInfo();
+            if (!data.logged_in) {
+                overlay.style.display = 'flex';
+                return;
+            }
+            _currentUser = data.user;
+            overlay.style.display = 'none';
+            updateUserInfo();
+            try {
                 await loadPermissions();
                 restorePageAfterLogin();
-            } else {
-                document.getElementById('loginOverlay').style.display = 'flex';
+            } catch (e) {
+                console.error('登录后初始化失败（仍保持登录）:', e);
             }
-        } catch(e) {
-            document.getElementById('loginOverlay').style.display = 'flex';
+        } catch (e) {
+            console.error('checkLogin:', e);
+            overlay.style.display = 'flex';
         }
     }
 
@@ -2222,12 +2237,13 @@
     async function loadDashboard() {
         const date = document.getElementById('datePicker').value;
         const data = await getAPI('/api/dashboard?date=' + date);
-        document.getElementById('statTotal').textContent = data.summary.total_orders;
-        document.getElementById('statProduction').textContent = data.summary.in_production;
-        document.getElementById('statUrgent').textContent = data.summary.urgent_orders;
-        document.getElementById('statDone').textContent = data.summary.completed;
+        const summary = data.summary || {};
+        document.getElementById('statTotal').textContent = summary.total_orders ?? '--';
+        document.getElementById('statProduction').textContent = summary.in_production ?? '--';
+        document.getElementById('statUrgent').textContent = summary.urgent_orders ?? '--';
+        document.getElementById('statDone').textContent = summary.completed ?? '--';
 
-        allOrders = data.today_orders;
+        allOrders = data.today_orders || [];
         renderUrgentTodayOrders(allOrders.filter(o => o.urgent));
         // 重置筛选和下拉框
         document.getElementById('filterStore').innerHTML = '<option value="">全部店铺</option>';

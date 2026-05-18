@@ -46,7 +46,9 @@ def get_db_config() -> dict:
 
 
 def get_flask_secret_key() -> str:
-    return _require("FLASK_SECRET_KEY")
+    # 与历史硬编码一致，避免升级后 .env 未配时全员刷新掉登录
+    legacy = "feijihe_sanyang_2026_secret_key_!@#"
+    return os.getenv("FLASK_SECRET_KEY", "").strip() or legacy
 
 
 def get_jst_config() -> dict:
