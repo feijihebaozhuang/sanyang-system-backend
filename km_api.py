@@ -769,8 +769,101 @@ def _norm_spec_text(val: Any) -> str:
     return re.sub(r"\s+", " ", str(val).strip())
 
 
+# 非 SKU 规格字段（orderExt / 平台扩展里常见，勿拼进展示）
+_SKIP_SPEC_KEYS = frozenset(
+    {
+        "customization",
+        "promiseaccepttime",
+        "promisefinishtime",
+        "tid",
+        "sid",
+        "oid",
+        "soid",
+        "userid",
+        "tradeid",
+        "itemid",
+        "skuid",
+        "numiid",
+        "refundingcnt",
+        "refundedcnt",
+        "skucnt",
+        "orderid",
+        "companyid",
+        "warehouseid",
+    }
+)
+
+_SKU_SPEC_FIELD_KEYS = (
+    "sysSkuPropertiesName",
+    "skuPropertiesName",
+    "sysSkuPropertiesAlias",
+)
+
+
+def _norm_spec_seg_key(seg: str) -> str:
+    return re.sub(r"\s+", "", (seg or "").lower())
+
+
+def _is_junk_spec_segment(seg: str) -> bool:
+    t = _norm_spec_text(seg)
+    if not t or len(t) > 120:
+        return True
+    low = t.lower()
+    if '{"' in t or t.startswith("{") or t.startswith("["):
+        return True
+    if re.fullmatch(r"\d{10,}", t):
+        return True
+    if re.match(r"^[a-z_]+:\d{10,}", low):
+        return True
+    head = low.split(":", 1)[0].strip()
+    if head in _SKIP_SPEC_KEYS:
+        return True
+    return False
+
+
+def _split_sku_spec_segments(text: str) -> list[str]:
+    if not text:
+        return []
+    out: list[str] = []
+    for seg in re.split(r"[;；]+", text):
+        s = _norm_spec_text(seg)
+        if s and not _is_junk_spec_segment(s):
+            out.append(s)
+    return out
+
+
+def _spec_value_keys(seg: str) -> set[str]:
+    """提取片段中用于去重的值部分（含「名:值」里的值）。"""
+    t = _norm_spec_text(seg)
+    keys = {_norm_spec_seg_key(t)}
+    if ":" in t:
+        keys.add(_norm_spec_seg_key(t.rsplit(":", 1)[-1]))
+    return {k for k in keys if k}
+
+
+def _spec_parts_add(parts: list[str], seen: set[str], raw: Any) -> None:
+    t = _norm_spec_text(raw)
+    if not t or _is_junk_spec_segment(t):
+        return
+    val_keys = _spec_value_keys(t)
+    if val_keys & seen:
+        return
+    for p in list(parts):
+        pk = _norm_spec_seg_key(p)
+        for vk in val_keys:
+            if pk == vk or (len(vk) > 6 and (vk in pk or pk in vk)):
+                return
+    parts.append(t)
+    seen |= val_keys
+
+
+def _spec_parts_add_segments(parts: list[str], seen: set[str], text: str) -> None:
+    for seg in _split_sku_spec_segments(text):
+        _spec_parts_add(parts, seen, seg)
+
+
 def merge_1688_sku_infos(sku_infos: Any) -> str:
-    """1688 productItems.skuInfos → 规格:值；颜色:值 …（合并全部 SKU 属性）。"""
+    """1688 productItems.skuInfos → 仅 SKU 属性（规格/颜色/材料等）。"""
     if not isinstance(sku_infos, list):
         return ""
     parts: list[str] = []
@@ -780,70 +873,55 @@ def merge_1688_sku_infos(sku_infos: Any) -> str:
             continue
         name = _norm_spec_text(info.get("name") or info.get("attributeName") or "")
         value = _norm_spec_text(info.get("value") or info.get("attributeValue") or "")
+        if name and name.lower() in _SKIP_SPEC_KEYS:
+            continue
+        if value and _is_junk_spec_segment(value):
+            continue
         if name and value:
             piece = f"{name}:{value}"
         else:
             piece = value or name
-        if piece and piece not in seen:
-            seen.add(piece)
-            parts.append(piece)
+        if piece and not _is_junk_spec_segment(piece):
+            _spec_parts_add(parts, seen, piece)
     return "；".join(parts)
 
 
-def _spec_parts_add(parts: list[str], seen: set[str], raw: Any) -> None:
-    t = _norm_spec_text(raw)
-    if not t:
-        return
-    if t in seen:
-        return
-    for p in list(parts):
-        if p == t or (len(t) > 8 and t in p):
-            return
-    parts[:] = [p for p in parts if not (p in t and p != t)]
-    parts.append(t)
-    seen.add(t)
+def km_sanitize_spec_text(spec: str) -> str:
+    """清理已污染的 spec（去掉 tid/sid/customization 等）。"""
+    parts: list[str] = []
+    seen: set[str] = set()
+    _spec_parts_add_segments(parts, seen, spec or "")
+    return "；".join(parts)
 
 
 def km_merge_line_item_spec(it: dict) -> str:
-    """快麦/1688 子订单：合并平台规格、系统规格、备注等为完整属性串。"""
+    """快麦/1688 子订单：仅合并 SKU 规格属性，不含订单扩展/单号/JSON。"""
     if not isinstance(it, dict):
         return ""
     parts: list[str] = []
     seen: set[str] = set()
 
-    for key in (
-        "sysSkuPropertiesName",
-        "skuPropertiesName",
-        "sysSkuPropertiesAlias",
-        "propertiesName",
-        "saleProperties",
-    ):
-        _spec_parts_add(parts, seen, it.get(key))
+    sys_spec = _norm_spec_text(it.get("sysSkuPropertiesName"))
+    plat_spec = _norm_spec_text(it.get("skuPropertiesName"))
+    if sys_spec:
+        _spec_parts_add_segments(parts, seen, sys_spec)
+    if plat_spec and plat_spec != sys_spec:
+        _spec_parts_add_segments(parts, seen, plat_spec)
 
-    for key in ("sysSkuRemark", "sysItemRemark", "skuRemark", "itemRemark"):
-        _spec_parts_add(parts, seen, it.get(key))
-
-    ext = it.get("orderExt")
-    if isinstance(ext, dict):
-        _spec_parts_add(parts, seen, ext.get("orderRemark"))
-        for k, v in ext.items():
-            if k == "orderRemark" or v is None:
-                continue
-            vs = _norm_spec_text(v)
-            if vs:
-                kn = _norm_spec_text(k)
-                _spec_parts_add(parts, seen, f"{kn}:{vs}" if kn else vs)
-    elif ext:
-        _spec_parts_add(parts, seen, ext)
+    alias = _norm_spec_text(it.get("sysSkuPropertiesAlias"))
+    if alias and alias not in (sys_spec, plat_spec):
+        _spec_parts_add_segments(parts, seen, alias)
 
     ali = merge_1688_sku_infos(it.get("skuInfos"))
     if ali:
-        for seg in re.split(r"[；;]+", ali):
-            _spec_parts_add(parts, seen, seg)
+        _spec_parts_add_segments(parts, seen, ali)
 
+    # 旧缓存可能只有 spec 字段，做一次净化
     legacy = _norm_spec_text(it.get("spec"))
-    if legacy:
-        for seg in re.split(r"[；;]+", legacy):
+    if legacy and not parts:
+        _spec_parts_add_segments(parts, seen, legacy)
+    elif legacy and parts:
+        for seg in _split_sku_spec_segments(legacy):
             _spec_parts_add(parts, seen, seg)
 
     return "；".join(parts)
