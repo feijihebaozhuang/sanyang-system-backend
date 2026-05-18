@@ -1575,6 +1575,7 @@
     </div>
 </div>
 
+<script src="/static/auth_session.js"></script>
 <script>
     // ===== 当前登录用户 =====
     let _currentUser = null;
@@ -1597,7 +1598,7 @@
         errEl.style.display = 'none';
         
         try {
-            const res = await fetch('/api/login', {
+            const res = await SY_AUTH.apiFetch('/api/login', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({username, password})
@@ -1620,8 +1621,8 @@
                     await loadPermissions();
                 } catch(e) { console.error('loadPermissions error:', e); }
                 try {
-                    initPages();
-                } catch(e) { console.error('initPages error:', e); }
+                    restorePageAfterLogin();
+                } catch(e) { console.error('restorePage error:', e); }
                 updateUserInfo();
                 // 兜底：确保登录框已隐藏
                 document.getElementById('loginOverlay').style.display = 'none';
@@ -1642,7 +1643,8 @@
     // ===== 登出 =====
     async function doLogout() {
         if (!confirm('确认退出登录？')) return;
-        await fetch('/api/logout');
+        await SY_AUTH.apiFetch('/api/logout');
+        SY_AUTH.clearRoute();
         _currentUser = null;
         document.getElementById('loginOverlay').style.display = 'flex';
         document.getElementById('loginUser').value = '';
@@ -1908,18 +1910,41 @@
         }
     }
 
+    // ===== 刷新后恢复当前页 =====
+    function restorePageAfterLogin() {
+        const route = SY_AUTH.readRoute();
+        initPages();
+        if (route.sub && document.getElementById('page-' + route.sub)) {
+            const subEl = document.querySelector(
+                ".subnav a[onclick*=\"switchSubPage('" + route.sub + "'\"]"
+            );
+            switchSubPage(route.sub, subEl);
+            return;
+        }
+        if (route.top && route.top !== 'main' && document.getElementById('page-' + route.top)) {
+            const topEl = document.querySelector(
+                "#topNav a[onclick*=\"switchTopPage('" + route.top + "'\"]"
+            );
+            switchTopPage(route.top, topEl);
+        }
+    }
+
     // ===== 检查登录状态并初始化 =====
     async function checkLogin() {
         try {
-            const res = await fetch('/api/me');
+            const res = await SY_AUTH.apiFetch('/api/me');
             const data = await res.json();
             if (data.logged_in) {
                 _currentUser = data.user;
+                if (_currentUser && _currentUser.role === '超级管理员') {
+                    document.body.setAttribute('data-is-admin', 'true');
+                } else {
+                    document.body.removeAttribute('data-is-admin');
+                }
                 document.getElementById('loginOverlay').style.display = 'none';
                 updateUserInfo();
-                // 加载权限数据
                 await loadPermissions();
-                initPages();
+                restorePageAfterLogin();
             } else {
                 document.getElementById('loginOverlay').style.display = 'flex';
             }
@@ -1972,6 +1997,7 @@
     // ===== 页面切换 =====
     function switchTopPage(name, el) {
         if (!checkPagePerm(name)) return;
+        SY_AUTH.saveRoute(name, null);
 
         document.querySelectorAll('#topNav a').forEach(a => a.classList.remove('active'));
         if (el) el.classList.add('active');
@@ -2018,6 +2044,7 @@
 
     function switchSubPage(name, el) {
         if (!checkPagePerm(name)) return;
+        SY_AUTH.saveRoute('main', name);
 
         document.querySelectorAll('.subnav a').forEach(a => a.classList.remove('active'));
         if (el) el.classList.add('active');
@@ -2103,7 +2130,7 @@
     }
     // ===== API 调用 =====
     async function getAPI(url) {
-        const res = await fetch(url);
+        const res = await SY_AUTH.apiFetch(url);
         return res.json();
     }
 

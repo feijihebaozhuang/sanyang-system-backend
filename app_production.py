@@ -8,6 +8,7 @@
 from flask import Flask, jsonify, send_from_directory, request, make_response, Response, session
 from flask_cors import CORS
 import json, datetime, csv, io, os, hashlib, copy, time, re, hmac, urllib.parse, urllib.request
+from datetime import timedelta
 from pypinyin import lazy_pinyin
 import pymysql
 
@@ -28,6 +29,13 @@ def get_db():
 app = Flask(__name__, static_folder='.')
 app.secret_key = 'feijihe_sanyang_2026_secret_key_!@#'
 CORS(app, supports_credentials=True)
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=31)
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_REFRESH_EACH_REQUEST'] = True
+app.config['SESSION_COOKIE_SECURE'] = os.getenv('SESSION_COOKIE_SECURE', '').lower() in (
+    '1', 'true', 'yes'
+)
 
 # ==================== 用户系统 ====================
 USERS = {
@@ -300,6 +308,7 @@ def login():
     if enabled_map.get(employee_name, True) is False:
         return jsonify({"success": False, "message": "该账号已被禁用，请联系管理员"})
     
+    session.permanent = True
     session['username'] = username
     session['user_name'] = user['name']
     session['role'] = user['role']
