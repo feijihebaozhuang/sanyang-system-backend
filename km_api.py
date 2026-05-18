@@ -821,13 +821,59 @@ def _is_junk_spec_segment(seg: str) -> bool:
     return False
 
 
+# 商品编码/标题式 SKU 文案（非下单尺寸）
+_SKIP_ATTR_LABELS = frozenset(
+    {
+        "商品编码",
+        "货号",
+        "商家编码",
+        "商品货号",
+        "单品货号",
+        "sku编码",
+        "sku",
+        "款号",
+        "条形码",
+    }
+)
+
+_ORDER_SPEC_HINT = re.compile(
+    r"长|宽|高|厚|深|尺寸|规格|直径|颜色|材质|材料|硬度|每层|层数|×|[xX]|【[^】]*\d"
+)
+
+
+def _is_product_code_segment(seg: str) -> bool:
+    """如 10厘米-27厘米-正方形【零售】 等货号/标题，不是订单尺寸属性。"""
+    t = _norm_spec_text(seg)
+    if not t:
+        return False
+    if re.search(r"【(?:零售|批发|现货|包邮|定制链接)", t):
+        return True
+    head = t.split(":", 1)[0].strip() if ":" in t else ""
+    if head in _SKIP_ATTR_LABELS or head.lower() in _SKIP_ATTR_LABELS:
+        return True
+    # 厘米区间+形状名，且无长宽高等尺寸描述
+    if re.search(r"\d+厘米\s*-\s*\d+厘米", t) and not re.search(
+        r"长\s*[x×X]|长x宽|宽度|高度|高【", t
+    ):
+        return True
+    return False
+
+
+def _is_order_spec_segment(seg: str) -> bool:
+    """客服/production 需要的下单属性：长宽高、材质颜色等。"""
+    if _is_junk_spec_segment(seg) or _is_product_code_segment(seg):
+        return False
+    val = seg.rsplit(":", 1)[-1].strip() if ":" in seg else seg
+    return bool(_ORDER_SPEC_HINT.search(val))
+
+
 def _split_sku_spec_segments(text: str) -> list[str]:
     if not text:
         return []
     out: list[str] = []
     for seg in re.split(r"[;；]+", text):
         s = _norm_spec_text(seg)
-        if s and not _is_junk_spec_segment(s):
+        if s and _is_order_spec_segment(s):
             out.append(s)
     return out
 
@@ -843,7 +889,7 @@ def _spec_value_keys(seg: str) -> set[str]:
 
 def _spec_parts_add(parts: list[str], seen: set[str], raw: Any) -> None:
     t = _norm_spec_text(raw)
-    if not t or _is_junk_spec_segment(t):
+    if not t or not _is_order_spec_segment(t):
         return
     val_keys = _spec_value_keys(t)
     if val_keys & seen:
@@ -873,15 +919,19 @@ def merge_1688_sku_infos(sku_infos: Any) -> str:
             continue
         name = _norm_spec_text(info.get("name") or info.get("attributeName") or "")
         value = _norm_spec_text(info.get("value") or info.get("attributeValue") or "")
-        if name and name.lower() in _SKIP_SPEC_KEYS:
+        if name and (
+            name.lower() in _SKIP_SPEC_KEYS
+            or name in _SKIP_ATTR_LABELS
+            or name.lower() in _SKIP_ATTR_LABELS
+        ):
             continue
-        if value and _is_junk_spec_segment(value):
+        if value and not _is_order_spec_segment(value):
             continue
         if name and value:
             piece = f"{name}:{value}"
         else:
             piece = value or name
-        if piece and not _is_junk_spec_segment(piece):
+        if piece and _is_order_spec_segment(piece):
             _spec_parts_add(parts, seen, piece)
     return "；".join(parts)
 
