@@ -111,13 +111,17 @@ def format_order(o: dict, memo_getter: Callable[[str], str] | None = None) -> di
     so_id = str(info.get("idOfStr") or info.get("id") or "")
     memo_fn = memo_getter or (lambda _x: "")
     shop_full = info.get("shop_name") or ""
-    return {
+    st = info.get("status", "") or ""
+    status_label = "待发货" if st == "waitsellersend" else (st or "待发货")
+    order = {
         "so_id": so_id,
         "tid": so_id,
         "platform": "1688",
         "platform_label": "1688",
-        "order_status": info.get("status", ""),
-        "status_label": "待发货" if info.get("status") == "waitsellersend" else info.get("status", ""),
+        "source": "1688",
+        "order_status": st,
+        "status_label": status_label,
+        "status": status_label,
         "created": (info.get("createTime") or "")[:10],
         "pay_time": (info.get("payTime") or "")[:10],
         "total_amount": info.get("totalAmount", 0),
@@ -136,3 +140,9 @@ def format_order(o: dict, memo_getter: Callable[[str], str] | None = None) -> di
         "seller_memo": memo_fn(so_id),
         "sync_source": "1688_api",
     }
+    try:
+        import km_api as _km
+
+        return _km.finalize_cache_order(order)
+    except Exception:
+        return order

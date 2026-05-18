@@ -3776,6 +3776,8 @@ def api_sync_status():
         'success': True,
         'running': st.get('running'),
         'error': st.get('error'),
+        'phase': st.get('phase'),
+        'detail': st.get('detail'),
         'last': last,
         'count': last.get('pending_count') if isinstance(last, dict) else None,
     })

@@ -3049,6 +3049,14 @@ def api_realtime_orders():
             except ImportError:
                 for o_ in cached_orders:
                     shops.add(o_.get('shop_name', '?'))
+            try:
+                import km_api as _km
+
+                for o_ in cached_orders:
+                    if not o_.get('source') or not o_.get('status'):
+                        _km.finalize_cache_order(o_)
+            except ImportError:
+                pass
             for o_ in cached_orders:
                 for _it in o_.get('items') or []:
                     if isinstance(_it, dict) and not _it.get('display'):
@@ -3277,6 +3285,8 @@ def api_sync_status():
         'success': True,
         'running': st.get('running'),
         'error': st.get('error'),
+        'phase': st.get('phase'),
+        'detail': st.get('detail'),
         'last': last,
         'count': last.get('pending_count') if isinstance(last, dict) else None,
     })

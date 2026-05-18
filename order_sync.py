@@ -106,36 +106,45 @@ def sync_orders_to_cache(
 
         if km_api.km_configured():
             km_api.km_ensure_session()
+            _set_sync_phase("shops", "拉取店铺列表")
             shops = km_api.km_shop_lookup(refresh=True)
             ids_1688 = [u for u, s in shops.items() if s.get("source") == "1688"]
             ids_other = [
                 u
                 for u, s in shops.items()
-                if s.get("source") not in ("1688",) and s.get("source") not in km_api.KM_TM_TB_SOURCES
+                if s.get("source") not in ("1688",)
+                and s.get("source") not in km_api.KM_TM_TB_SOURCES
             ]
-            has_tm_tb = any(s.get("source") in km_api.KM_TM_TB_SOURCES for s in shops.values())
+            report["shop_count_km"] = len(shops)
+            report["shops_1688"] = len(ids_1688)
+            report["shops_other"] = len(ids_other)
+            report["shops_tm_tb"] = sum(
+                1 for s in shops.values() if s.get("source") in km_api.KM_TM_TB_SOURCES
+            )
 
-            if has_tm_tb:
-                raw_out, err_out = km_api.km_fetch_trades_outstock(
-                    days_back,
-                    time_type="upd_time",
-                    status=km_api.KM_PENDING_STATUSES,
-                    source_filter=km_api.KM_TM_TB_SOURCES,
-                )
-                report["km_outstock_count"] = len(raw_out)
-                if err_out:
-                    report["errors"].extend(err_out[:10])
-                for row in raw_out:
-                    o = km_api.km_trade_to_cache_order(row, shops)
-                    o["shop_name"] = normalize_shop_display(o.get("shop_name") or "")
-                    o["sync_source"] = "kuaimai_outstock"
-                    _dedupe_merge(merged, [o])
+            _set_sync_phase("outstock", "淘系 tm/tb")
+            raw_out, err_out = km_api.km_fetch_trades_outstock(
+                days_back,
+                time_type="upd_time",
+                status=km_api.KM_PENDING_STATUSES,
+                source_filter=km_api.KM_TM_TB_SOURCES,
+            )
+            report["km_outstock_count"] = len(raw_out)
+            if err_out:
+                report["errors"].extend(err_out[:10])
+            for row in raw_out:
+                o = km_api.km_trade_to_cache_order(row, shops)
+                o["shop_name"] = normalize_shop_display(o.get("shop_name") or "")
+                o["sync_source"] = "kuaimai_outstock"
+                _dedupe_merge(merged, [o])
+            _flush_cache_snapshot(cache_path, merged, report, shops, partial=True)
 
             if ids_1688:
+                _set_sync_phase("list_1688", f"{len(ids_1688)} 店")
                 raw_1688, err_1688 = km_api.km_fetch_trades(
                     days_back,
                     time_type="pay_time",
-                    status=None,
+                    status=km_api.KM_PENDING_STATUSES,
                     shop_user_ids=ids_1688,
                 )
                 report["km_1688_count"] = len(raw_1688)
@@ -146,8 +155,12 @@ def sync_orders_to_cache(
                     o["shop_name"] = normalize_shop_display(o.get("shop_name") or "")
                     o["sync_source"] = "kuaimai_1688"
                     _dedupe_merge(merged, [o])
+                _flush_cache_snapshot(cache_path, merged, report, shops, partial=True)
+            else:
+                report["errors"].append({"msg": "快麦店铺列表无 1688 店，跳过 list.query"})
 
             if ids_other:
+                _set_sync_phase("list_other", f"{len(ids_other)} 店")
                 raw_other, err_other = km_api.km_fetch_trades(
                     days_back,
                     time_type="pay_time",
@@ -162,10 +175,12 @@ def sync_orders_to_cache(
                     o["shop_name"] = normalize_shop_display(o.get("shop_name") or "")
                     o["sync_source"] = "kuaimai"
                     _dedupe_merge(merged, [o])
+                _flush_cache_snapshot(cache_path, merged, report, shops, partial=True)
         else:
             report["errors"].append({"msg": "快麦未配置，跳过 KM 拉单"})
 
         if include_1688_direct:
+            _set_sync_phase("1688_direct", "开放平台直连")
             try:
                 import alibaba_orders as ali
 
@@ -186,29 +201,9 @@ def sync_orders_to_cache(
                 report["errors"].append({"msg": f"1688直连异常: {e}"})
                 print(f"[订单同步] 1688直连异常: {e}")
 
-        pending = [o for o in merged.values() if _is_pending_cache_order(o)]
-        report["pending_count"] = len(pending)
-
-        for o in pending:
-            if "items" in o:
-                for it in o["items"]:
-                    if isinstance(it, dict) and not it.get("display"):
-                        spec = it.get("spec") or ""
-                        name = it.get("name") or ""
-                        qty = it.get("qty") or 0
-                        it["display"] = _parse_item_display(spec, name, qty)
-
-        payload = {
-            "orders": pending,
-            "updated_at": time.time(),
-            "source": "kuaimai+1688",
-            "shop_count": len(shops),
-            "report": report,
-        }
-        cache_path.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2, default=str),
-            encoding="utf-8",
-        )
+        _set_sync_phase("done", "写入缓存")
+        n_pending = _flush_cache_snapshot(cache_path, merged, report, shops, partial=False)
+        report["pending_count"] = n_pending
         print(
             f"[订单同步] 完成: 待发货 {len(pending)} 条 "
             f"(淘系outstock={report['km_outstock_count']} 快麦1688={report['km_1688_count']} "
@@ -236,7 +231,16 @@ _force_sync_state: dict[str, Any] = {
     "last": None,
     "started_at": None,
     "finished_at": None,
+    "phase": "",
+    "detail": "",
 }
+
+
+def _set_sync_phase(phase: str, detail: str = "") -> None:
+    with _force_sync_lock:
+        _force_sync_state["phase"] = phase
+        _force_sync_state["detail"] = detail
+    print(f"[订单同步] {phase} {detail}".strip())
 
 
 def force_sync_status() -> dict[str, Any]:
@@ -247,7 +251,44 @@ def force_sync_status() -> dict[str, Any]:
             "last": _force_sync_state["last"],
             "started_at": _force_sync_state["started_at"],
             "finished_at": _force_sync_state["finished_at"],
+            "phase": _force_sync_state.get("phase") or "",
+            "detail": _force_sync_state.get("detail") or "",
         }
+
+
+def _flush_cache_snapshot(
+    cache_path: Path,
+    merged: dict[str, dict],
+    report: dict[str, Any],
+    shops: dict[str, dict],
+    *,
+    partial: bool = False,
+) -> int:
+    """分阶段写入缓存，避免长时间拉单时页面一直读旧数据。"""
+    pending = [o for o in merged.values() if _is_pending_cache_order(o)]
+    for o in pending:
+        if "items" in o:
+            for it in o["items"]:
+                if isinstance(it, dict) and not it.get("display"):
+                    it["display"] = _parse_item_display(
+                        it.get("spec", ""),
+                        it.get("name", ""),
+                        it.get("qty", 0),
+                    )
+    report["pending_count"] = len(pending)
+    payload = {
+        "orders": pending,
+        "updated_at": time.time(),
+        "source": "kuaimai+1688",
+        "shop_count": len(shops),
+        "report": dict(report),
+        "partial": partial,
+    }
+    cache_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, default=str),
+        encoding="utf-8",
+    )
+    return len(pending)
 
 
 def start_force_sync_async(
@@ -266,6 +307,8 @@ def start_force_sync_async(
         _force_sync_state["last"] = None
         _force_sync_state["started_at"] = time.time()
         _force_sync_state["finished_at"] = None
+        _force_sync_state["phase"] = "start"
+        _force_sync_state["detail"] = ""
 
     def _run():
         try:
@@ -285,6 +328,8 @@ def start_force_sync_async(
             with _force_sync_lock:
                 _force_sync_state["running"] = False
                 _force_sync_state["finished_at"] = time.time()
+                if not _force_sync_state.get("phase"):
+                    _force_sync_state["phase"] = "idle"
 
     threading.Thread(target=_run, daemon=True).start()
     return True, "同步已开始，请稍候刷新列表"

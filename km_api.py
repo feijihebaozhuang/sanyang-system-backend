@@ -220,7 +220,7 @@ def km_request(
     *,
     session: str | None = None,
     sign_method: str = "hmac",
-    timeout: int = 60,
+    timeout: int | None = None,
     _skip_ensure: bool = False,
     _retry: bool = True,
 ) -> dict[str, Any]:
@@ -262,6 +262,8 @@ def km_request(
         method="POST",
         headers={"Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"},
     )
+    if timeout is None:
+        timeout = int(os.getenv("KM_REQUEST_TIMEOUT", "120"))
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             raw = resp.read().decode("utf-8")
@@ -298,6 +300,86 @@ def km_normalize_shop_name(name: str) -> str:
 
 def km_platform_from_source(source: str) -> str:
     return KM_SOURCE_PLATFORM.get((source or "").strip(), (source or "other"))
+
+
+def km_resolve_raw_source(trade: dict, shop: dict | None = None) -> str:
+    """快麦原始渠道码：tm / tb / 1688 / jd / …"""
+    shop = shop or {}
+    for key in (
+        "source",
+        "tradeSource",
+        "shopSource",
+        "platformSource",
+        "platformCode",
+        "platform",
+    ):
+        v = trade.get(key)
+        if v is not None and str(v).strip():
+            raw = str(v).strip().lower()
+            if raw in ("tmall", "天猫"):
+                return "tm"
+            if raw in ("taobao", "淘宝"):
+                return "tb"
+            if raw in KM_SOURCE_PLATFORM or raw in ("1688", "tm", "tb", "jd", "pdd", "sys", "open"):
+                return raw
+    if shop.get("source"):
+        return str(shop["source"]).strip()
+    title = (
+        (trade.get("shopName") or trade.get("shopLabel") or trade.get("shortTitle") or "")
+    ).lower()
+    if "1688" in title:
+        return "1688"
+    if "天猫" in title or "tmall" in title:
+        return "tm"
+    if "淘宝" in title or "taobao" in title:
+        return "tb"
+    return ""
+
+
+def km_resolve_sys_status(trade: dict) -> str:
+    for key in ("sysStatus", "sys_status", "status", "orderStatus", "tradeStatus"):
+        v = trade.get(key)
+        if v is not None and str(v).strip():
+            return str(v).strip()
+    return ""
+
+
+def finalize_cache_order(o: dict) -> dict:
+    """写入 orders_cache 前统一 source / status / platform（页面与筛选依赖）。"""
+    src = (o.get("source") or o.get("km_source") or "").strip()
+    if not src:
+        plat = (o.get("platform") or "").strip()
+        plat_to_src = {
+            "tmall": "tm",
+            "taobao": "tb",
+            "1688": "1688",
+            "jd": "jd",
+            "pdd": "pdd",
+            "sys": "sys",
+            "other": "open",
+        }
+        src = plat_to_src.get(plat, plat or "open")
+    o["source"] = src
+    o["km_source"] = src
+
+    sys_status = (o.get("order_status") or "").strip()
+    label = (o.get("status_label") or "").strip()
+    if not label:
+        label = KM_SYS_STATUS_LABEL.get(sys_status, sys_status) if sys_status else ""
+    if not label:
+        label = "待发货" if src == "1688" else "待处理"
+    o["status_label"] = label
+    o["status"] = label
+
+    if not o.get("platform"):
+        o["platform"] = km_platform_from_source(src) if src else "other"
+    plat = o["platform"]
+    o["platform_label"] = (
+        "1688"
+        if plat == "1688"
+        else {"tmall": "天猫", "taobao": "淘宝"}.get(plat, plat)
+    )
+    return o
 
 
 def km_shop_lookup(*, refresh: bool = False) -> dict[str, dict]:
@@ -565,7 +647,7 @@ def km_trade_to_cache_order(trade: dict, shops: dict[str, dict] | None = None) -
         trade.get("_km_userId") or trade.get("userId") or trade.get("shopId") or ""
     )
     shop = shops.get(uid, {})
-    src = (trade.get("source") or shop.get("source") or "").strip()
+    src = km_resolve_raw_source(trade, shop)
     platform = km_platform_from_source(src) if src else shop.get("platform", "other")
     shop_name = km_normalize_shop_name(
         shop.get("shop_name")
@@ -591,8 +673,14 @@ def km_trade_to_cache_order(trade: dict, shops: dict[str, dict] | None = None) -
             }
         )
 
-    sys_status = (trade.get("sysStatus") or trade.get("status") or "").strip()
-    created_ms = trade.get("payTime") or trade.get("created") or trade.get("updTime")
+    sys_status = km_resolve_sys_status(trade)
+    created_ms = (
+        trade.get("payTime")
+        or trade.get("created")
+        or trade.get("updTime")
+        or trade.get("consignTime")
+    )
+    pay_ms = trade.get("payTime") or created_ms
     addr = "".join(
         filter(
             None,
@@ -606,26 +694,29 @@ def km_trade_to_cache_order(trade: dict, shops: dict[str, dict] | None = None) -
     )
 
     so_id = str(trade.get("sid") or trade.get("tid") or "")
-    return {
+    order = {
         "so_id": so_id,
         "tid": str(trade.get("tid") or ""),
         "platform": platform,
         "platform_label": platform.upper() if platform == "1688" else platform,
+        "source": src,
         "order_status": sys_status,
-        "status_label": KM_SYS_STATUS_LABEL.get(sys_status, sys_status),
+        "status_label": KM_SYS_STATUS_LABEL.get(sys_status, sys_status) or sys_status,
         "created": _ms_to_date_str(created_ms),
-        "pay_time": _ms_to_date_str(trade.get("payTime")),
+        "pay_time": _ms_to_date_str(pay_ms),
         "total_amount": trade.get("payAmount") or trade.get("payment") or 0,
         "receiver_name": trade.get("receiverName") or trade.get("buyerNick") or "",
         "receiver_mobile": trade.get("receiverMobile") or trade.get("receiverPhone") or "",
         "receiver_address": addr,
         "shop_name": shop_name,
         "items": items,
-        "buyer_memo": trade.get("buyerMessage") or "",
+        "buyer_memo": trade.get("buyerMessage") or trade.get("buyerMemo") or "",
         "seller_memo": trade.get("sellerMemo") or trade.get("sellerMessage") or "",
         "km_source": src,
         "km_user_id": uid,
     }
+    order["status"] = order["status_label"] or "待处理"
+    return finalize_cache_order(order)
 
 
 def km_probe() -> dict[str, Any]:

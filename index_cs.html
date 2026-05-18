@@ -5770,12 +5770,14 @@
     }
 
     async function rtPollSyncUntilDone() {
-        for (let i = 0; i < 120; i++) {
+        for (let i = 0; i < 300; i++) {
             await new Promise(r => setTimeout(r, 2000));
             const res = await SY_AUTH.apiFetch('/api/sync/status');
             const st = await rtParseApiJson(res);
             if (st.running) {
-                rtSetStatus('同步中…(' + (i + 1) + ')', 'load');
+                const ph = st.phase || '同步中';
+                const det = st.detail ? (' · ' + st.detail) : '';
+                rtSetStatus(ph + det, 'load');
                 continue;
             }
             if (st.error) {
@@ -5788,7 +5790,10 @@
             const n = st.count != null ? st.count : (rep.pending_count || 0);
             rtSetStatus('已同步 ' + n + ' 条', 'ok');
             const extra = rep.direct_1688_count != null
-                ? '\n1688直连:' + rep.direct_1688_count + ' 快麦1688:' + (rep.km_1688_count || 0)
+                ? '\n淘系:' + (rep.km_outstock_count || 0)
+                  + ' 快麦1688:' + (rep.km_1688_count || 0)
+                  + ' 其他:' + (rep.km_count || 0)
+                  + ' 1688直连:' + (rep.direct_1688_count || 0)
                 : '';
             alert('已同步 ' + n + ' 条待发货订单' + extra);
             return;
