@@ -85,13 +85,15 @@ def sync_orders_to_cache(
 ) -> dict[str, Any]:
     """
     写入 orders_cache.json。
+    - 淘系 tm/tb：快麦 erp.trade.outstock.simple.query（全账号，无需 userId）
     - 1688：快麦 erp.trade.list.query（单店 userId，无需奇门）
     - 1688：开放平台直连补充（有 alibaba_shops.json 时）
-    - 其他平台：快麦拉取（淘系在快麦中可能不全，见文档）
+    - 其他平台：快麦 list.query 按店
     """
     cache_path = Path(cache_file)
     report: dict[str, Any] = {
         "km_count": 0,
+        "km_outstock_count": 0,
         "km_1688_count": 0,
         "direct_1688_count": 0,
         "pending_count": 0,
@@ -106,7 +108,28 @@ def sync_orders_to_cache(
             km_api.km_ensure_session()
             shops = km_api.km_shop_lookup(refresh=True)
             ids_1688 = [u for u, s in shops.items() if s.get("source") == "1688"]
-            ids_other = [u for u, s in shops.items() if s.get("source") != "1688"]
+            ids_other = [
+                u
+                for u, s in shops.items()
+                if s.get("source") not in ("1688",) and s.get("source") not in km_api.KM_TM_TB_SOURCES
+            ]
+            has_tm_tb = any(s.get("source") in km_api.KM_TM_TB_SOURCES for s in shops.values())
+
+            if has_tm_tb:
+                raw_out, err_out = km_api.km_fetch_trades_outstock(
+                    days_back,
+                    time_type="upd_time",
+                    status=km_api.KM_PENDING_STATUSES,
+                    source_filter=km_api.KM_TM_TB_SOURCES,
+                )
+                report["km_outstock_count"] = len(raw_out)
+                if err_out:
+                    report["errors"].extend(err_out[:10])
+                for row in raw_out:
+                    o = km_api.km_trade_to_cache_order(row, shops)
+                    o["shop_name"] = normalize_shop_display(o.get("shop_name") or "")
+                    o["sync_source"] = "kuaimai_outstock"
+                    _dedupe_merge(merged, [o])
 
             if ids_1688:
                 raw_1688, err_1688 = km_api.km_fetch_trades(
@@ -188,8 +211,8 @@ def sync_orders_to_cache(
         )
         print(
             f"[订单同步] 完成: 待发货 {len(pending)} 条 "
-            f"(快麦1688={report['km_1688_count']} 快麦其他={report['km_count']} "
-            f"1688直连={report['direct_1688_count']})"
+            f"(淘系outstock={report['km_outstock_count']} 快麦1688={report['km_1688_count']} "
+            f"快麦其他={report['km_count']} 1688直连={report['direct_1688_count']})"
         )
         return report
 

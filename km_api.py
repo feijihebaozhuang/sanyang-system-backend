@@ -22,8 +22,11 @@ KM_APP_KEY = os.getenv("KM_APP_KEY", "").strip()
 KM_APP_SECRET = os.getenv("KM_APP_SECRET", "").strip()
 KM_SESSION = os.getenv("KM_SESSION", "").strip()
 
-# 会话失效前多少秒触发刷新（默认 3 天）
-KM_REFRESH_BEFORE_SEC = int(os.getenv("KM_REFRESH_BEFORE_SEC", str(3 * 86400)))
+# 会话失效前多少秒触发刷新（默认 21 天，建议每 25 天主动 refresh）
+KM_REFRESH_BEFORE_SEC = int(os.getenv("KM_REFRESH_BEFORE_SEC", str(21 * 86400)))
+
+# 淘系店铺 source（走 outstock.simple.query，不按店 list.query）
+KM_TM_TB_SOURCES = frozenset({"tm", "tb"})
 
 KM_SOURCE_PLATFORM = {
     "1688": "1688",
@@ -334,6 +337,110 @@ def km_shop_list(*, refresh: bool = False) -> list[dict]:
     return list(km_shop_lookup(refresh=refresh).values())
 
 
+def _response_trade_list(res: dict[str, Any]) -> list:
+    if not res.get("success"):
+        return []
+    batch = res.get("list")
+    if isinstance(batch, list):
+        return batch
+    data = res.get("data")
+    if isinstance(data, dict):
+        inner = data.get("list") or data.get("trades") or data.get("orders")
+        if isinstance(inner, list):
+            return inner
+    return []
+
+
+def km_outstock_simple_page(
+    *,
+    start_time: str,
+    end_time: str,
+    page_no: int = 1,
+    page_size: int = 200,
+    time_type: str = "upd_time",
+    status: str | None = None,
+    tid: str | None = None,
+    sid: str | None = None,
+) -> dict[str, Any]:
+    """erp.trade.outstock.simple.query — 含淘系/天猫/淘宝，无需按店 userId。"""
+    page_size = max(20, min(200, int(page_size)))
+    biz: dict[str, Any] = {
+        "timeType": time_type,
+        "startTime": start_time,
+        "endTime": end_time,
+        "pageNo": str(page_no),
+        "pageSize": str(page_size),
+    }
+    if status:
+        biz["status"] = status
+    if tid:
+        biz["tid"] = str(tid)
+    if sid:
+        biz["sid"] = str(sid)
+    return km_request("erp.trade.outstock.simple.query", biz)
+
+
+def km_fetch_trades_outstock(
+    days_back: int = 14,
+    *,
+    time_type: str = "upd_time",
+    status: str | None = KM_PENDING_STATUSES,
+    page_size: int = 200,
+    source_filter: frozenset[str] | None = KM_TM_TB_SOURCES,
+) -> tuple[list[dict], list[dict]]:
+    """按天分页拉取出库/订单（淘系等）；source_filter 为 None 时不按 source 过滤。"""
+    end = datetime.now()
+    start = end - timedelta(days=max(1, days_back))
+    all_orders: list[dict] = []
+    errors: list[dict] = []
+    seen: set[str] = set()
+
+    import time as _time
+
+    for start_time, end_time in _day_ranges(start, end):
+        page_no = 1
+        while page_no <= 500:
+            res = km_outstock_simple_page(
+                start_time=start_time,
+                end_time=end_time,
+                page_no=page_no,
+                page_size=page_size,
+                time_type=time_type,
+                status=status,
+            )
+            if not res.get("success"):
+                errors.append(
+                    {
+                        "api": "erp.trade.outstock.simple.query",
+                        "window": f"{start_time} ~ {end_time}",
+                        "page": page_no,
+                        "code": res.get("code"),
+                        "msg": res.get("msg"),
+                    }
+                )
+                break
+            batch = _response_trade_list(res)
+            for row in batch:
+                if not isinstance(row, dict):
+                    continue
+                src = (row.get("source") or "").strip()
+                if source_filter is not None and src not in source_filter:
+                    continue
+                sid = str(row.get("sid") or row.get("tid") or "")
+                if sid and sid not in seen:
+                    seen.add(sid)
+                    uid = str(row.get("userId") or row.get("shopId") or "")
+                    if uid:
+                        row.setdefault("_km_userId", uid)
+                    all_orders.append(row)
+            if len(batch) < page_size:
+                break
+            page_no += 1
+            _time.sleep(0.15)
+
+    return all_orders, errors
+
+
 def km_trade_list_page(
     *,
     start_time: str,
@@ -422,9 +529,8 @@ def km_fetch_trades(
                         }
                     )
                     break
-                batch = res.get("list") or []
-                if not isinstance(batch, list):
-                    errors.append({"userId": uid, "msg": "无 list"})
+                batch = _response_trade_list(res)
+                if not batch:
                     break
                 for row in batch:
                     if isinstance(row, dict):
@@ -564,8 +670,33 @@ def km_probe() -> dict[str, Any]:
             }
         )
     out["trade_sample_per_shop"] = per_shop
+    end_o = end.strftime("%Y-%m-%d %H:%M:%S")
+    start_o = (end - timedelta(days=1)).strftime("%Y-%m-%d 00:00:00")
+    res_o = km_outstock_simple_page(
+        start_time=start_o,
+        end_time=end_o,
+        page_no=1,
+        page_size=20,
+        time_type="upd_time",
+        status=None,
+    )
+    sample_o = _response_trade_list(res_o)
+    sources_o: dict[str, int] = {}
+    for row in sample_o[:50]:
+        if isinstance(row, dict):
+            src = (row.get("source") or "unknown").strip()
+            sources_o[src] = sources_o.get(src, 0) + 1
+    out["outstock_sample"] = {
+        "success": res_o.get("success"),
+        "count_page1": len(sample_o),
+        "code": res_o.get("code"),
+        "msg": res_o.get("msg"),
+        "sources_in_sample": sources_o,
+    }
     out["notes"] = [
-        "使用单店参数 userId（驼峰），禁止 userIds",
-        "erp.trade.list.query 不含淘系完整数据",
+        "淘系 tm/tb：erp.trade.outstock.simple.query（全店，无需 userId）",
+        "1688/其他：erp.trade.list.query + 单店 userId，禁止 userIds",
+        "pageSize 最小 20；时间跨度建议 ≤1 天",
+        "open.token.refresh 建议每 25 天执行",
     ]
     return out

@@ -21,7 +21,29 @@
 2. 拼接：`key1value1key2value2...`（无分隔符）  
 3. `sign = UPPER(hex(hmac_md5(secret, 拼接串)))`
 
-## 4. 订单查询 `erp.trade.list.query`
+## 4. 订单查询（双接口，2026-05 大虾实测）
+
+| 接口 | 方法名 | 覆盖 | 说明 |
+|------|--------|------|------|
+| 销售出库/全量 | `erp.trade.outstock.simple.query` | **含淘系 tm/tb** | 无需 `userId`，按天分页；样本量可达 2 万+ |
+| 订单列表 | `erp.trade.list.query` | 非淘系、非拼多多 | **必须单店 `userId`**，禁止 `userIds` |
+
+本仓库：`km_fetch_trades_outstock()` 拉淘系；`km_fetch_trades()` 按店拉 1688/其他。
+
+### 4.1 `erp.trade.outstock.simple.query`
+
+| 参数 | 必填 | 说明 |
+|------|------|------|
+| `pageNo` | 是 | 从 1 开始 |
+| `pageSize` | 是 | 20–200 |
+| `timeType` | 否 | `created` / `pay_time` / `consign_time` / `upd_time` |
+| `startTime` / `endTime` | 否 | `yyyy-MM-dd HH:mm:ss`，跨度建议 ≤1 天 |
+| `status` | 否 | 订单状态，多个逗号分隔 |
+| `tid` / `sid` | 否 | 平台单号 / 系统单号 |
+
+淘系手机号等敏感字段会脱敏（`receiverMobile`）。
+
+### 4.2 `erp.trade.list.query`
 
 ### 业务参数（必须驼峰）
 
@@ -40,7 +62,7 @@
 | **勿用 `userIds`** | 传逗号多店会 `code=33` 非法店铺编号 |
 | **必须用 `userId` 单店** | 拉全店需**按店铺循环**调用 |
 | **1688 无需奇门** | `source=1688` 店铺走本接口即可；另可用 `alibaba_orders.py` 直连 1688 开放平台兜底 |
-| 淘系 tm/tb | 快麦中可能不全，完整淘系需奇门（与 1688 无关） |
+| 淘系 tm/tb | 用 **outstock.simple.query**；勿仅用 list.query |
 | 时间跨度 | 超过 1 天易失败或漏单，按天切片 |
 
 ### 店铺遍历
@@ -94,8 +116,12 @@
 
 | 模块 | 说明 |
 |------|------|
-| `km_api.py` | 签名、刷新、按店 userId 拉单、字段映射 |
+| `km_api.py` | HMAC-MD5 签名、`open.token.refresh`、outstock + list 拉单、映射 |
 | `alibaba_orders.py` | 1688 开放平台直连（无需奇门） |
-| `order_sync.py` | 快麦 1688 + 1688 直连合并去重 → 缓存 |
+| `order_sync.py` | 淘系 outstock + 1688 list + 1688 直连 → 缓存 |
+| `scripts/km_fetch_orders.py` | 服务器手动拉单/探测 |
+| `scripts/km_probe_orders.py` | 快速探测 |
 | `app_cs.py` / `app_production.py` | 后台同步、`POST /api/sync/force` |
 | `orders_cache.json` | 实时订单缓存 |
+
+凭证模板：`km_token.json.example` → 复制为 `km_token.json`（勿提交 Git）。
