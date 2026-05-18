@@ -388,6 +388,47 @@ def km_resolve_sys_status(trade: dict) -> str:
     return ""
 
 
+def km_resolve_internal_so_id(trade: dict) -> str:
+    """快麦 ERP 内部单号（sid），勿用平台 tid 作为 so_id。"""
+    tid = str(trade.get("tid") or "").strip()
+    candidates: list[str] = []
+    for key in ("sid", "tradeId", "trade_id", "shortId", "id"):
+        v = trade.get(key)
+        if v is None:
+            continue
+        s = str(v).strip()
+        if not s:
+            continue
+        if tid and s == tid and len(tid) > 14:
+            continue
+        candidates.append(s)
+    if tid and len(tid) > 14:
+        short = [c for c in candidates if c != tid and len(c) <= 14]
+        if short:
+            return short[0]
+    for key in ("sid", "tradeId", "trade_id", "shortId"):
+        v = trade.get(key)
+        if v is not None and str(v).strip():
+            return str(v).strip()
+    sid = str(trade.get("sid") or "").strip()
+    return sid
+
+
+def km_normalize_so_id_fields(o: dict) -> None:
+    """旧缓存可能把平台 tid 写在 so_id，读取时尽量纠正为内部单号。"""
+    tid = str(o.get("tid") or o.get("platform_tid") or "").strip()
+    sid = str(o.get("km_sid") or o.get("sid") or "").strip()
+    so = str(o.get("so_id") or "").strip()
+    if sid:
+        o["km_sid"] = sid
+        if not so or (tid and so == tid) or len(so) > 14:
+            o["so_id"] = sid
+    elif so and len(so) <= 14:
+        o["km_sid"] = so
+    elif tid and so == tid and len(so) > 14:
+        o["platform_tid"] = tid
+
+
 def km_to_float(val: Any, default: float = 0.0) -> float:
     """快麦金额字段常为字符串（如 '360.00'），统一转 float 供前端 toFixed。"""
     if val is None or val == "":
@@ -439,6 +480,7 @@ def finalize_cache_order(o: dict) -> dict:
     for it in o.get("items") or []:
         if isinstance(it, dict) and it.get("price") is not None:
             it["price"] = km_to_float(it.get("price"))
+    km_normalize_so_id_fields(o)
     return o
 
 
@@ -568,7 +610,7 @@ def km_fetch_trades_outstock(
                 src = (row.get("source") or "").strip()
                 if source_filter is not None and src not in source_filter:
                     continue
-                sid = str(row.get("sid") or row.get("tid") or "")
+                sid = km_resolve_internal_so_id(row)
                 if sid and sid not in seen:
                     seen.add(sid)
                     uid = str(row.get("userId") or row.get("shopId") or "")
@@ -677,7 +719,7 @@ def km_fetch_trades(
                 for row in batch:
                     if isinstance(row, dict):
                         row.setdefault("_km_userId", str(uid))
-                    sid = str(row.get("sid") or row.get("tid") or "")
+                    sid = km_resolve_internal_so_id(row)
                     if sid and sid not in seen:
                         seen.add(sid)
                         all_orders.append(row)
@@ -753,10 +795,13 @@ def km_trade_to_cache_order(trade: dict, shops: dict[str, dict] | None = None) -
         )
     )
 
-    so_id = str(trade.get("sid") or trade.get("tid") or "")
+    km_sid = km_resolve_internal_so_id(trade)
+    platform_tid = str(trade.get("tid") or "").strip()
     order = {
-        "so_id": so_id,
-        "tid": str(trade.get("tid") or ""),
+        "so_id": km_sid or platform_tid,
+        "km_sid": km_sid,
+        "tid": platform_tid,
+        "platform_tid": platform_tid,
         "platform": platform,
         "platform_label": platform.upper() if platform == "1688" else platform,
         "source": src,
@@ -769,6 +814,9 @@ def km_trade_to_cache_order(trade: dict, shops: dict[str, dict] | None = None) -
         ),
         "receiver_name": trade.get("receiverName") or trade.get("buyerNick") or "",
         "receiver_mobile": trade.get("receiverMobile") or trade.get("receiverPhone") or "",
+        "receiver_province": (trade.get("receiverState") or trade.get("receiverProvince") or "").strip(),
+        "receiver_city": (trade.get("receiverCity") or "").strip(),
+        "receiver_district": (trade.get("receiverDistrict") or "").strip(),
         "receiver_address": addr,
         "shop_name": shop_name,
         "items": items,

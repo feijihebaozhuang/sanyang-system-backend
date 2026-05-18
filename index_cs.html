@@ -1223,7 +1223,7 @@
     <!-- ===== 数据看板页（大屏优化） ===== -->
     <div id="page-databoard" class="page-section" style="background:#0f172a;min-height:calc(100vh - 104px);">
         <div class="overview-header" style="padding:16px 24px;background:linear-gradient(135deg,#1a1a2e,#16213e);color:#fff;border-radius:12px 12px 0 0;margin:0;">
-            <h3 style="color:#fff;font-size:20px;">📈 生产数据看板</h3>
+            <h3 style="color:#fff;font-size:20px;">📈 店铺数据看板</h3>
             <div style="display:flex;gap:12px;align-items:center;">
                 <span id="boardLiveTime" style="font-size:14px;color:rgba(255,255,255,0.6);font-family:monospace;"></span>
                 <select id="boardRange" style="padding:6px 12px;border:1px solid rgba(255,255,255,0.2);border-radius:6px;font-size:13px;background:rgba(255,255,255,0.1);color:#fff;outline:none;" onchange="loadDataBoard()">
@@ -1237,33 +1237,33 @@
 
             <!-- 核心指标 7大卡片 -->
             <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:16px;">
-                <div class="db-card" style="background:linear-gradient(135deg,#1e293b,#334155);"><div class="db-val" style="color:#38bdf8;" id="bdTotal">--</div><div class="db-label">总产出</div></div>
-                <div class="db-card" style="background:linear-gradient(135deg,#1e293b,#334155);"><div class="db-val" style="color:#34d399;" id="bdOrders">--</div><div class="db-label">总订单</div></div>
-                <div class="db-card" style="background:linear-gradient(135deg,#1e293b,#334155);"><div class="db-val" style="color:#a78bfa;" id="bdDone">--</div><div class="db-label">已完成</div></div>
-                <div class="db-card" style="background:linear-gradient(135deg,#1e293b,#334155);"><div class="db-val" style="color:#fbbf24;" id="bdProd">--</div><div class="db-label">生产中</div></div>
+                <div class="db-card" style="background:linear-gradient(135deg,#1e293b,#334155);"><div class="db-val" style="color:#38bdf8;" id="bdTotal">--</div><div class="db-label">销售额</div></div>
+                <div class="db-card" style="background:linear-gradient(135deg,#1e293b,#334155);"><div class="db-val" style="color:#34d399;" id="bdOrders">--</div><div class="db-label">订单数</div></div>
+                <div class="db-card" style="background:linear-gradient(135deg,#1e293b,#334155);"><div class="db-val" style="color:#a78bfa;" id="bdDone">--</div><div class="db-label">日均单</div></div>
+                <div class="db-card" style="background:linear-gradient(135deg,#1e293b,#334155);"><div class="db-val" style="color:#fbbf24;" id="bdProd">--</div><div class="db-label">待发货</div></div>
                 <div class="db-card" style="background:linear-gradient(135deg,#1e293b,#334155);"><div class="db-val" style="color:#fb7185;" id="bdUrgent">--</div><div class="db-label">加急单</div></div>
-                <div class="db-card" style="background:linear-gradient(135deg,#1e293b,#334155);"><div class="db-val" style="color:#34d399;" id="bdRate">--</div><div class="db-label">准时率</div></div>
-                <div class="db-card" style="background:linear-gradient(135deg,#1e293b,#334155);"><div class="db-val" style="color:#fbbf24;" id="bdDefect">--</div><div class="db-label">不良率</div></div>
+                <div class="db-card" style="background:linear-gradient(135deg,#1e293b,#334155);"><div class="db-val" style="color:#34d399;" id="bdRate">--</div><div class="db-label">店铺数</div></div>
+                <div class="db-card" style="background:linear-gradient(135deg,#1e293b,#334155);"><div class="db-val" style="color:#fbbf24;" id="bdDefect">--</div><div class="db-label">平台数</div></div>
             </div>
 
             <!-- 图表区 2行 -->
             <div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-bottom:12px;">
-                <div class="db-chart"><div class="db-chart-title">📈 每日产出趋势</div><div class="bar-chart" id="boardTrendChart" style="height:180px;"></div></div>
+                <div class="db-chart"><div class="db-chart-title">📈 每日订单趋势</div><div class="bar-chart" id="boardTrendChart" style="height:180px;"></div></div>
                 <div class="db-chart">
-                    <div class="db-chart-title">⏰ 今日各时段产出</div>
+                    <div class="db-chart-title">⏰ 各时段下单量</div>
                     <div style="display:flex;align-items:flex-end;gap:4px;height:150px;padding:8px 4px;" id="boardHourly"></div>
                 </div>
             </div>
 
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
                 <div class="db-chart"><div class="db-chart-title">🏪 店铺订单分布</div><div id="boardStorePie" style="padding:8px;"></div></div>
-                <div class="db-chart"><div class="db-chart-title">🔧 各工序负荷</div><div id="boardProcessLoad" style="padding:8px;"></div></div>
-                <div class="db-chart"><div class="db-chart-title">👷 各组达成率</div><div id="boardWorkerProd" style="padding:8px;"></div></div>
+                <div class="db-chart"><div class="db-chart-title">📱 平台订单分布</div><div id="boardProcessLoad" style="padding:8px;"></div></div>
+                <div class="db-chart"><div class="db-chart-title">🏪 店铺 TOP</div><div id="boardWorkerProd" style="padding:8px;"></div></div>
             </div>
 
             <!-- 底部 -->
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-                <div class="db-chart"><div class="db-chart-title">📊 产品类型占比</div><div id="boardProductType" style="padding:8px;"></div></div>
+                <div class="db-chart"><div class="db-chart-title">📊 店铺占比</div><div id="boardProductType" style="padding:8px;"></div></div>
                 <div class="db-chart"><div class="db-chart-title">📋 最新动态</div><div id="boardNews" style="padding:8px;"></div></div>
             </div>
 
@@ -2310,7 +2310,7 @@
             let attrStr = '';
             if (o.items && o.items.length > 0) {
                 attrStr = o.items.map(item => {
-                    const label = item.display || item.spec || item.name || '';
+                    const label = item.spec || item.name || '';
                     const qty = item.qty || 0;
                     return '<div style="line-height:1.8;">' + label + '<span style="color:#999;margin-left:6px;">×' + qty + '</span></div>';
                 }).join('');
@@ -2957,13 +2957,13 @@
         setInterval(updateTime, 1000);
         
         // 7大指标
-        document.getElementById('bdTotal').textContent = data.stats.total_output.toLocaleString();
+        document.getElementById('bdTotal').textContent = '¥' + Number(data.stats.total_output || 0).toLocaleString();
         document.getElementById('bdOrders').textContent = data.stats.total_orders;
-        document.getElementById('bdDone').textContent = data.stats.completed;
+        document.getElementById('bdDone').textContent = data.stats.avg_daily != null ? data.stats.avg_daily : '-';
         document.getElementById('bdProd').textContent = data.stats.in_production;
         document.getElementById('bdUrgent').textContent = data.stats.urgent_count;
-        document.getElementById('bdRate').textContent = data.stats.on_time_rate;
-        document.getElementById('bdDefect').textContent = data.stats.defect_rate;
+        document.getElementById('bdRate').textContent = (data.store_distribution || []).length;
+        document.getElementById('bdDefect').textContent = (data.platform_distribution || []).length;
         
         // 每日产出趋势
         const maxV = Math.max(...data.trend.map(d => d.output));
@@ -3022,28 +3022,15 @@
             </div>`
         ).join('');
         
-        // 各组达成率
-        document.getElementById('boardWorkerProd').innerHTML = data.worker_productivity.map(d => {
-            const barColor = d.pct >= 90 ? '#34d399' : d.pct >= 80 ? '#fbbf24' : '#fb7185';
-            return `<div style="margin-bottom:8px;">
-                <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">
-                    <span style="color:rgba(255,255,255,0.7);">${d.name}</span>
-                    <span style="color:rgba(255,255,255,0.4);">${d.output}/${d.target}</span>
-                </div>
-                <div style="height:8px;background:rgba(255,255,255,0.1);border-radius:4px;overflow:hidden;">
-                    <div style="height:100%;width:${d.pct}%;background:${barColor};border-radius:4px;"></div>
-                </div>
-            </div>`;
-        }).join('');
-        
-        // 最新动态
-        const news = [
-            {icon: '✅', text: 'JST-20260426-003 清废完成', time: '14:30'},
-            {icon: '🏭', text: '自动平压平线 今日产出5800', time: '14:25'},
-            {icon: '📦', text: 'JST-20260425-005 已打包发货', time: '14:00'},
-            {icon: '🔧', text: 'DM-004刀模维修中（预计明日完成）', time: '13:30'},
-            {icon: '📋', text: '覃海霞完成 5单审单分单', time: '12:00'},
-            {icon: '🚚', text: '3单已安排下午送货', time: '11:30'},
+        // 店铺 TOP（复用 worker 区块）
+        const storeTop = (data.store_distribution || []).slice(0, 6);
+        document.getElementById('boardWorkerProd').innerHTML = storeTop.length ? storeTop.map(d => {
+            return `<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;color:rgba(255,255,255,0.75);">
+                <span>${d.name}</span><span>${d.count}单 (${d.pct}%)</span></div>`;
+        }).join('') : '<div style="color:rgba(255,255,255,0.4);font-size:12px;">暂无数据</div>';
+
+        const news = (data.recent_news && data.recent_news.length) ? data.recent_news : [
+            {icon: '📭', text: '暂无近期订单', time: ''},
         ];
         document.getElementById('boardNews').innerHTML = news.map(n => 
             `<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:12px;">
@@ -5521,6 +5508,34 @@
         return (parseFloat(v) || 0).toFixed(2);
     }
 
+    function rtOrderNo(o) {
+        if (!o) return '';
+        var sid = o.km_sid || o.sid || '';
+        if (sid) return String(sid);
+        var so = o.so_id || '';
+        var tid = o.tid || o.platform_tid || '';
+        if (so && (!tid || so !== tid) && String(so).length <= 14) return String(so);
+        return String(so || tid || '');
+    }
+
+    function rtEscJs(s) {
+        return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    }
+
+    function rtFindOrder(id) {
+        var q = String(id || '');
+        return _rtAllOrders.find(function(x) {
+            return rtOrderNo(x) === q || String(x.so_id || '') === q || String(x.tid || '') === q;
+        });
+    }
+
+    function rtRegion(o) {
+        var p = (o.receiver_province || '').trim();
+        var c = (o.receiver_city || '').trim();
+        if (p && c) return p + ' ' + c;
+        return p || c || '';
+    }
+
     function rtOrderDateKey(created) {
         const s = String(created || '');
         let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -5618,7 +5633,10 @@
         }
         const search = (document.getElementById('rtSearchInput').value || '').trim().toLowerCase();
         if (search) {
-            filtered = filtered.filter(o => (o.so_id || '').toLowerCase().includes(search));
+            filtered = filtered.filter(function(o) {
+                var blob = (rtOrderNo(o) + ' ' + (o.tid || '') + ' ' + (o.so_id || '')).toLowerCase();
+                return blob.includes(search);
+            });
         }
 
         const countEl = document.getElementById('rtOrderCount');
@@ -5664,6 +5682,8 @@
             '<th style="padding:8px 6px;border-bottom:1px solid #e8e8e8;text-align:left;">店铺</th>' +
             '<th style="padding:8px 6px;border-bottom:1px solid #e8e8e8;text-align:left;">单号</th>' +
             '<th style="padding:8px 6px;border-bottom:1px solid #e8e8e8;text-align:left;">买家</th>' +
+            '<th style="padding:8px 6px;border-bottom:1px solid #e8e8e8;text-align:left;">省份</th>' +
+            '<th style="padding:8px 6px;border-bottom:1px solid #e8e8e8;text-align:left;">城市</th>' +
             '<th style="padding:8px 6px;border-bottom:1px solid #e8e8e8;text-align:left;">商品</th>' +
             '<th style="padding:8px 6px;border-bottom:1px solid #e8e8e8;text-align:left;">买家备注</th>' +
             '<th style="padding:8px 6px;border-bottom:1px solid #e8e8e8;text-align:left;">卖家备注</th>' +
@@ -5680,21 +5700,24 @@
             var specHtml = '';
             if (o.items && o.items.length > 0) {
                 specHtml = o.items.map(function(itm) {
-                    var label = itm.display || itm.spec || itm.name || '';
+                    var label = itm.spec || itm.name || '';
                     return '<div style="white-space:nowrap;">' + label + ' <b style="color:#e94560;">×' + (itm.qty || 0) + '</b></div>';
                 }).join('');
             }
+            var orderNo = rtOrderNo(o);
 
             var dateStr = (o.created || '').replace(/^(\d{4})(\d{2})(\d{2}).*/, '$2-$3');
             var buyerMemo = o.buyer_memo || '';
             var sellerMemo = o.seller_memo || '';
 
-            html += '<tr style="cursor:pointer;" onclick="rtShowDetail(\'' + o.so_id + '\')">' +
+            html += '<tr style="cursor:pointer;" onclick="rtShowDetail(\'' + rtEscJs(orderNo) + '\')">' +
                 '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;font-size:11px;color:#999;white-space:nowrap;">' + dateStr + '</td>' +
                 '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;">' + platformBadge + '</td>' +
                 '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;font-size:11px;">' + (o.shop_name || '') + '</td>' +
-                '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;font-family:monospace;font-size:11px;">' + (o.so_id || '') + '</td>' +
+                '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;font-family:monospace;font-size:11px;">' + orderNo + '</td>' +
                 '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;">' + (o.receiver_name || o.buyer_login_id || '') + '</td>' +
+                '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;font-size:11px;">' + (o.receiver_province || '') + '</td>' +
+                '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;font-size:11px;">' + (o.receiver_city || '') + '</td>' +
                 '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;max-width:400px;font-size:11px;">' + specHtml + '</td>' +
                 '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;max-width:120px;font-size:11px;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + buyerMemo + '">' + buyerMemo + '</td>' +
                 '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;max-width:120px;font-size:11px;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + sellerMemo + '">' + sellerMemo + '</td>' +
@@ -5930,7 +5953,7 @@
         body.innerHTML = '<div style="text-align:center;padding:40px;color:#999;">⏳ 加载中...</div>';
 
         // 从已加载数据中取
-        const o = _rtAllOrders.find(x => x.so_id === soId);
+        const o = rtFindOrder(soId);
         if (!o) {
             body.innerHTML = '<div style="text-align:center;padding:40px;color:#e94560;">未找到订单</div>';
             return;
@@ -5938,24 +5961,27 @@
 
         const itemsHtml = (o.items || []).map(item => {
             return '<tr>' +
-                '<td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;font-size:12px;">' + (item.name || '') +
-                (item.spec ? '<br><span style="color:#999;font-size:11px;">' + item.spec + '</span>' : '') + '</td>' +
+                '<td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;font-size:12px;">' + (item.spec || item.name || '') + '</td>' +
                 '<td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;text-align:center;font-size:12px;">' + (item.qty || 0) + '</td>' +
-                '<td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;text-align:right;font-size:12px;">¥' + (item.price || 0).toFixed(2) + '</td>' +
+                '<td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;text-align:right;font-size:12px;">¥' + rtFmtMoney(item.price) + '</td>' +
                 '</tr>';
         }).join('');
+        const orderNo = rtOrderNo(o);
+        const region = rtRegion(o);
 
         body.innerHTML = `
             <div style="background:#f9f9f9;border-radius:8px;padding:16px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
                     <div>
-                        <span style="font-size:18px;font-weight:700;">${o.so_id}</span>
+                        <span style="font-size:18px;font-weight:700;">${orderNo}</span>
+                        ${o.tid && o.tid !== orderNo ? '<span style="font-size:11px;color:#999;margin-left:6px;">平台:' + o.tid + '</span>' : ''}
                         <span style="margin-left:8px;background:${o.platform === '1688' ? '#ff6a00' : '#1677ff'};color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;">${o.platform_label || o.platform || ''}</span>
                     </div>
                     <span style="font-size:13px;color:#52c41a;font-weight:600;">${o.status_label || '待发货'}</span>
                 </div>
                 <div style="font-size:13px;margin-bottom:8px;"><b>下单时间：</b>${o.created || ''}</div>
                 <div style="font-size:13px;margin-bottom:8px;"><b>买家：</b>${o.receiver_name || o.buyer_login_id || ''}</div>
+                <div style="font-size:13px;margin-bottom:8px;"><b>发货地：</b>${region || '—'}</div>
                 <div style="font-size:13px;margin-bottom:8px;"><b>实付：</b>¥${rtFmtMoney(o.total_amount)} ${(parseFloat(o.shipping_fee) || 0) > 0 ? '(含运费¥' + rtFmtMoney(o.shipping_fee) + ')' : ''}</div>
                 <div style="font-size:13px;font-weight:600;margin:12px 0 6px;">📦 商品明细</div>
                 <table style="width:100%;border-collapse:collapse;font-size:12px;">
@@ -5969,7 +5995,7 @@
                 <div style="margin-top:16px;border-top:1px solid #e8e8e8;padding-top:12px;">
                     <div style="font-size:13px;font-weight:600;margin-bottom:6px;">📝 卖家备注</div>
                     <textarea id="rtSellerMemoInput" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;min-height:60px;resize:vertical;">${o.seller_memo || ''}</textarea>
-                    <button onclick="rtSaveSellerMemo('${o.so_id}')" style="margin-top:6px;padding:6px 16px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">💾 保存备注并同步1688</button>
+                    <button onclick="rtSaveSellerMemo('${orderNo.replace(/'/g, "\\'")}')" style="margin-top:6px;padding:6px 16px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">💾 保存备注并同步1688</button>
                     <span id="rtMemoStatus" style="margin-left:8px;font-size:11px;color:#999;"></span>
                 </div>
             </div>

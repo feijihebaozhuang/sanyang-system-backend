@@ -634,20 +634,40 @@ def _parse_item_display(spec, name, qty=0):
     s = spec.replace(';', ' ').replace('；', ' ').strip()
     return s[:40]
 
+def _order_on_date(o: dict, date_yyyy_mm_dd: str) -> bool:
+    """匹配订单日期（created/pay_time 支持 yyyy-MM-dd 或 yyyyMMdd）。"""
+    raw = str(o.get('created') or o.get('pay_time') or '')
+    if raw.startswith(date_yyyy_mm_dd):
+        return True
+    digits = ''.join(c for c in raw if c.isdigit())
+    want = date_yyyy_mm_dd.replace('-', '')
+    return len(digits) >= 8 and digits[:8] == want
+
+
+def _dashboard_shop_info(shop_name: str) -> dict:
+    """店铺名 → 首页展示用 store/worker（结合 shop_config）。"""
+    try:
+        import order_sync as _osync
+        short = _osync.normalize_shop_display(shop_name or '')
+    except ImportError:
+        short = (shop_name or '').replace('阿里', '').replace('包装', '')[:8]
+    worker = ''
+    for sc in load_shop_config():
+        sn = (sc.get('shop_name') or '').strip()
+        if not sn:
+            continue
+        if sn in (shop_name or '') or (short and sn in short) or (short and short in sn):
+            cs = (sc.get('customer_service') or '').strip()
+            worker = cs.split(',')[0].strip() if cs else ''
+            break
+    store = f'深圳{short}' if short else (shop_name or '—')
+    return {'store': store, 'worker': worker}
+
+
 @app.route('/api/dashboard')
 def dashboard():
-    """今日订单 - 从1688订单缓存读取真实数据"""
+    """今日订单 - 从 orders_cache（快麦+1688）读取"""
     date = request.args.get('date', datetime.date.today().strftime('%Y-%m-%d'))
-    today_str = date.replace('-', '')
-    
-    # 店铺映射（1688店铺名 → 系统内显示名 + 客服）
-    SHOP_NAME_MAP = {
-        '三羊包装': {'store': '深圳三羊', 'worker': '罗怡'},
-        '友尚包装': {'store': '深圳友尚', 'worker': '张慧平'},
-        '正方形包装': {'store': '深圳正方形', 'worker': '周井梅'},
-        '大鱼包装': {'store': '深圳大鱼', 'worker': '周井梅'},
-        '亚润': {'store': '深圳亚润', 'worker': '陈贝贝'},
-    }
     
     # 读取订单缓存
     orders = []
@@ -656,12 +676,18 @@ def dashboard():
             with open(ORDERS_CACHE_FILE, 'r', encoding='utf-8') as f:
                 cache = json.load(f)
             raw_orders = cache.get('orders', [])
-            # 筛选今天的订单
-            today_orders_raw = [o for o in raw_orders if o.get('created', '').startswith(today_str)]
+            try:
+                import km_api as _km
+                for o in raw_orders:
+                    _km.finalize_cache_order(o)
+            except ImportError:
+                pass
+            today_orders_raw = [o for o in raw_orders if _order_on_date(o, date)]
             
             for o in today_orders_raw:
                 shop_1688 = o.get('shop_name', '')
-                shop_info = SHOP_NAME_MAP.get(shop_1688, {'store': shop_1688, 'worker': ''})
+                shop_info = _dashboard_shop_info(shop_1688)
+                oid = str(o.get('km_sid') or o.get('so_id') or '')
                 items = o.get('items', [])
                 product_names = '; '.join([f"{i.get('name','?')[:20]} x{i.get('qty',0)}" for i in items[:2]])
                 if len(items) > 2:
@@ -679,7 +705,7 @@ def dashboard():
                     qty = i.get('qty', 0) or 0
                     
                     # 从spec解析材质+尺寸
-                    display = _parse_item_display(spec, name, qty)
+                    display = _parse_item_display(spec, '', qty)
                     
                     detail_items.append({
                         'name': name,
@@ -688,9 +714,9 @@ def dashboard():
                         'display': display,  # 前端直接显示这个
                     })
                 
-                ex = _order_extra.get(o.get('so_id', ''), {})
+                ex = _order_extra.get(oid, {})
                 orders.append({
-                    'id': o.get('so_id', ''),
+                    'id': oid,
                     'store': shop_info['store'],
                     'worker': shop_info['worker'],
                     'product': product_names[:50] if product_names else (items[0].get('name','?')[:30] if items else '？'),
@@ -715,6 +741,158 @@ def dashboard():
             'completed': len([o for o in orders if o['status'] == '已完成']),
         },
         'today_orders': orders
+    })
+
+
+@app.route('/api/databoard')
+def shop_databoard():
+    """店铺数据看板：基于 orders_cache 真实订单统计（客服端）。"""
+    from collections import defaultdict
+
+    range_type = request.args.get('range', 'week')
+    now = datetime.datetime.now()
+    if range_type == 'month':
+        start = now - datetime.timedelta(days=30)
+    elif range_type == 'quarter':
+        start = now - datetime.timedelta(days=90)
+    else:
+        start = now - datetime.timedelta(days=7)
+
+    raw_orders: list = []
+    try:
+        if os.path.exists(ORDERS_CACHE_FILE):
+            with open(ORDERS_CACHE_FILE, 'r', encoding='utf-8') as f:
+                cache = json.load(f)
+            raw_orders = list(cache.get('orders') or [])
+            try:
+                import km_api as _km
+                for o in raw_orders:
+                    _km.finalize_cache_order(o)
+            except ImportError:
+                pass
+    except Exception as e:
+        print(f'[店铺看板] 读取缓存失败: {e}')
+
+    def _order_dt(o: dict) -> datetime.datetime | None:
+        raw = str(o.get('created') or o.get('pay_time') or '')
+        digits = ''.join(c for c in raw if c.isdigit())
+        if len(digits) < 8:
+            return None
+        try:
+            return datetime.datetime.strptime(digits[:8], '%Y%m%d')
+        except ValueError:
+            return None
+
+    in_range = []
+    for o in raw_orders:
+        dt = _order_dt(o)
+        if dt and dt >= start.replace(hour=0, minute=0, second=0, microsecond=0):
+            in_range.append(o)
+
+    try:
+        import km_api as _km
+        _amt = _km.km_to_float
+    except ImportError:
+        def _amt(v, default=0.0):
+            try:
+                return float(v or 0)
+            except (TypeError, ValueError):
+                return default
+
+    total_amount = sum(_amt(o.get('total_amount')) for o in in_range)
+    store_counts: dict[str, int] = defaultdict(int)
+    platform_counts: dict[str, int] = defaultdict(int)
+    for o in in_range:
+        store_counts[(o.get('shop_name') or '未知').strip() or '未知'] += 1
+        plat = (o.get('platform_label') or o.get('platform') or '其他').strip()
+        platform_counts[plat] += 1
+
+    days_span = max(1, (now.date() - start.date()).days + 1)
+    trend = []
+    for i in range(min(14, days_span) - 1, -1, -1):
+        d = (now - datetime.timedelta(days=i)).date()
+        ds = d.strftime('%Y-%m-%d')
+        cnt = sum(1 for o in in_range if _order_on_date(o, ds))
+        trend.append({'date': d.strftime('%m-%d'), 'output': cnt, 'orders': cnt})
+
+    total_o = len(in_range) or 1
+    store_distribution = [
+        {
+            'name': name,
+            'count': cnt,
+            'pct': round(cnt * 100 / total_o),
+        }
+        for name, cnt in sorted(store_counts.items(), key=lambda x: -x[1])[:10]
+    ]
+    platform_distribution = [
+        {
+            'name': name,
+            'count': cnt,
+            'pct': round(cnt * 100 / total_o),
+        }
+        for name, cnt in sorted(platform_counts.items(), key=lambda x: -x[1])
+    ]
+
+    urgent_n = 0
+    for o in in_range:
+        oid = str(o.get('km_sid') or o.get('so_id') or '')
+        if _order_extra.get(oid, {}).get('urgent'):
+            urgent_n += 1
+
+    hourly = [{'hour': f'{h:02}', 'val': 0} for h in range(8, 21)]
+    for o in in_range:
+        raw = str(o.get('pay_time') or o.get('created') or '')
+        digits = ''.join(c for c in raw if c.isdigit())
+        if len(digits) >= 10:
+            try:
+                h = int(digits[8:10])
+                if 8 <= h <= 20:
+                    hourly[h - 8]['val'] += 1
+            except ValueError:
+                pass
+
+    recent = sorted(
+        in_range,
+        key=lambda x: str(x.get('created') or x.get('pay_time') or ''),
+        reverse=True,
+    )[:8]
+    recent_news = []
+    for o in recent:
+        oid = str(o.get('km_sid') or o.get('so_id') or '')
+        shop = o.get('shop_name') or ''
+        recent_news.append({
+            'icon': '📦',
+            'text': f'{shop} #{oid} 待发货',
+            'time': (o.get('created') or o.get('pay_time') or '')[-8:],
+        })
+
+    return jsonify({
+        'stats': {
+            'total_output': int(round(total_amount)),
+            'total_orders': len(in_range),
+            'completed': 0,
+            'in_production': len(in_range),
+            'avg_daily': round(len(in_range) / days_span, 1),
+            'on_time_rate': '-',
+            'defect_rate': '-',
+            'urgent_count': urgent_n,
+        },
+        'trend': trend or [{'date': now.strftime('%m-%d'), 'output': 0, 'orders': 0}],
+        'store_distribution': store_distribution,
+        'platform_distribution': platform_distribution,
+        'process_load': [
+            {
+                'name': d['name'],
+                'current': d['count'],
+                'capacity': total_o,
+                'pct': d['pct'],
+            }
+            for d in platform_distribution
+        ],
+        'product_type': store_distribution[:5],
+        'hourly_output': hourly,
+        'worker_productivity': [],
+        'recent_news': recent_news,
     })
 
 
@@ -795,7 +973,7 @@ def _find_cached_order(query):
         return None
     q = query.lower()
     for o in cache.get("orders", []):
-        so_id = str(o.get("so_id", "") or "")
+        so_id = str(o.get("km_sid") or o.get("so_id", "") or "")
         tid = str(o.get("tid", "") or o.get("platform_tid", "") or "")
         if query == so_id or query == tid or q in so_id.lower() or (tid and q in tid.lower()):
             return o
@@ -842,7 +1020,7 @@ def _order_detail_from_cache(o):
     qty = sum(int(i.get("qty", 0) or 0) for i in items)
     amount = o.get("payment") or o.get("pay_amount") or o.get("total_fee") or 0
     return {
-        "order_id": o.get("so_id", ""),
+        "order_id": o.get("km_sid") or o.get("so_id", ""),
         "store": o.get("shop_name", ""),
         "customer": o.get("receiver_name", "") or o.get("buyer_nick", "") or "",
         "product": product,

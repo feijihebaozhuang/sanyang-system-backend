@@ -170,15 +170,15 @@ def sync_orders_to_cache(
 
 
 def _parse_item_display(spec: str, name: str, qty: int) -> str:
-    """与 app_cs 展示逻辑一致的简易 display。"""
+    """列表展示用：仅规格（不含长标题）。"""
     parts = []
     if spec:
-        parts.append(spec)
-    if name and name not in spec:
-        parts.append(name)
+        parts.append(spec.strip())
+    elif name:
+        parts.append((name or "")[:40])
     if qty:
         parts.append(f"x{qty}")
-    return " ".join(parts) if parts else name or ""
+    return " ".join(parts) if parts else (name or "")[:40]
 
 
 _force_sync_lock = threading.Lock()
