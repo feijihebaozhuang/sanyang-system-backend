@@ -488,7 +488,7 @@ def finalize_cache_order(o: dict) -> dict:
             it["spec"] = display
             it["display"] = display
             it["platform_attrs"] = display
-            it["is_customization"] = display == "定制"
+            it["is_customization"] = bool(display) and display.startswith("定制")
         elif not (it.get("display") or "").strip():
             it["display"] = (it.get("spec") or "").strip()
     km_normalize_so_id_fields(o)
@@ -1162,7 +1162,7 @@ _BUYER_NUM_DIM2_RE = re.compile(
     re.I,
 )
 _CUSTOM_HINT_RE = re.compile(
-    r"定制链接|来图定制|买家定制|个性化定制|【定制】|定制商品",
+    r"定制链接|来图定制|买家定制|个性化定制|【定制】|定制商品|尺寸定制|自定义",
     re.I,
 )
 _BUYER_MATERIAL_KEY_RE = re.compile(r"颜色|材质|材料|硬度|瓦楞|层次|规格", re.I)
@@ -1291,9 +1291,57 @@ def _has_meaningful_customization_payload(val: Any) -> bool:
     return False
 
 
-def km_item_is_customization(it: dict) -> bool:
+def _listing_is_custom_product(title: str) -> bool:
+    t = _norm_spec_text(title)
+    if not t:
+        return False
+    if _CUSTOM_HINT_RE.search(t):
+        return True
+    return bool(re.search(r"定制", t) and re.search(r"链接|来图|尺寸|加工", t))
+
+
+def _sku_infos_indicate_custom(sku_infos: Any) -> bool:
+    if not isinstance(sku_infos, list):
+        return False
+    for info in sku_infos:
+        if not isinstance(info, dict):
+            continue
+        for k in ("name", "attributeName", "value", "attributeValue"):
+            t = _norm_spec_text(info.get(k))
+            if not t:
+                continue
+            if "定制" in t or t in ("自定义", "来图定制", "定制款"):
+                return True
+    return False
+
+
+def km_trade_is_customization(trade: dict) -> bool:
+    """主单级别：1688 加工定制 / 买家留言等。"""
+    if not isinstance(trade, dict):
+        return False
+    tt = _norm_spec_text(trade.get("tradeType") or trade.get("trade_type") or "")
+    if tt and re.search(r"custom|加工|定制|来图", tt, re.I):
+        return True
+    for key in ("type", "orderType", "bizType"):
+        v = _norm_spec_text(trade.get(key))
+        if v and re.search(r"custom|加工|定制", v, re.I):
+            return True
+    memo = _norm_spec_text(
+        trade.get("buyerMessage") or trade.get("buyerMemo") or trade.get("remark") or ""
+    )
+    if memo and re.search(r"来图定制|尺寸定制|定制尺寸|定制\s*\d", memo):
+        return True
+    lines = trade.get("orders") or trade.get("orderList") or []
+    if any(km_item_is_customization(it, trade_custom=False) for it in lines if isinstance(it, dict)):
+        return True
+    return False
+
+
+def km_item_is_customization(it: dict, *, trade_custom: bool = True) -> bool:
     if not isinstance(it, dict):
         return False
+    if trade_custom and it.get("_trade_custom"):
+        return True
     for key in (
         "customization",
         "customizationInfo",
@@ -1307,6 +1355,8 @@ def km_item_is_customization(it: dict) -> bool:
         v = it.get(key)
         if v is True or str(v).lower() in ("1", "true", "y", "yes"):
             return True
+    if _sku_infos_indicate_custom(it.get("skuInfos")):
+        return True
     for field in _SKU_SPEC_FIELD_KEYS + ("spec", "sysSkuRemark", "sysItemRemark"):
         t = _norm_spec_text(it.get(field))
         if _CUSTOM_HINT_RE.search(t) or t.strip() in ("定制", "自定义", "来图定制", "定制款"):
@@ -1314,7 +1364,7 @@ def km_item_is_customization(it: dict) -> bool:
     title = _norm_spec_text(
         it.get("sysTitle") or it.get("title") or it.get("shortTitle") or it.get("name") or ""
     )
-    if _CUSTOM_HINT_RE.search(title):
+    if _listing_is_custom_product(title):
         return True
     ext = it.get("orderExt") or it.get("extInfo") or it.get("itemExt")
     if isinstance(ext, str) and "custom" in ext.lower():
@@ -1322,6 +1372,29 @@ def km_item_is_customization(it: dict) -> bool:
     if isinstance(ext, dict) and _has_meaningful_customization_payload(ext):
         return True
     return False
+
+
+def _display_has_size(display: str) -> bool:
+    t = _norm_spec_text(display)
+    if not t:
+        return False
+    if _BUYER_DIM_SNIPPET_RE.search(t):
+        return True
+    if _BUYER_NUM_DIM_RE.search(t) or _BUYER_NUM_DIM2_RE.search(t):
+        return True
+    if re.search(r"长\s*x?\s*宽|高度?\s*【", t, re.I):
+        return True
+    return False
+
+
+def _format_custom_display(spec_part: str) -> str:
+    """定制单展示：默认「定制」；有明确尺寸时再附带尺寸/材质。"""
+    spec_part = _norm_spec_text(spec_part)
+    if not spec_part:
+        return "定制"
+    if _display_has_size(spec_part):
+        return f"定制；{spec_part}"
+    return "定制"
 
 
 _KM_ITEM_SNAPSHOT_KEYS = (
@@ -1405,30 +1478,35 @@ def km_collect_item_raw_attrs(it: dict) -> str:
 
 def km_resolve_item_display(it: dict) -> str:
     """
-    客服/生产行展示：尺寸+材质值；定制单无尺寸时显示「定制」。
+    客服/生产行展示：尺寸+材质值；1688/淘系定制单优先显示「定制」。
     """
     src = km_item_for_resolve(it)
+    is_custom = km_item_is_customization(src)
+    spec_part = ""
     raw = km_collect_item_raw_attrs(src)
     if raw:
-        display = km_format_buyer_spec_display(raw)
-        if display:
-            return display
-        values = _buyer_property_values_only(raw)
-        if values:
-            return values
-    if km_item_is_customization(src):
-        return "定制"
-    for field in ("sysSkuRemark", "sysItemRemark"):
-        dim = km_format_dimensions_from_text(_norm_spec_text(src.get(field)), int(src.get("qty") or src.get("num") or 0))
+        spec_part = km_format_buyer_spec_display(raw)
+        if not spec_part:
+            spec_part = _buyer_property_values_only(raw)
+    if not spec_part:
+        for field in ("sysSkuRemark", "sysItemRemark"):
+            dim = km_format_dimensions_from_text(
+                _norm_spec_text(src.get(field)),
+                int(src.get("qty") or src.get("num") or 0),
+            )
+            if dim:
+                spec_part = dim
+                break
+    if not spec_part:
+        dim = km_format_dimensions_from_text(
+            _norm_spec_text(src.get("sysTitle") or src.get("title") or src.get("name") or ""),
+            int(src.get("qty") or src.get("num") or 0),
+        )
         if dim:
-            return dim
-    dim = km_format_dimensions_from_text(
-        _norm_spec_text(src.get("sysTitle") or src.get("title") or src.get("name") or ""),
-        int(src.get("qty") or src.get("num") or 0),
-    )
-    if dim:
-        return dim
-    return ""
+            spec_part = dim
+    if is_custom:
+        return _format_custom_display(spec_part)
+    return spec_part
 
 
 def km_format_buyer_spec_display(raw: str) -> str:
@@ -1498,13 +1576,14 @@ def km_trade_to_cache_order(trade: dict, shops: dict[str, dict] | None = None) -
     )
 
     lines = trade.get("orders") or trade.get("orderList") or []
+    trade_custom = km_trade_is_customization(trade)
     items = []
     for it in lines:
         if not isinstance(it, dict):
             continue
         qty = int(it.get("num") or it.get("quantity") or 0)
         snap = km_item_snapshot(it)
-        src = {**snap, "qty": qty}
+        src = {**snap, "qty": qty, "_trade_custom": trade_custom}
         display = km_resolve_item_display(src)
         items.append(
             {
@@ -1515,7 +1594,7 @@ def km_trade_to_cache_order(trade: dict, shops: dict[str, dict] | None = None) -
                 "spec": display,
                 "display": display,
                 "platform_attrs": display,
-                "is_customization": display == "定制",
+                "is_customization": bool(display) and display.startswith("定制"),
                 "_km": snap,
             }
         )

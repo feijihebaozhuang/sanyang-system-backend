@@ -15,7 +15,12 @@ try:
 except Exception:
     ALIBABA_SHOPS = []
 
-from km_api import km_item_snapshot, km_resolve_item_display
+from km_api import (
+    km_item_snapshot,
+    km_resolve_item_display,
+    km_trade_is_customization,
+    _listing_is_custom_product,
+)
 
 
 def alibaba_configured() -> bool:
@@ -93,13 +98,21 @@ def format_order(o: dict, memo_getter: Callable[[str], str] | None = None) -> di
     """1688 原始单 → orders_cache 统一结构。"""
     info = o.get("baseInfo") or {}
     items = o.get("productItems") or []
+    trade_custom = km_trade_is_customization(
+        {
+            "tradeType": info.get("tradeType") or info.get("trade_type"),
+            "buyerMessage": info.get("buyerFeedback") or info.get("remark"),
+        }
+    )
     product_list = []
     for item in items:
         if not isinstance(item, dict):
             continue
         qty = int(item.get("quantity") or 0)
+        item_name = item.get("name", "") or ""
         snap = km_item_snapshot(item)
-        src = {**snap, "qty": qty, "name": item.get("name", "")}
+        item_custom = trade_custom or _listing_is_custom_product(item_name)
+        src = {**snap, "qty": qty, "name": item_name, "_trade_custom": item_custom}
         display = km_resolve_item_display(src)
         product_list.append(
             {
@@ -110,7 +123,7 @@ def format_order(o: dict, memo_getter: Callable[[str], str] | None = None) -> di
                 "spec": display,
                 "display": display,
                 "platform_attrs": display,
-                "is_customization": display == "定制",
+                "is_customization": bool(display) and display.startswith("定制"),
                 "_km": snap,
                 "skuId": item.get("skuID", ""),
                 "productId": item.get("productID", ""),
