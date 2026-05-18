@@ -21,14 +21,14 @@
 2. 拼接：`key1value1key2value2...`（无分隔符）  
 3. `sign = UPPER(hex(hmac_md5(secret, 拼接串)))`
 
-## 4. 订单查询（双接口，2026-05 大虾实测）
+## 4. 订单查询（2026-05 大虾实测）
 
 | 接口 | 方法名 | 覆盖 | 说明 |
 |------|--------|------|------|
-| 销售出库/全量 | `erp.trade.outstock.simple.query` | **含淘系 tm/tb** | 无需 `userId`，按天分页；样本量可达 2 万+ |
-| 订单列表 | `erp.trade.list.query` | 非淘系、非拼多多 | **必须单店 `userId`**，禁止 `userIds` |
+| 销售出库/全量 | `erp.trade.outstock.simple.query` | **全平台（1688/tm/tb 等）** | 无需 `userId`，按天分页；7 天待发货约 814 条；历史全量可达 2.7 万+ |
+| 订单列表 | `erp.trade.list.query` | — | **线上一律不用**（单店 `userId` 实测常 0 条）；`km_api.km_fetch_trades()` 仅保留供探测 |
 
-本仓库：`km_fetch_trades_outstock()` 拉淘系；`km_fetch_trades()` 按店拉 1688/其他。
+本仓库：`order_sync.py` 仅 `km_fetch_trades_outstock(..., source_filter=None)`。
 
 ### 4.1 `erp.trade.outstock.simple.query`
 
@@ -43,31 +43,15 @@
 
 淘系手机号等敏感字段会脱敏（`receiverMobile`）。
 
-### 4.2 `erp.trade.list.query`
-
-### 业务参数（必须驼峰）
-
-| 参数 | 说明 |
-|------|------|
-| `timeType` | `created` / `pay_time` / `consign_time` / `audit_time` / `upd_time` |
-| `startTime` / `endTime` | `yyyy-MM-dd HH:mm:ss`，单次跨度建议 ≤1 天 |
-| `pageNo` / `pageSize` | 页码；`pageSize` 20–200 |
-| `status` | 可选，多个逗号分隔，如 `WAIT_SEND_GOODS,WAIT_AUDIT,...` |
-| **`userId`** | **单个店铺编号**（与 `erp.shop.list.query` 返回的 `userId` 一致） |
-
 ### 已知坑
 
 | 坑 | 说明 |
 |----|------|
-| **勿用 `userIds`** | 传逗号多店会 `code=33` 非法店铺编号 |
-| **必须用 `userId` 单店** | 拉全店需**按店铺循环**调用 |
-| **1688 无需奇门** | `source=1688` 店铺走本接口即可；另可用 `alibaba_orders.py` 直连 1688 开放平台兜底 |
-| 淘系 tm/tb | 用 **outstock.simple.query**；勿仅用 list.query |
-| 时间跨度 | 超过 1 天易失败或漏单，按天切片 |
-
-### 店铺遍历
-
-先 `erp.shop.list.query`，再对每个 `userId` 单独查订单并合并去重（`sid`）。
+| **勿对 outstock 设 source_filter=tm/tb** | 会漏掉 1688（约 700 条/7 天） |
+| **1688 收件人脱敏** | 快麦侧地址可能不完整；可选 `alibaba_orders.py` 直连兜底 |
+| **拼多多** | 需另申请方舟接口 |
+| 时间跨度 | 超过 1 天易失败或漏单，按天切片（`km_fetch_trades_outstock` 已按天切） |
+| `pageSize` | 最小 20，最大 200 |
 
 ## 5. 店铺 ID 一览（2026-05 实测）
 
@@ -108,17 +92,17 @@
 
 ## 8. Token 自动刷新
 
-- `km_token.json` 保存 `access_token`、`refresh_token`、`expires_at`（由 `expiresIn` 写入）  
-- 距到期不足 3 天或接口提示会话失效时调用 `open.token.refresh`  
-- 刷新成功不改变 token 字符串，仅延长有效期  
+- `km_token.json` 保存 `access_token`、`refresh_token`、`expires_at`（accessToken 有效期约 30 天）  
+- 距到期不足 **25 天**（`KM_REFRESH_BEFORE_SEC`）或接口提示会话失效时调用 `open.token.refresh`  
+- 建议 crontab：`scripts/km_refresh_token_cron.sh`（每月 1 日、26 日凌晨 3 点）  
 
 ## 9. 本仓库实现
 
 | 模块 | 说明 |
 |------|------|
-| `km_api.py` | HMAC-MD5 签名、`open.token.refresh`、outstock + list 拉单、映射 |
-| `alibaba_orders.py` | 1688 开放平台直连（无需奇门） |
-| `order_sync.py` | 淘系 outstock + 1688 list + 1688 直连 → 缓存 |
+| `km_api.py` | HMAC-MD5 签名、`open.token.refresh`、outstock 拉单、映射 |
+| `alibaba_orders.py` | 1688 开放平台直连（可选兜底） |
+| `order_sync.py` | outstock 全平台 + 可选 1688 直连 → 缓存 |
 | `scripts/km_fetch_orders.py` | 服务器手动拉单/探测 |
 | `scripts/km_probe_orders.py` | 快速探测 |
 | `app_cs.py` / `app_production.py` | 后台同步、`POST /api/sync/force` |

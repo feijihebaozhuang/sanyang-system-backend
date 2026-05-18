@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-订单同步：快麦（含 1688 店铺，无需奇门）+ 1688 开放平台直连兜底。
+订单同步：快麦 erp.trade.outstock.simple.query（全平台待发货）+ 1688 开放平台直连兜底。
 客服端 / 生产端共用。
 """
 from __future__ import annotations
@@ -85,16 +85,13 @@ def sync_orders_to_cache(
 ) -> dict[str, Any]:
     """
     写入 orders_cache.json。
-    - 淘系 tm/tb：快麦 erp.trade.outstock.simple.query（全账号，无需 userId）
-    - 1688：快麦 erp.trade.list.query（单店 userId，无需奇门）
-    - 1688：开放平台直连补充（有 alibaba_shops.json 时）
-    - 其他平台：快麦 list.query 按店
+    - 快麦 erp.trade.outstock.simple.query（全平台，source_filter=None）
+    - 可选：1688 开放平台直连补充（有 alibaba_shops.json 时）
     """
     cache_path = Path(cache_file)
     report: dict[str, Any] = {
-        "km_count": 0,
         "km_outstock_count": 0,
-        "km_1688_count": 0,
+        "km_outstock_by_source": {},
         "direct_1688_count": 0,
         "pending_count": 0,
         "errors": [],
@@ -108,26 +105,14 @@ def sync_orders_to_cache(
             km_api.km_ensure_session()
             _set_sync_phase("shops", "拉取店铺列表")
             shops = km_api.km_shop_lookup(refresh=True)
-            ids_1688 = [u for u, s in shops.items() if s.get("source") == "1688"]
-            ids_other = [
-                u
-                for u, s in shops.items()
-                if s.get("source") not in ("1688",)
-                and s.get("source") not in km_api.KM_TM_TB_SOURCES
-            ]
             report["shop_count_km"] = len(shops)
-            report["shops_1688"] = len(ids_1688)
-            report["shops_other"] = len(ids_other)
-            report["shops_tm_tb"] = sum(
-                1 for s in shops.values() if s.get("source") in km_api.KM_TM_TB_SOURCES
-            )
 
-            _set_sync_phase("outstock", "淘系 tm/tb")
+            _set_sync_phase("outstock", f"近{days_back}天待发货（全平台）")
             raw_out, err_out = km_api.km_fetch_trades_outstock(
                 days_back,
                 time_type="upd_time",
                 status=km_api.KM_PENDING_STATUSES,
-                source_filter=km_api.KM_TM_TB_SOURCES,
+                source_filter=None,
             )
             report["km_outstock_count"] = len(raw_out)
             if err_out:
@@ -136,46 +121,12 @@ def sync_orders_to_cache(
                 o = km_api.km_trade_to_cache_order(row, shops)
                 o["shop_name"] = normalize_shop_display(o.get("shop_name") or "")
                 o["sync_source"] = "kuaimai_outstock"
+                src = (o.get("source") or row.get("source") or "unknown").strip()
+                report["km_outstock_by_source"][src] = (
+                    report["km_outstock_by_source"].get(src, 0) + 1
+                )
                 _dedupe_merge(merged, [o])
             _flush_cache_snapshot(cache_path, merged, report, shops, partial=True)
-
-            if ids_1688:
-                _set_sync_phase("list_1688", f"{len(ids_1688)} 店")
-                raw_1688, err_1688 = km_api.km_fetch_trades(
-                    days_back,
-                    time_type="pay_time",
-                    status=km_api.KM_PENDING_STATUSES,
-                    shop_user_ids=ids_1688,
-                )
-                report["km_1688_count"] = len(raw_1688)
-                if err_1688:
-                    report["errors"].extend(err_1688[:10])
-                for row in raw_1688:
-                    o = km_api.km_trade_to_cache_order(row, shops)
-                    o["shop_name"] = normalize_shop_display(o.get("shop_name") or "")
-                    o["sync_source"] = "kuaimai_1688"
-                    _dedupe_merge(merged, [o])
-                _flush_cache_snapshot(cache_path, merged, report, shops, partial=True)
-            else:
-                report["errors"].append({"msg": "快麦店铺列表无 1688 店，跳过 list.query"})
-
-            if ids_other:
-                _set_sync_phase("list_other", f"{len(ids_other)} 店")
-                raw_other, err_other = km_api.km_fetch_trades(
-                    days_back,
-                    time_type="pay_time",
-                    status=km_api.KM_PENDING_STATUSES,
-                    shop_user_ids=ids_other,
-                )
-                report["km_count"] = len(raw_other)
-                if err_other:
-                    report["errors"].extend(err_other[:10])
-                for row in raw_other:
-                    o = km_api.km_trade_to_cache_order(row, shops)
-                    o["shop_name"] = normalize_shop_display(o.get("shop_name") or "")
-                    o["sync_source"] = "kuaimai"
-                    _dedupe_merge(merged, [o])
-                _flush_cache_snapshot(cache_path, merged, report, shops, partial=True)
         else:
             report["errors"].append({"msg": "快麦未配置，跳过 KM 拉单"})
 
@@ -204,10 +155,11 @@ def sync_orders_to_cache(
         _set_sync_phase("done", "写入缓存")
         n_pending = _flush_cache_snapshot(cache_path, merged, report, shops, partial=False)
         report["pending_count"] = n_pending
+        by_src = report.get("km_outstock_by_source") or {}
         print(
-            f"[订单同步] 完成: 待发货 {len(pending)} 条 "
-            f"(淘系outstock={report['km_outstock_count']} 快麦1688={report['km_1688_count']} "
-            f"快麦其他={report['km_count']} 1688直连={report['direct_1688_count']})"
+            f"[订单同步] 完成: 待发货 {n_pending} 条 "
+            f"(快麦outstock={report['km_outstock_count']} 按source={by_src} "
+            f"1688直连={report['direct_1688_count']})"
         )
         return report
 

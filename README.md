@@ -41,4 +41,4 @@ git pull origin main
 
 部署后登录系统，各端执行一次 **`POST /api/sync/force`**（或等后台 5 分钟自动同步）。排错：**`GET /api/km/probe`**。
 
-1688 拉单：快麦 `erp.trade.list.query`（单店 `userId`，无需奇门）+ 1688 开放平台直连兜底，详见 `docs/kuaimai-api-requirements.md`。
+待发货拉单：快麦 `erp.trade.outstock.simple.query`（全平台，`source_filter=None`）+ 可选 1688 开放平台直连兜底，详见 `docs/kuaimai-api-requirements.md`。

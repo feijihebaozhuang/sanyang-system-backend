@@ -22,10 +22,10 @@ KM_APP_KEY = os.getenv("KM_APP_KEY", "").strip()
 KM_APP_SECRET = os.getenv("KM_APP_SECRET", "").strip()
 KM_SESSION = os.getenv("KM_SESSION", "").strip()
 
-# 会话失效前多少秒触发刷新（默认 21 天，建议每 25 天主动 refresh）
-KM_REFRESH_BEFORE_SEC = int(os.getenv("KM_REFRESH_BEFORE_SEC", str(21 * 86400)))
+# 会话失效前多少秒触发刷新（默认 25 天；accessToken 有效期 30 天）
+KM_REFRESH_BEFORE_SEC = int(os.getenv("KM_REFRESH_BEFORE_SEC", str(25 * 86400)))
 
-# 淘系店铺 source（走 outstock.simple.query，不按店 list.query）
+# 淘系 source（仅用于统计/筛选；拉单统一走 outstock.simple.query）
 KM_TM_TB_SOURCES = frozenset({"tm", "tb"})
 
 KM_SOURCE_PLATFORM = {
@@ -785,9 +785,9 @@ def km_probe() -> dict[str, Any]:
         "sources_in_sample": sources_o,
     }
     out["notes"] = [
-        "淘系 tm/tb：erp.trade.outstock.simple.query（全店，无需 userId）",
-        "1688/其他：erp.trade.list.query + 单店 userId，禁止 userIds",
-        "pageSize 最小 20；时间跨度建议 ≤1 天",
-        "open.token.refresh 建议每 25 天执行",
+        "待发货：erp.trade.outstock.simple.query（全平台，source_filter=None）",
+        "erp.trade.list.query 实测常 0 条，线上一律不用",
+        "pageSize 20–200；时间跨度建议 ≤1 天",
+        "open.token.refresh 建议每 25 天执行（cron 见 scripts/km_refresh_token_cron.sh）",
     ]
     return out

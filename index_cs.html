@@ -5789,11 +5789,12 @@
             const rep = st.last || {};
             const n = st.count != null ? st.count : (rep.pending_count || 0);
             rtSetStatus('已同步 ' + n + ' 条', 'ok');
-            const extra = rep.direct_1688_count != null
-                ? '\n淘系:' + (rep.km_outstock_count || 0)
-                  + ' 快麦1688:' + (rep.km_1688_count || 0)
-                  + ' 其他:' + (rep.km_count || 0)
-                  + ' 1688直连:' + (rep.direct_1688_count || 0)
+            const bySrc = rep.km_outstock_by_source || {};
+            const srcLine = Object.keys(bySrc).length
+                ? '\n快麦:' + (rep.km_outstock_count || 0) + ' (' + JSON.stringify(bySrc) + ')'
+                : (rep.km_outstock_count != null ? '\n快麦:' + rep.km_outstock_count : '');
+            const extra = (rep.direct_1688_count != null || rep.km_outstock_count != null)
+                ? srcLine + '\n1688直连:' + (rep.direct_1688_count || 0)
                 : '';
             alert('已同步 ' + n + ' 条待发货订单' + extra);
             return;
@@ -5825,8 +5826,11 @@
             await rtLoadOrders();
             const rep = data.report || {};
             const msg = data.message || ('已同步 ' + (data.count || 0) + ' 条');
-            const extra = rep.direct_1688_count != null
-                ? '\n1688直连:' + rep.direct_1688_count + ' 快麦1688:' + (rep.km_1688_count || 0)
+            const bySrc2 = rep.km_outstock_by_source || {};
+            const extra = (rep.km_outstock_count != null || rep.direct_1688_count != null)
+                ? '\n快麦:' + (rep.km_outstock_count || 0)
+                  + (Object.keys(bySrc2).length ? ' ' + JSON.stringify(bySrc2) : '')
+                  + '\n1688直连:' + (rep.direct_1688_count || 0)
                 : '';
             alert(msg + extra);
         } catch (e) {

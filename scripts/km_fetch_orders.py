@@ -7,9 +7,8 @@
 
 本脚本用途：
   --probe          连通性探测
-  --sync-cache     与线上一致：order_sync 全量（outstock + list + 1688直连）
-  --outstock-only  仅淘系 outstock（调试）
-  --list-only      仅 erp.trade.list.query 按店
+  --sync-cache     与线上一致：order_sync（outstock 全平台 + 可选 1688 直连）
+  --no-1688-direct  sync-cache 时跳过 1688 开放平台直连
 
 Token：km_token.json 或 KM_APP_KEY / KM_APP_SECRET / KM_SESSION
 """
@@ -42,7 +41,7 @@ def main() -> int:
     parser.add_argument(
         "--sync-cache",
         action="store_true",
-        help="写入 orders_cache.json（与线上一致，分阶段落盘）",
+        help="写入 orders_cache.json（与线上一致）",
     )
     parser.add_argument(
         "--cache-file",
@@ -50,9 +49,12 @@ def main() -> int:
         default="",
         help="缓存路径，默认项目根 orders_cache.json",
     )
-    parser.add_argument("--outstock-only", action="store_true", help="仅淘系 outstock")
-    parser.add_argument("--list-only", action="store_true", help="仅 list.query")
-    parser.add_argument("--out", type=str, default="", help="探测结果写入 JSON")
+    parser.add_argument(
+        "--no-1688-direct",
+        action="store_true",
+        help="sync-cache 时跳过 1688 开放平台直连",
+    )
+    parser.add_argument("--out", type=str, default="", help="探测/拉单结果写入 JSON")
     args = parser.parse_args()
 
     if not km_api.km_configured():
@@ -73,60 +75,34 @@ def main() -> int:
         report = osync.sync_orders_to_cache(
             cache,
             days_back=args.days,
-            include_1688_direct=True,
+            include_1688_direct=not args.no_1688_direct,
         )
         print(json.dumps(report, ensure_ascii=False, indent=2))
         print(f"完成，耗时 {time.time() - t0:.1f}s，待发货 {report.get('pending_count', 0)} 条")
         return 0
 
     shops = km_api.km_shop_lookup(refresh=True)
-    all_raw: list[dict] = []
-    errors: list[dict] = []
-
-    if not args.list_only:
-        raw_o, err_o = km_api.km_fetch_trades_outstock(
-            days_back=args.days,
-            time_type="upd_time",
-            status=km_api.KM_PENDING_STATUSES,
-            source_filter=km_api.KM_TM_TB_SOURCES,
-        )
-        print(f"[outstock] 淘系: {len(raw_o)} 条, 告警 {len(err_o)}")
-        all_raw.extend(raw_o)
-        errors.extend(err_o)
-
-    if not args.outstock_only:
-        ids_1688 = [u for u, s in shops.items() if s.get("source") == "1688"]
-        ids_other = [
-            u
-            for u, s in shops.items()
-            if s.get("source") not in ("1688",)
-            and s.get("source") not in km_api.KM_TM_TB_SOURCES
-        ]
-        print(f"[list] 1688 店 {len(ids_1688)} 个, 其他店 {len(ids_other)} 个")
-        for label, ids in (("1688", ids_1688), ("other", ids_other)):
-            if not ids:
-                continue
-            raw, err = km_api.km_fetch_trades(
-                args.days,
-                time_type="pay_time",
-                status=km_api.KM_PENDING_STATUSES,
-                shop_user_ids=ids,
-            )
-            print(f"[list] {label}: {len(raw)} 条, 告警 {len(err)}")
-            all_raw.extend(raw)
-            errors.extend(err)
-
-    print(f"合计原始单: {len(all_raw)} 条")
-    if errors:
-        print("告警样例:", json.dumps(errors[:3], ensure_ascii=False))
+    raw_o, err_o = km_api.km_fetch_trades_outstock(
+        days_back=args.days,
+        time_type="upd_time",
+        status=km_api.KM_PENDING_STATUSES,
+        source_filter=None,
+    )
+    print(f"[outstock] 全平台: {len(raw_o)} 条, 告警 {len(err_o)}")
+    by_src: dict[str, int] = {}
+    for row in raw_o:
+        src = (row.get("source") or "unknown").strip()
+        by_src[src] = by_src.get(src, 0) + 1
+    print(f"[outstock] 按 source: {by_src}")
 
     if args.out:
-        rows = [km_api.km_trade_to_cache_order(r, shops) for r in all_raw[:500]]
+        rows = [km_api.km_trade_to_cache_order(r, shops) for r in raw_o[:500]]
         Path(args.out).write_text(
             json.dumps(
                 {
-                    "count_raw": len(all_raw),
-                    "errors": errors[:20],
+                    "count_raw": len(raw_o),
+                    "by_source": by_src,
+                    "errors": err_o[:20],
                     "sample": rows[:5],
                 },
                 ensure_ascii=False,
@@ -136,7 +112,7 @@ def main() -> int:
         )
         print(f"已写入 {args.out}")
 
-    return 0 if all_raw or not errors else 1
+    return 0 if raw_o or not err_o else 1
 
 
 if __name__ == "__main__":
