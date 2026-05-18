@@ -135,7 +135,8 @@ def merge_flow_with_tree(
 
 
 def internal_order_id(o: dict) -> str:
-    return str(o.get("km_sid") or o.get("so_id") or "").strip()
+    """快麦内部单号优先使用 so_id。"""
+    return str(o.get("so_id") or o.get("km_sid") or "").strip()
 
 
 def load_cache_orders(cache_file: str, *, finalize: bool = True) -> list[dict]:

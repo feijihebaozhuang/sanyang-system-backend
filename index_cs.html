@@ -13,6 +13,7 @@
         body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; background: #f5f6fa; color: #333; min-height: 100vh; }
         /* 数据看板深色模式时覆盖body背景 */
         body.dark-bg { background: #0f172a; }
+        body.dark-bg #page-realtime { background: #f5f6fa; }
 
         /* ===== 顶部条 (logo + 系统名 + 用户) ===== */
         .topbar {
@@ -346,8 +347,7 @@
             /* =============================================================
              * 快麦ERP页面 (page-jst)
              * ============================================================= */
-            #page-removed-jst .subnav a { font-size: 12px; padding: 6px 8px; }
-            #page-removed-jst > div[style*="display:flex"] { flex-direction: column; }
+            #page-jst .overview-header { flex-wrap: wrap; }
             #jstTabOrders > div[style*="display:flex"] { flex-direction: column; }
             #jstTabOrders input, #jstTabOrders select { width: 100% !important; font-size: 16px !important; }
             #jstTabOrders table { font-size: 11px; }
@@ -662,6 +662,7 @@
     <a onclick="switchSubPage('databoard', this)">📈 店铺数据看板</a>
     <a onclick="switchSubPage('realtime', this)">📋 实时订单</a>
     <a onclick="switchSubPage('diemold', this)">📄 WPS刀模嵌入</a>
+    <a onclick="switchSubPage('jst', this)">🔄 聚水潭</a>
 </div>
 
 <!-- ====== 主内容 ====== -->
@@ -676,6 +677,15 @@
             </div>
         </div>
         <iframe class="iframe-container" data-src="https://www.kdocs.cn/l/cdIlitRGKpMw" allow="clipboard-read; clipboard-write" style="width:100%;height:calc(100vh - 160px);border:none;border-radius:8px;"></iframe>
+    </div>
+
+    <!-- ===== 聚水潭嵌入 ===== -->
+    <div id="page-jst" class="page-section">
+        <div class="overview-header">
+            <h3>🔄 聚水潭</h3>
+            <span style="font-size:12px;color:#888;">供应链后台嵌入（需登录聚水潭账号）</span>
+        </div>
+        <iframe class="iframe-container" data-src="https://sc.scm121.com/dashboard" allow="clipboard-read; clipboard-write" style="width:100%;height:calc(100vh - 160px);border:none;border-radius:8px;"></iframe>
     </div>
 
     <!-- ===== 刀模库（自建数据库） ===== -->
@@ -1134,7 +1144,7 @@
         <div class="order-table-wrap">
             <table>
                 <thead><tr>
-                    <th>内部单号</th><th>店铺名称</th><th>发货省份</th><th>发货城市</th><th>产品</th><th>数量</th><th>当前工序</th><th>流程进度</th><th>加急</th>
+                    <th>内部单号</th><th>店铺名称</th><th>规格/属性</th><th>数量</th><th>当前工序</th><th>流程进度</th><th>加急</th>
                 </tr></thead>
                 <tbody id="prodTable"></tbody>
             </table>
@@ -1479,7 +1489,7 @@
         </div>
 
         <!-- 订单列表 -->
-        <div id="rtOrderList" style="padding:0 16px;">
+        <div id="rtOrderList" class="rt-orders-card" style="margin:12px 16px;padding:12px 16px;background:#fff;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,0.08);min-height:200px;">
             <div style="text-align:center;padding:40px 0;color:#999;font-size:13px;">⏳ 加载中...</div>
         </div>
     </div>
@@ -1678,6 +1688,10 @@
                 a.style.display = hasPerm('数据看板') ? '' : 'none';
             } else if (onclick.includes('realtime')) {
                 a.style.display = hasPerm('实时订单') ? '' : 'none';
+            } else if (onclick.includes('jst')) {
+                a.style.display = hasPerm('快麦ERP') ? '' : 'none';
+            } else if (onclick.includes('diemold')) {
+                a.style.display = hasPerm('刀模') ? '' : 'none';
             } else {
                 a.style.display = '';
             }
@@ -1690,7 +1704,7 @@
             const hasOrderSearch = hasPerm('快麦ERP');
             const isKeFu = role === '客服';
             const hasProd = hasPerm('订单生产进度');
-            const showSearch = hasJST || isKeFu || hasProd;
+            const showSearch = hasOrderSearch || isKeFu || hasProd;
             searchBar.style.display = showSearch ? '' : 'none';
         }
 
@@ -1751,7 +1765,7 @@
             'dimoldb': '刀模库',
             'inventory': '库存',
             'raw': '库存',
-            '__removed__': '快麦ERP',
+            'jst': '快麦ERP',
             'production': '订单生产进度',
             'scan': '扫码报工',
             'report': '日报表',
@@ -2019,6 +2033,12 @@
         if (!checkPagePerm(name)) return;
         SY_AUTH.saveRoute('main', name);
 
+        if (name !== 'databoard') {
+            document.body.classList.remove('dark-bg');
+            const contentEl = document.querySelector('.content');
+            if (contentEl) contentEl.classList.remove('databoard-mode');
+        }
+
         document.querySelectorAll('.subnav a').forEach(a => a.classList.remove('active'));
         if (el) el.classList.add('active');
         // 切到对应的子页面
@@ -2078,8 +2098,12 @@
         } else if (name === 'diemold') {
             document.getElementById('page-main').classList.remove('active');
             document.getElementById('page-diemold').classList.add('active');
-            // 延迟加载iframe
             const iframe = document.querySelector('#page-diemold iframe[data-src]');
+            if (iframe && !iframe.src) iframe.src = iframe.dataset.src;
+        } else if (name === 'jst') {
+            document.getElementById('page-main').classList.remove('active');
+            document.getElementById('page-jst').classList.add('active');
+            const iframe = document.querySelector('#page-jst iframe[data-src]');
             if (iframe && !iframe.src) iframe.src = iframe.dataset.src;
         } else {
             document.body.classList.remove('dark-bg');
@@ -2324,16 +2348,12 @@
             let attrStr = '';
             if (o.items && o.items.length > 0) {
                 attrStr = o.items.map(item => {
-                    const label = item.spec || item.name || '';
+                    const label = item.display || item.spec || '';
                     const qty = item.qty || 0;
                     return '<div style="line-height:1.8;">' + label + '<span style="color:#999;margin-left:6px;">×' + qty + '</span></div>';
                 }).join('');
             } else {
-                attrStr = o.product || o.name || '';
-            }
-            const region = [o.province, o.city].filter(Boolean).join(' ');
-            if (region) {
-                attrStr += '<div style="font-size:10px;color:#888;margin-top:4px;">📍 ' + region + '</div>';
+                attrStr = '';
             }
             // 卖家备注
             const sellerMemo = o.remark || '';
@@ -2599,15 +2619,13 @@
             const totalSteps = o.flow.length;
             const pct = totalSteps ? Math.round(doneSteps / totalSteps * 100) : 0;
             const currentStep = o.flow.find(s => !s.done)?.step || '已完成';
-            const productStr = o.product || (o.specs && o.specs.length
+            const productStr = (o.specs && o.specs.length
                 ? o.specs.map(s => (s.spec || '—') + '×' + (s.qty || 0)).join('<br>')
                 : '—');
             const isUrgent = !!o.urgent;
             return `<tr style="cursor:pointer;" onclick="showProdFlowByIndex(${idx})">
                 <td style="font-family:monospace;font-size:12px;color:#1677ff;font-weight:600;">${o.inner_id}</td>
                 <td>${o.store || ''}</td>
-                <td>${o.province || ''}</td>
-                <td>${o.city || ''}</td>
                 <td style="max-width:220px;font-size:11px;">${productStr}</td>
                 <td>${o.qty}</td>
                 <td><span class="tag ${pct===100?'tag-done':'tag-production'}">${currentStep}</span></td>
@@ -2669,7 +2687,6 @@
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;">
                     <div><strong>内部单号：</strong>${order.inner_id}</div>
                     <div><strong>店铺：</strong>${order.store || '—'}</div>
-                    <div><strong>发货地：</strong>${order.province || ''} ${order.city || ''}</div>
                     <div><strong>数量：</strong>${order.qty}</div>
                 </div>
                 <div style="margin-top:10px;font-size:12px;line-height:1.5;"><strong>商品：</strong>${productStr}</div>
@@ -3207,19 +3224,20 @@
                 let actionBtns = '';
                 if (canOperate) {
                     if (s === '请假') {
-                        actionBtns = `<button onclick="restoreEmp('${e.name}')" style="padding:3px 10px;background:#52c41a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:10px;">↩ 恢复出勤</button>`;
+                        actionBtns = `<button onclick="event.stopPropagation();restoreEmp('${empEscJs(e.name)}')" style="padding:3px 10px;background:#52c41a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:10px;">↩ 恢复出勤</button>`;
                     } else {
-                        actionBtns = `<button onclick="requestLeave('${e.name}')" style="padding:3px 10px;background:#e94560;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:10px;">❌请假</button>`;
+                        actionBtns = `<button onclick="event.stopPropagation();requestLeave('${empEscJs(e.name)}')" style="padding:3px 10px;background:#e94560;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:10px;">❌请假</button>`;
                     }
                 }
-                gridHtml += `<div style="background:#fff;border-radius:8px;padding:12px;border:1px solid #e8e8e8;border-left:3px solid ${gc};">
+                const cardEditOnclick = isSuperAdmin ? `onclick="openEmpCardEditor('${empEscJs(e.name)}')" title="点击编辑资料"` : '';
+                gridHtml += `<div ${cardEditOnclick} style="background:#fff;border-radius:8px;padding:12px;border:1px solid #e8e8e8;border-left:3px solid ${gc};${isSuperAdmin ? 'cursor:pointer;' : ''}">
                     <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:6px;">
                         <div>
                             <div style="font-size:15px;font-weight:600;">${e.name}</div>
                             <div style="font-size:11px;color:#888;margin-top:1px;">${e.position}</div>
                         </div>
                         <div style="display:flex;gap:4px;align-items:center;">
-                            <div style="font-size:12px;background:${statusColor}15;color:${statusColor};padding:1px 8px;border-radius:10px;font-weight:500;${canOperate?'cursor:pointer;':''}" ${canOperate?`onclick="toggleEmpStatus('${e.name}')" title="点击切换出勤/离岗"`:''}>
+                            <div style="font-size:12px;background:${statusColor}15;color:${statusColor};padding:1px 8px;border-radius:10px;font-weight:500;${canOperate?'cursor:pointer;':''}" ${canOperate?`onclick="event.stopPropagation();toggleEmpStatus('${empEscJs(e.name)}')" title="点击切换出勤/离岗"`:''}>
                                 ${statusEmoji} ${s}
                             </div>
                             ${actionBtns}
@@ -3229,7 +3247,7 @@
                         <div style="font-size:11px;color:#999;">
                             ${getPhoneHtml(e) ? getPhoneHtml(e) : ''}
                         </div>
-                        ${canResign ? `<button onclick="resignEmployee('${e.name}')" style="padding:2px 8px;background:#555;color:#bbb;border:1px solid #ddd;border-radius:4px;cursor:pointer;font-size:9px;opacity:0.6;" title="标记离职">🚪</button>` : ''}
+                        ${canResign ? `<button onclick="event.stopPropagation();resignEmployee('${empEscJs(e.name)}')" style="padding:2px 8px;background:#555;color:#bbb;border:1px solid #ddd;border-radius:4px;cursor:pointer;font-size:9px;opacity:0.6;" title="标记离职">🚪</button>` : ''}
                     </div>
                 </div>`;
             });
@@ -3276,6 +3294,101 @@
             return `<a href="tel:${e.phone}" style="color:#1677ff;text-decoration:none;">📞 ${e.phone}</a>`;
         }
         return '';  // 不可见则整行消失
+    }
+
+    function empEscJs(s) {
+        return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    }
+
+    function openEmpCardEditor(name) {
+        if (!_currentUser || _currentUser.role !== '超级管理员') return;
+        const emp = (window._allEmployees || []).find(x => x.name === name);
+        if (!emp) {
+            alert('未找到员工');
+            return;
+        }
+        const body = document.getElementById('empSingleEditorBody');
+        const deptVal = emp.dept === '洋坑塘运营部' ? '洋坑塘运营部' : '美丽湾工厂部';
+        body.innerHTML = `
+            <div style="margin-bottom:10px;">
+                <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">姓名</label>
+                <input type="text" id="empEditName" value="${(emp.name || '').replace(/"/g, '&quot;')}" style="width:100%;padding:8px;border:1px solid #d9d9d9;border-radius:6px;">
+            </div>
+            <div style="margin-bottom:10px;">
+                <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">职务</label>
+                <input type="text" id="empEditPosition" value="${(emp.position || '').replace(/"/g, '&quot;')}" style="width:100%;padding:8px;border:1px solid #d9d9d9;border-radius:6px;">
+            </div>
+            <div style="margin-bottom:10px;">
+                <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">组别</label>
+                <input type="text" id="empEditGroup" value="${(emp.group || '').replace(/"/g, '&quot;')}" style="width:100%;padding:8px;border:1px solid #d9d9d9;border-radius:6px;">
+            </div>
+            <div style="margin-bottom:10px;">
+                <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">手机号</label>
+                <input type="text" id="empEditPhone" value="${(emp.phone || '').replace(/"/g, '&quot;')}" style="width:100%;padding:8px;border:1px solid #d9d9d9;border-radius:6px;">
+            </div>
+            <div style="margin-bottom:10px;">
+                <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">厂区</label>
+                <select id="empEditDept" style="width:100%;padding:8px;border:1px solid #d9d9d9;border-radius:6px;">
+                    <option value="美丽湾工厂部" ${deptVal === '美丽湾工厂部' ? 'selected' : ''}>美丽湾工厂部</option>
+                    <option value="洋坑塘运营部" ${deptVal === '洋坑塘运营部' ? 'selected' : ''}>洋坑塘运营部</option>
+                </select>
+            </div>
+            <div style="margin-bottom:10px;">
+                <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">登录角色</label>
+                <select id="empEditRole" style="width:100%;padding:8px;border:1px solid #d9d9d9;border-radius:6px;">
+                    <option value="员工" ${(emp.role || '') === '员工' ? 'selected' : ''}>员工</option>
+                    <option value="客服" ${(emp.role || '') === '客服' ? 'selected' : ''}>客服</option>
+                    <option value="管理" ${(emp.role || '') === '管理' ? 'selected' : ''}>管理</option>
+                    <option value="超级管理员" ${(emp.role || '') === '超级管理员' ? 'selected' : ''}>超级管理员</option>
+                </select>
+            </div>
+            <div style="margin-bottom:10px;">
+                <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">登录账号</label>
+                <input type="text" id="empEditUsername" value="${(emp.username || '').replace(/"/g, '&quot;')}" placeholder="无账号可留空" style="width:100%;padding:8px;border:1px solid #d9d9d9;border-radius:6px;" readonly>
+            </div>
+            <div style="margin-bottom:14px;">
+                <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">重置密码（留空不改）</label>
+                <input type="password" id="empEditPassword" placeholder="新密码至少4位" style="width:100%;padding:8px;border:1px solid #d9d9d9;border-radius:6px;">
+            </div>
+            <button onclick="saveEmpCardEditor('${empEscJs(name)}')" style="width:100%;padding:10px;background:#1677ff;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;">保存</button>
+        `;
+        document.getElementById('empSingleEditorModal').classList.add('show');
+    }
+
+    async function saveEmpCardEditor(oldName) {
+        const payload = {
+            old_name: oldName,
+            name: document.getElementById('empEditName').value.trim(),
+            position: document.getElementById('empEditPosition').value.trim(),
+            group: document.getElementById('empEditGroup').value.trim(),
+            phone: document.getElementById('empEditPhone').value.trim(),
+            dept: document.getElementById('empEditDept').value,
+            role: document.getElementById('empEditRole').value,
+            username: document.getElementById('empEditUsername').value.trim(),
+            new_password: document.getElementById('empEditPassword').value.trim()
+        };
+        if (!payload.name) {
+            alert('姓名不能为空');
+            return;
+        }
+        try {
+            const res = await fetch('/api/employee/update', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            alert(data.message || (data.success ? '已保存' : '保存失败'));
+            if (data.success) {
+                closeModal('empSingleEditorModal');
+                const visibleTab = Array.from(document.querySelectorAll('.emp-tab')).find(t => t.style.display !== 'none');
+                const activeDept = visibleTab ? visibleTab.getAttribute('data-dept') : '洋坑塘运营部';
+                await loadEmployeePage();
+                switchEmpTab(activeDept, visibleTab);
+            }
+        } catch (e) {
+            alert('保存失败: ' + e.message);
+        }
     }
 
     async function toggleEmpStatus(name) {
@@ -3472,7 +3585,8 @@
     // ===== 编辑单个员工 =====
     async function editSingleEmployee(name) {
         const empData = await getAPI('/api/employees');
-        const emp = empData.employees.find(e => e.name === name);
+        const employees = Array.isArray(empData) ? empData : (empData.employees || []);
+        const emp = employees.find(e => e.name === name);
         if (!emp) { alert('未找到员工'); return; }
         
         const newName = prompt('姓名：', emp.name);
@@ -5537,12 +5651,9 @@
 
     function rtOrderNo(o) {
         if (!o) return '';
-        var sid = o.km_sid || o.sid || '';
-        if (sid) return String(sid);
         var so = o.so_id || '';
-        var tid = o.tid || o.platform_tid || '';
-        if (so && (!tid || so !== tid) && String(so).length <= 14) return String(so);
-        return String(so || tid || '');
+        if (so) return String(so);
+        return String(o.km_sid || o.sid || o.tid || o.platform_tid || '');
     }
 
     function rtEscJs(s) {
@@ -5709,9 +5820,7 @@
             '<th style="padding:8px 6px;border-bottom:1px solid #e8e8e8;text-align:left;">店铺</th>' +
             '<th style="padding:8px 6px;border-bottom:1px solid #e8e8e8;text-align:left;">单号</th>' +
             '<th style="padding:8px 6px;border-bottom:1px solid #e8e8e8;text-align:left;">买家</th>' +
-            '<th style="padding:8px 6px;border-bottom:1px solid #e8e8e8;text-align:left;">省份</th>' +
-            '<th style="padding:8px 6px;border-bottom:1px solid #e8e8e8;text-align:left;">城市</th>' +
-            '<th style="padding:8px 6px;border-bottom:1px solid #e8e8e8;text-align:left;">商品</th>' +
+            '<th style="padding:8px 6px;border-bottom:1px solid #e8e8e8;text-align:left;">规格/属性</th>' +
             '<th style="padding:8px 6px;border-bottom:1px solid #e8e8e8;text-align:left;">买家备注</th>' +
             '<th style="padding:8px 6px;border-bottom:1px solid #e8e8e8;text-align:left;">卖家备注</th>' +
             '<th style="padding:8px 6px;border-bottom:1px solid #e8e8e8;text-align:right;">金额</th>' +
@@ -5727,7 +5836,7 @@
             var specHtml = '';
             if (o.items && o.items.length > 0) {
                 specHtml = o.items.map(function(itm) {
-                    var label = itm.spec || itm.name || '';
+                    var label = itm.display || itm.spec || '';
                     return '<div style="white-space:nowrap;">' + label + ' <b style="color:#e94560;">×' + (itm.qty || 0) + '</b></div>';
                 }).join('');
             }
@@ -5743,8 +5852,6 @@
                 '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;font-size:11px;">' + (o.shop_name || '') + '</td>' +
                 '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;font-family:monospace;font-size:11px;">' + orderNo + '</td>' +
                 '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;">' + (o.receiver_name || o.buyer_login_id || '') + '</td>' +
-                '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;font-size:11px;">' + (o.receiver_province || '') + '</td>' +
-                '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;font-size:11px;">' + (o.receiver_city || '') + '</td>' +
                 '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;max-width:400px;font-size:11px;">' + specHtml + '</td>' +
                 '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;max-width:120px;font-size:11px;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + buyerMemo + '">' + buyerMemo + '</td>' +
                 '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;max-width:120px;font-size:11px;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + sellerMemo + '">' + sellerMemo + '</td>' +
@@ -6008,13 +6115,12 @@
 
         const itemsHtml = (o.items || []).map(item => {
             return '<tr>' +
-                '<td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;font-size:12px;">' + (item.spec || item.name || '') + '</td>' +
+                '<td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;font-size:12px;">' + (item.display || item.spec || '') + '</td>' +
                 '<td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;text-align:center;font-size:12px;">' + (item.qty || 0) + '</td>' +
                 '<td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;text-align:right;font-size:12px;">¥' + rtFmtMoney(item.price) + '</td>' +
                 '</tr>';
         }).join('');
         const orderNo = rtOrderNo(o);
-        const region = rtRegion(o);
 
         body.innerHTML = `
             <div style="background:#f9f9f9;border-radius:8px;padding:16px;">
@@ -6028,7 +6134,6 @@
                 </div>
                 <div style="font-size:13px;margin-bottom:8px;"><b>下单时间：</b>${o.created || ''}</div>
                 <div style="font-size:13px;margin-bottom:8px;"><b>买家：</b>${o.receiver_name || o.buyer_login_id || ''}</div>
-                <div style="font-size:13px;margin-bottom:8px;"><b>发货地：</b>${region || '—'}</div>
                 <div style="font-size:13px;margin-bottom:8px;"><b>实付：</b>¥${rtFmtMoney(o.total_amount)} ${(parseFloat(o.shipping_fee) || 0) > 0 ? '(含运费¥' + rtFmtMoney(o.shipping_fee) + ')' : ''}</div>
                 <div style="font-size:13px;font-weight:600;margin:12px 0 6px;">📦 商品明细</div>
                 <table style="width:100%;border-collapse:collapse;font-size:12px;">

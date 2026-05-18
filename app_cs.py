@@ -774,7 +774,7 @@ def dashboard():
             for o in today_orders_raw:
                 shop_1688 = o.get('shop_name', '')
                 shop_info = _dashboard_shop_info(shop_1688)
-                oid = str(o.get('km_sid') or o.get('so_id') or '')
+                oid = str(o.get('so_id') or o.get('km_sid') or '')
                 items = o.get('items', [])
                 product_names = '; '.join([f"{i.get('name','?')[:20]} x{i.get('qty',0)}" for i in items[:2]])
                 if len(items) > 2:
@@ -932,7 +932,7 @@ def shop_databoard():
 
     urgent_n = 0
     for o in in_range:
-        oid = str(o.get('km_sid') or o.get('so_id') or '')
+        oid = str(o.get('so_id') or o.get('km_sid') or '')
         if _order_extra.get(oid, {}).get('urgent'):
             urgent_n += 1
 
@@ -955,7 +955,7 @@ def shop_databoard():
     )[:8]
     recent_news = []
     for o in recent:
-        oid = str(o.get('km_sid') or o.get('so_id') or '')
+        oid = str(o.get('so_id') or o.get('km_sid') or '')
         shop = o.get('shop_name') or ''
         recent_news.append({
             'icon': '📦',
@@ -1070,7 +1070,7 @@ def _find_cached_order(query):
         return None
     q = query.lower()
     for o in cache.get("orders", []):
-        so_id = str(o.get("km_sid") or o.get("so_id", "") or "")
+        so_id = str(o.get("so_id") or o.get("km_sid", "") or "")
         tid = str(o.get("tid", "") or o.get("platform_tid", "") or "")
         if query == so_id or query == tid or q in so_id.lower() or (tid and q in tid.lower()):
             return o
@@ -1123,7 +1123,7 @@ def _order_detail_from_cache(o):
     province = (o.get("receiver_province") or "").strip()
     city = (o.get("receiver_city") or "").strip()
     return {
-        "order_id": o.get("km_sid") or o.get("so_id", ""),
+        "order_id": o.get("so_id") or o.get("km_sid", ""),
         "store": o.get("shop_name", ""),
         "customer": o.get("receiver_name", "") or o.get("buyer_nick", "") or "",
         "product": product,
@@ -1147,7 +1147,7 @@ def search_order():
     o = _find_cached_order(query)
     if not o:
         return jsonify({"found": False, "message": "未找到该订单"})
-    so_id = str(o.get("km_sid") or o.get("so_id") or "")
+    so_id = str(o.get("so_id") or o.get("km_sid") or "")
     extra = _order_extra.get(so_id, {})
     prod_list = _build_production_orders_for_cs()
     prod = next((x for x in prod_list if x.get("inner_id") == so_id), None)
@@ -2966,7 +2966,20 @@ def permissions_data():
 @app.route('/api/employees')
 def employees_list():
     _sync_all_employees_perms()
-    return jsonify(_employees_master_list)
+    emp_users = {}
+    for un, u in USERS.items():
+        if u.get('is_system'):
+            continue
+        en = u.get('employee_name') or u.get('name', '')
+        if en:
+            emp_users[en] = un
+    out = []
+    for e in _employees_master_list:
+        row = dict(e)
+        row['username'] = emp_users.get(e.get('name', ''), '')
+        row['role'] = USERS.get(row['username'], {}).get('role', '')
+        out.append(row)
+    return jsonify(out)
 
 # ==================== 静态文件 ====================
 @app.route('/login_simple')
@@ -3680,25 +3693,85 @@ def api_employee_add():
 
 @app.route('/api/employee/update', methods=['POST'])
 def api_employee_update():
-    """编辑员工"""
+    """编辑员工（姓名/职务/手机/部门/角色/密码）"""
     global _employees_master_list
-    data = request.get_json()
-    old_name = data.get('old_name', '')
-    name = data.get('name', '').strip()
-    position = data.get('position', '').strip()
-    if not name:
+    un = resolve_login_user()
+    if not un:
+        return jsonify({"success": False, "message": "未登录"}), 401
+    actor = USERS.get(un)
+    if not actor or actor.get('role') != '超级管理员':
+        return jsonify({"success": False, "message": "仅超级管理员可编辑员工资料"}), 403
+
+    data = request.get_json() or {}
+    old_name = (data.get('old_name') or '').strip()
+    name = (data.get('name') or '').strip()
+    position = (data.get('position') or '').strip()
+    phone = data.get('phone')
+    dept = (data.get('dept') or '').strip()
+    group = (data.get('group') or '').strip()
+    role = (data.get('role') or '').strip()
+    new_password = (data.get('new_password') or '').strip()
+    username = (data.get('username') or '').strip()
+
+    if not old_name or not name:
         return jsonify({"success": False, "message": "员工姓名不能为空"})
+
+    target_emp = next((e for e in _employees_master_list if e.get('name') == old_name), None)
+    if not target_emp:
+        return jsonify({"success": False, "message": f"未找到员工 {old_name}"})
+    target_emp['name'] = name
+    if position:
+        target_emp['position'] = position
+    if phone is not None:
+        target_emp['phone'] = str(phone).strip()
+    if dept:
+        target_emp['dept'] = dept
+    if group:
+        target_emp['group'] = group
+
+    if old_name != name:
+        perms = _permission_data.setdefault('permissions', {})
+        if old_name in perms:
+            perms[name] = perms.pop(old_name)
+
+    user_updated = False
+    for ukey, u in USERS.items():
+        if u.get('employee_name') == old_name:
+            u['employee_name'] = name
+            u['name'] = name
+            if role:
+                u['role'] = role
+            if new_password:
+                if len(new_password) < 4:
+                    return jsonify({"success": False, "message": "密码至少4位"})
+                u['password'] = hashlib.sha256(new_password.encode()).hexdigest()
+            user_updated = True
+            break
+    if not user_updated and username and username in USERS:
+        u = USERS[username]
+        if role:
+            u['role'] = role
+        if new_password:
+            if len(new_password) < 4:
+                return jsonify({"success": False, "message": "密码至少4位"})
+            u['password'] = hashlib.sha256(new_password.encode()).hexdigest()
+
     try:
         db = get_db()
         cur = db.cursor()
-        cur.execute("UPDATE employees SET name=%s, position=%s WHERE name=%s", (name, position, old_name))
+        cur.execute(
+            "UPDATE employees SET name=%s, position=%s WHERE name=%s",
+            (name, position or target_emp.get('position', ''), old_name),
+        )
         db.commit()
         cur.close()
         db.close()
-        _sync_all_employees_perms()
-        return jsonify({"success": True, "message": "更新成功"})
     except Exception as e:
-        return jsonify({"success": False, "message": f"更新失败: {str(e)}"})
+        return jsonify({"success": False, "message": f"数据库更新失败: {str(e)}"})
+
+    persist()
+    _sync_all_employees_perms()
+    return jsonify({"success": True, "message": "更新成功"})
 
 @app.route('/api/employee/delete', methods=['POST'])
 def api_employee_delete():
