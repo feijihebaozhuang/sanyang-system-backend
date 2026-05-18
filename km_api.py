@@ -840,6 +840,20 @@ _ORDER_SPEC_HINT = re.compile(
     r"长|宽|高|厚|深|尺寸|规格|直径|颜色|材质|材料|硬度|每层|层数|×|[xX]|【[^】]*\d"
 )
 
+# 天猫/淘宝/1688 常见尺寸片段（从整段规格或标题里抠出）
+_DIM_SNIPPET_PATTERNS = (
+    re.compile(r"长\s*x?\s*宽\s*【[^】]+】", re.I),
+    re.compile(r"高度?\s*【[^】]+】", re.I),
+    re.compile(r"(?:外|内)?尺寸\s*[:：]?\s*[^;；]+", re.I),
+    re.compile(
+        r"\d+\.?\d*\s*(?:cm|CM|毫米|mm|厘米)?\s*[*×xX]\s*\d+\.?\d*"
+        r"(?:\s*(?:cm|CM|毫米|mm|厘米)?\s*[*×xX]\s*\d+\.?\d*)?",
+        re.I,
+    ),
+    re.compile(r"(?:宽|长)度?\s*\d+\.?\d*\s*(?:cm|CM|厘米)?", re.I),
+    re.compile(r"高\s*度?\s*\d+\.?\d*\s*(?:cm|CM|厘米)?", re.I),
+)
+
 
 def _is_product_code_segment(seg: str) -> bool:
     """如 10厘米-27厘米-正方形【零售】 等货号/标题，不是订单尺寸属性。"""
@@ -859,12 +873,138 @@ def _is_product_code_segment(seg: str) -> bool:
     return False
 
 
+def _is_dimension_only_segment(seg: str) -> bool:
+    """纯数字尺寸如 14*10*7、宽度14CM高度7CM。"""
+    if _is_junk_spec_segment(seg) or _is_product_code_segment(seg):
+        return False
+    t = _norm_spec_text(seg)
+    if re.search(
+        r"\d+\.?\d*\s*(?:cm|CM|毫米|mm|厘米)?\s*[*×xX]\s*\d+\.?\d*", t, re.I
+    ):
+        return True
+    if re.search(r"[长宽]\s*[*×xX]?\s*\d", t):
+        return True
+    if re.search(r"高\s*度?\s*【?\s*\d", t, re.I):
+        return True
+    return False
+
+
 def _is_order_spec_segment(seg: str) -> bool:
     """客服/production 需要的下单属性：长宽高、材质颜色等。"""
     if _is_junk_spec_segment(seg) or _is_product_code_segment(seg):
         return False
-    val = seg.rsplit(":", 1)[-1].strip() if ":" in seg else seg
+    if _is_dimension_only_segment(seg):
+        return True
+    if ":" in seg or "：" in seg:
+        key, _, val = seg.partition(":") if ":" in seg else seg.partition("：")
+        if _ORDER_SPEC_HINT.search((key or "") + (val or "")):
+            return True
+    val = seg.rsplit(":", 1)[-1].strip() if (":" in seg or "：" in seg) else seg
     return bool(_ORDER_SPEC_HINT.search(val))
+
+
+def _extract_dimension_snippets(text: str) -> list[str]:
+    if not text:
+        return []
+    found: list[str] = []
+    seen: set[str] = set()
+    for pat in _DIM_SNIPPET_PATTERNS:
+        for m in pat.finditer(text):
+            s = _norm_spec_text(m.group(0))
+            if not s or s in seen:
+                continue
+            if _is_junk_spec_segment(s) or _is_product_code_segment(s):
+                continue
+            seen.add(s)
+            found.append(s)
+    return found
+
+
+def _split_property_blob(text: str) -> list[str]:
+    """拆分天猫/淘宝规格串：; 分隔，以及同一串里多个【…】属性。"""
+    t = _norm_spec_text(text)
+    if not t:
+        return []
+    chunks: list[str] = []
+    for part in re.split(r"[;；]+", t.replace("：", ":")):
+        part = part.strip()
+        if not part:
+            continue
+        if part.count("【") >= 2:
+            subs = re.findall(r"[^;；\s]*【[^】]+】[^;；\s]*", part)
+            if subs:
+                chunks.extend(s.strip() for s in subs if s.strip())
+                rest = re.sub(r"[^;；\s]*【[^】]+】[^;；\s]*", " ", part).strip()
+                if rest and not rest.isspace():
+                    chunks.append(rest)
+                continue
+        chunks.append(part)
+    return chunks
+
+
+def _spec_parts_add_from_blob(parts: list[str], seen: set[str], text: str) -> None:
+    if not text:
+        return
+    for seg in _split_property_blob(text):
+        if _is_order_spec_segment(seg):
+            _spec_parts_add(parts, seen, seg)
+    for snip in _extract_dimension_snippets(text):
+        _spec_parts_add(parts, seen, snip)
+
+
+def _parts_have_dimensions(parts: list[str]) -> bool:
+    joined = "；".join(parts)
+    if re.search(r"\d\s*[*×xX]\s*\d", joined):
+        return True
+    if re.search(r"[长宽].*\d|高.*\d|【\s*\d", joined):
+        return True
+    return False
+
+
+def km_format_dimensions_from_text(text: str, qty: int = 0) -> str:
+    """从标题/备注等补全尺寸（天猫 SKU 常只有材质，尺寸在标题里）。"""
+    t = _norm_spec_text(text)
+    if not t:
+        return ""
+    labeled = _extract_dimension_snippets(t)
+    if labeled:
+        return "；".join(labeled)
+
+    fmt = lambda n: str(int(n)) if n == int(n) else str(n)
+
+    m3 = re.search(
+        r"(\d+\.?\d*)\s*(?:cm|CM|厘米|mm)?\s*[*×xX]\s*(\d+\.?\d*)\s*(?:cm|CM|厘米|mm)?"
+        r"\s*[*×xX]\s*(\d+\.?\d*)",
+        t,
+        re.I,
+    )
+    if m3:
+        a, b, c = float(m3.group(1)), float(m3.group(2)), float(m3.group(3))
+        if abs(c - qty) < 0.01:
+            return f"{fmt(a)}×{fmt(b)}"
+        return f"{fmt(a)}×{fmt(b)}×{fmt(c)}"
+
+    lw = re.search(
+        r"宽度(\d+\.?\d*).*?高度(\d+\.?\d*)|长[度]?(\d+\.?\d*).*?宽[度]?(\d+\.?\d*)",
+        t,
+        re.I,
+    )
+    if lw:
+        n1 = lw.group(1) or lw.group(3) or ""
+        n2 = lw.group(2) or lw.group(4) or ""
+        if n1 and n2:
+            return f"{fmt(float(n1))}×{fmt(float(n2))}"
+
+    pair = re.search(
+        r"(\d+\.?\d*)\s*(?:cm|CM|厘米|mm)?\s*[*×xX]\s*(\d+\.?\d*)", t, re.I
+    )
+    if pair:
+        return f"{fmt(float(pair.group(1)))}×{fmt(float(pair.group(2)))}"
+
+    hm = re.search(r"(?:高(?:度)?[【\[]?|【)(\d+\.?\d*)\s*(?:cm|CM|厘米)?", t, re.I)
+    if hm:
+        return f"高度【{fmt(float(hm.group(1)))}厘米】"
+    return ""
 
 
 def _split_sku_spec_segments(text: str) -> list[str]:
@@ -945,34 +1085,47 @@ def km_sanitize_spec_text(spec: str) -> str:
 
 
 def km_merge_line_item_spec(it: dict) -> str:
-    """快麦/1688 子订单：仅合并 SKU 规格属性，不含订单扩展/单号/JSON。"""
+    """快麦/1688/天猫/淘宝：合并 SKU 规格 + 从标题/备注/编码补全尺寸。"""
     if not isinstance(it, dict):
         return ""
     parts: list[str] = []
     seen: set[str] = set()
+    qty = int(it.get("num") or it.get("quantity") or it.get("qty") or 0)
 
-    sys_spec = _norm_spec_text(it.get("sysSkuPropertiesName"))
-    plat_spec = _norm_spec_text(it.get("skuPropertiesName"))
-    if sys_spec:
-        _spec_parts_add_segments(parts, seen, sys_spec)
-    if plat_spec and plat_spec != sys_spec:
-        _spec_parts_add_segments(parts, seen, plat_spec)
-
-    alias = _norm_spec_text(it.get("sysSkuPropertiesAlias"))
-    if alias and alias not in (sys_spec, plat_spec):
-        _spec_parts_add_segments(parts, seen, alias)
+    spec_fields = (
+        it.get("sysSkuPropertiesName"),
+        it.get("skuPropertiesName"),
+        it.get("sysSkuPropertiesAlias"),
+        it.get("sysSkuRemark"),
+        it.get("sysItemRemark"),
+    )
+    for raw in spec_fields:
+        _spec_parts_add_from_blob(parts, seen, _norm_spec_text(raw))
 
     ali = merge_1688_sku_infos(it.get("skuInfos"))
     if ali:
-        _spec_parts_add_segments(parts, seen, ali)
+        _spec_parts_add_from_blob(parts, seen, ali)
 
-    # 旧缓存可能只有 spec 字段，做一次净化
     legacy = _norm_spec_text(it.get("spec"))
-    if legacy and not parts:
-        _spec_parts_add_segments(parts, seen, legacy)
-    elif legacy and parts:
-        for seg in _split_sku_spec_segments(legacy):
-            _spec_parts_add(parts, seen, seg)
+    if legacy:
+        _spec_parts_add_from_blob(parts, seen, legacy)
+
+    if not _parts_have_dimensions(parts):
+        extra_texts = [
+            it.get("sysTitle"),
+            it.get("title"),
+            it.get("shortTitle"),
+            it.get("sysOuterId"),
+            it.get("outerId"),
+        ]
+        combined = " ".join(_norm_spec_text(x) for x in extra_texts if x)
+        dim = km_format_dimensions_from_text(combined, qty=qty)
+        if dim:
+            for seg in re.split(r"[;；]+", dim):
+                _spec_parts_add(parts, seen, seg)
+        else:
+            for raw in extra_texts:
+                _spec_parts_add_from_blob(parts, seen, _norm_spec_text(raw))
 
     return "；".join(parts)
 
