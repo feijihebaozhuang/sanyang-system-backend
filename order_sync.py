@@ -204,3 +204,64 @@ def _parse_item_display(spec: str, name: str, qty: int) -> str:
     if qty:
         parts.append(f"x{qty}")
     return " ".join(parts) if parts else name or ""
+
+
+_force_sync_lock = threading.Lock()
+_force_sync_state: dict[str, Any] = {
+    "running": False,
+    "error": None,
+    "last": None,
+    "started_at": None,
+    "finished_at": None,
+}
+
+
+def force_sync_status() -> dict[str, Any]:
+    with _force_sync_lock:
+        return {
+            "running": bool(_force_sync_state["running"]),
+            "error": _force_sync_state["error"],
+            "last": _force_sync_state["last"],
+            "started_at": _force_sync_state["started_at"],
+            "finished_at": _force_sync_state["finished_at"],
+        }
+
+
+def start_force_sync_async(
+    cache_file: str | Path,
+    *,
+    days_back: int = 30,
+    memo_getter: Callable | None = None,
+    include_1688_direct: bool = True,
+) -> tuple[bool, str]:
+    """后台拉单，避免 Nginx/浏览器因同步过久返回 HTML 超时页。"""
+    with _force_sync_lock:
+        if _force_sync_state["running"]:
+            return False, "同步正在进行中，请稍候"
+        _force_sync_state["running"] = True
+        _force_sync_state["error"] = None
+        _force_sync_state["last"] = None
+        _force_sync_state["started_at"] = time.time()
+        _force_sync_state["finished_at"] = None
+
+    def _run():
+        try:
+            report = sync_orders_to_cache(
+                cache_file,
+                days_back=days_back,
+                memo_getter=memo_getter,
+                include_1688_direct=include_1688_direct,
+            )
+            with _force_sync_lock:
+                _force_sync_state["last"] = report
+        except Exception as ex:
+            with _force_sync_lock:
+                _force_sync_state["error"] = str(ex)
+            print(f"[订单同步] 手动同步失败: {ex}")
+        finally:
+            with _force_sync_lock:
+                _force_sync_state["running"] = False
+                _force_sync_state["finished_at"] = time.time()
+
+    threading.Thread(target=_run, daemon=True).start()
+    return True, "同步已开始，请稍候刷新列表"

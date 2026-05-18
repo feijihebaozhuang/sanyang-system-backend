@@ -17,7 +17,6 @@ from settings import (
     ALIBABA_SHOPS,
     DB_CONFIG,
     FLASK_SECRET_KEY,
-    JST_CONFIG,
     get_wechat_token,
 )
 
@@ -212,9 +211,9 @@ def load_data():
                 {"name": "隆浪", "position": "财务"},
             ],
             "permissions": {
-                "戴雅利": {"首页": True, "订单生产进度": True, "扫码报工": True, "日报表": True, "数据看板": True, "刀模": True, "库存": True, "聚水潭": True, "员工": True, "权限管理": True, "报价": True},
-                "邓涛": {"首页": True, "订单生产进度": True, "扫码报工": True, "日报表": True, "数据看板": True, "刀模": True, "库存": True, "聚水潭": True, "员工": True, "权限管理": False, "报价": False},
-                "李周海": {"首页": True, "订单生产进度": True, "扫码报工": True, "日报表": True, "员工": True, "刀模": False, "库存": False, "聚水潭": False, "数据看板": False, "权限管理": False, "报价": False},
+                "戴雅利": {"首页": True, "订单生产进度": True, "扫码报工": True, "日报表": True, "数据看板": True, "刀模": True, "库存": True, "快麦ERP": True, "员工": True, "权限管理": True, "报价": True},
+                "邓涛": {"首页": True, "订单生产进度": True, "扫码报工": True, "日报表": True, "数据看板": True, "刀模": True, "库存": True, "快麦ERP": True, "员工": True, "权限管理": False, "报价": False},
+                "李周海": {"首页": True, "订单生产进度": True, "扫码报工": True, "日报表": True, "员工": True, "刀模": False, "库存": False, "快麦ERP": False, "数据看板": False, "权限管理": False, "报价": False},
             }
         }
     }
@@ -254,12 +253,17 @@ def load_data():
                 permission_map[en] = {}
             permission_map[en][pk] = val
 
-        # 构建permissions字典
+        # 构建permissions字典（聚水潭 → 快麦ERP 兼容）
         permissions = {}
         for emp in employees:
             en = emp['name']
             perms = permission_map.get(en, {})
-            permissions[en] = {pk: perms.get(pk, False) for pk in sorted(all_perm_keys)}
+            row = {pk: perms.get(pk, False) for pk in sorted(all_perm_keys)}
+            if '聚水潭' in row and '快麦ERP' not in row:
+                row['快麦ERP'] = row.pop('聚水潭')
+            elif '聚水潭' in row:
+                row.pop('聚水潭', None)
+            permissions[en] = row
 
         # 从order_extras表读取
         cur.execute("SELECT so_id, urgent FROM order_extras")
@@ -757,7 +761,125 @@ def order_urgent():
     return jsonify({"success": True, "order_id": oid, "urgent": urgent})
 
 # 功能列表（保持不变）
-PERM_FEATURES = ["首页","订单生产进度","扫码报工","日报表","数据看板","刀模","库存","原材料","聚水潭","员工","权限管理","报价","实时订单"]
+PERM_FEATURES = ["首页","订单生产进度","扫码报工","日报表","数据看板","刀模","库存","原材料","快麦ERP","员工","权限管理","报价","实时订单"]
+_PERM_LEGACY_KEY = "聚水潭"
+_PERM_CURRENT_KEY = "快麦ERP"
+
+
+def _migrate_perm_dict(perms):
+    """权限键 聚水潭 → 快麦ERP（兼容旧数据）。"""
+    if not isinstance(perms, dict):
+        return perms
+    if _PERM_LEGACY_KEY in perms and _PERM_CURRENT_KEY not in perms:
+        perms[_PERM_CURRENT_KEY] = perms.pop(_PERM_LEGACY_KEY)
+    elif _PERM_LEGACY_KEY in perms:
+        perms.pop(_PERM_LEGACY_KEY, None)
+    return perms
+
+
+def _orders_cache_path():
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "orders_cache.json")
+
+
+def _find_cached_order(query):
+    query = (query or "").strip()
+    if not query:
+        return None
+    path = _orders_cache_path()
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            cache = json.load(f)
+    except Exception:
+        return None
+    q = query.lower()
+    for o in cache.get("orders", []):
+        so_id = str(o.get("so_id", "") or "")
+        tid = str(o.get("tid", "") or o.get("platform_tid", "") or "")
+        if query == so_id or query == tid or q in so_id.lower() or (tid and q in tid.lower()):
+            return o
+    return None
+
+
+def _production_status_from_flow(flow):
+    flow = flow or []
+    done = [s for s in flow if s.get("done")]
+    total = len(flow) or 1
+    progress = int(len(done) * 100 / total)
+    current = "-"
+    for s in flow:
+        if not s.get("done"):
+            current = s.get("step") or s.get("name", "-")
+            break
+    else:
+        if flow:
+            current = flow[-1].get("step") or flow[-1].get("name", "已完成")
+    status = "已完成" if progress >= 100 and flow else ("生产中" if done else "待处理")
+    steps = [
+        {
+            "name": s.get("step") or s.get("name", ""),
+            "done": bool(s.get("done")),
+            "time": s.get("time", "-"),
+        }
+        for s in flow
+    ]
+    return {
+        "status": status,
+        "current_process": current,
+        "diemold": "",
+        "progress": progress,
+        "steps": steps,
+    }
+
+
+def _order_detail_from_cache(o):
+    items = o.get("items") or []
+    first = items[0] if items else {}
+    product = first.get("name", "") or first.get("spec", "") or "?"
+    if len(items) > 1:
+        product += f" 等{len(items)}种"
+    qty = sum(int(i.get("qty", 0) or 0) for i in items)
+    amount = o.get("payment") or o.get("pay_amount") or o.get("total_fee") or 0
+    return {
+        "order_id": o.get("so_id", ""),
+        "store": o.get("shop_name", ""),
+        "customer": o.get("receiver_name", "") or o.get("buyer_nick", "") or "",
+        "product": product,
+        "qty": qty,
+        "amount": amount,
+        "order_date": (o.get("created") or o.get("pay_time") or "")[:10],
+        "delivery_date": (o.get("plan_delivery_date") or o.get("consign_time") or "")[:10],
+        "address": o.get("receiver_address", "") or "",
+        "logistics": o.get("logistics_company", "") or o.get("express", "") or "",
+    }
+
+
+@app.route("/api/search_order")
+def search_order():
+    """扫码/输入单号：从 orders_cache.json 查订单（快麦+1688）。"""
+    query = (request.args.get("q") or "").strip()
+    if not query:
+        return jsonify({"found": False, "message": "请输入单号"})
+    o = _find_cached_order(query)
+    if not o:
+        return jsonify({"found": False, "message": "未找到该订单"})
+    so_id = o.get("so_id", "")
+    extra = _order_extra.get(so_id, {})
+    prod_list = _build_production_orders_for_cs()
+    prod = next((x for x in prod_list if x.get("inner_id") == so_id), None)
+    flow = (prod or {}).get("flow") or []
+    detail = _order_detail_from_cache(o)
+    payload = {
+        "found": True,
+        "order_id": so_id,
+        "urgent": bool(extra.get("urgent")),
+        "production_status": _production_status_from_flow(flow),
+        "order_detail": detail,
+        "jst_detail": detail,
+    }
+    return jsonify(payload)
+
 
 def _sync_all_employees_perms():
     """
@@ -783,6 +905,7 @@ def _sync_all_employees_perms():
             for f in PERM_FEATURES:
                 base[name][f] = False
         else:
+            _migrate_perm_dict(base[name])
             # 已有员工：补全缺失字段
             for f in PERM_FEATURES:
                 if f not in base[name]:
@@ -2743,556 +2866,6 @@ def index():
 def static_files(path):
     return send_from_directory('.', path)
 
-# ===== 聚水潭对接模块 =====
-
-def _jst_partner_id():
-    """URL 中的 partnerid：与 settings 一致，优先 JST_PARTNER_ID，否则 JST_APP_KEY。"""
-    return (JST_CONFIG.get('partnerid') or JST_CONFIG.get('app_key') or '').strip()
-
-
-def _jst_partner_secret():
-    return (JST_CONFIG.get('app_secret') or '').strip()
-
-
-def _jst_load_token():
-    """从MySQL读取缓存的token"""
-    try:
-        db = get_db()
-        cur = db.cursor()
-        cur.execute("SELECT token, refresh_token FROM jst_tokens LIMIT 1")
-        r = cur.fetchone()
-        cur.close()
-        db.close()
-        if r:
-            return {'token': r['token'] or '', 'refresh_token': r['refresh_token'] or ''}
-        return {}
-    except Exception as e:
-        print(f'[MySQL _jst_load_token] 错误: {e}')
-        return {}
-
-def _jst_save_token(data):
-    """保存token到MySQL"""
-    try:
-        db = get_db()
-        cur = db.cursor()
-        cur.execute("TRUNCATE TABLE jst_tokens")
-        cur.execute(
-            "INSERT INTO jst_tokens (token, refresh_token) VALUES (%s, %s)",
-            (data.get('token', ''), data.get('refresh_token', data.get('expired_date', '')))
-        )
-        cur.close()
-        db.close()
-        return True
-    except Exception as e:
-        print(f'[MySQL _jst_save_token] 错误: {e}')
-        return False
-
-def _jst_sign(method, partnerid, token, ts, partnerkey):
-    """聚水潭签名算法：MD5(method + partnerid + token + ts + partnerkey)"""
-    # sign = MD5(method + partnerid + (key1+value1+key2+value2) + partnerkey)
-    # 其中key-value按URL中的传递顺序：token + ts
-    raw = method + partnerid + token + str(ts) + partnerkey
-    return hashlib.md5(raw.encode('utf-8')).hexdigest()
-
-def _jst_request(method, biz_params=None):
-    """通用聚水潭API请求，系统参数放URL，业务参数放POST body JSON"""
-    token_data = _jst_load_token()
-    token = token_data.get('token', '')
-    partnerid = _jst_partner_id()
-    partnerkey = _jst_partner_secret()
-    if not partnerid:
-        return {
-            'code': 140,
-            'issuccess': False,
-            'msg': '本地配置缺少 partnerid：请在 .env 设置 JST_APP_KEY 或 JST_PARTNER_ID（与聚水潭开放平台应用一致）。',
-        }
-    if not partnerkey:
-        return {'code': -1, 'msg': '本地配置缺少 JST_APP_SECRET'}
-    ts = str(int(time.time()))
-    
-    # 生成签名
-    sign = _jst_sign(method, partnerid, token, ts, partnerkey)
-    
-    # 系统参数拼接到URL
-    url = JST_CONFIG['api_url'] + f'?method={urllib.parse.quote(method)}&partnerid={urllib.parse.quote(partnerid)}&token={urllib.parse.quote(token)}&ts={ts}&sign={urllib.parse.quote(sign)}'
-    
-    # 业务参数以JSON格式放入POST body
-    body = ''
-    headers = {'Content-Type': 'application/json'}
-    if biz_params:
-        body = json.dumps(biz_params, ensure_ascii=False)
-    
-    try:
-        req = urllib.request.Request(url, data=body.encode('utf-8') if body else None, headers=headers, method='POST')
-        resp = urllib.request.urlopen(req, timeout=30)
-        result = json.loads(resp.read().decode('utf-8'))
-        return result
-    except urllib.error.HTTPError as e:
-        try:
-            error_body = e.read().decode('utf-8')
-            return json.loads(error_body)
-        except:
-            return {'code': -1, 'msg': f'HTTP Error: {e.code}'}
-    except Exception as e:
-        return {'code': -1, 'msg': str(e)}
-
-@app.route('/api/jst/refresh_token', methods=['GET'])
-def jst_refresh_token():
-    """刷新聚水潭token"""
-    token_data = _jst_load_token()
-    token = token_data.get('token', '')
-    partnerid = _jst_partner_id()
-    partnerkey = _jst_partner_secret()
-    if not partnerid or not partnerkey:
-        return jsonify(
-            {
-                'code': 140,
-                'issuccess': False,
-                'msg': '缺少 partnerid 或 app_secret：请配置 JST_APP_KEY（或 JST_PARTNER_ID）与 JST_APP_SECRET',
-            }
-        )
-    ts = str(int(time.time()))
-    
-    sign = _jst_sign('refresh.token', partnerid, token, ts, partnerkey)
-    
-    url = JST_CONFIG['api_url'] + f'?method=refresh.token&partnerid={urllib.parse.quote(partnerid)}&token={urllib.parse.quote(token)}&ts={ts}&sign={urllib.parse.quote(sign)}'
-    
-    try:
-        req = urllib.request.Request(url, data=None, method='POST')
-        resp = urllib.request.urlopen(req, timeout=30)
-        result = json.loads(resp.read().decode('utf-8'))
-        
-        if result.get('code') == 0:
-            # 保存token
-            new_token = result.get('token', '')
-            if new_token:
-                _jst_save_token({'token': new_token, 'expired_date': result.get('data', {}).get('expired_date', '')})
-            else:
-                token_data['expired_date'] = result.get('data', {}).get('expired_date', '')
-                _jst_save_token(token_data)
-        
-        return jsonify(result)
-    except urllib.error.HTTPError as e:
-        try:
-            return jsonify(json.loads(e.read().decode('utf-8')))
-        except:
-            return jsonify({'code': -1, 'msg': f'HTTP Error: {e.code}'})
-    except Exception as e:
-        return jsonify({'code': -1, 'msg': str(e)})
-
-@app.route('/api/jst/orders', methods=['GET'])
-def jst_query_orders():
-    """查询聚水潭订单"""
-    page_index = request.args.get('page_index', '1')
-    page_size = request.args.get('page_size', '50')
-    start_time = request.args.get('start_time', '')
-    end_time = request.args.get('end_time', '')
-    shop_id = request.args.get('shop_id', '')
-    
-    biz = {
-        'page_index': page_index,
-        'page_size': page_size
-    }
-    if start_time:
-        biz['modified_begin'] = start_time
-    if end_time:
-        biz['modified_end'] = end_time
-    if shop_id:
-        biz['shop_id'] = shop_id
-    
-    result = _jst_request('orders.single.query', biz)
-    return jsonify(result)
-
-@app.route('/api/jst/inventory', methods=['GET'])
-def jst_query_inventory():
-    """查询聚水潭库存"""
-    sku_ids = request.args.get('sku_ids', '')
-    warehouse = request.args.get('warehouse', '')
-    
-    biz = {'page_index': '1', 'page_size': '200'}
-    if sku_ids:
-        biz['sku_ids'] = sku_ids
-    if warehouse:
-        biz['warehouse'] = warehouse
-    
-    result = _jst_request('inventory.query', biz)
-    return jsonify(result)
-
-@app.route('/api/jst/products', methods=['GET'])
-def jst_query_products():
-    """查询聚水潭商品"""
-    page_index = request.args.get('page_index', '1')
-    page_size = request.args.get('page_size', '50')
-    sku_id = request.args.get('sku_id', '')
-    
-    biz = {'page_index': page_index, 'page_size': page_size}
-    if sku_id:
-        biz['sku_id'] = sku_id
-    
-    result = _jst_request('items.sku.query', biz)
-    return jsonify(result)
-
-
-def _jst_shops_list_from_response(result):
-    """解析 shops.query 返回的店铺数组（兼容多种包裹层）。"""
-    if not result or result.get('code') != 0:
-        return []
-    data = result.get('data')
-    if isinstance(data, list):
-        return data
-    if isinstance(data, dict):
-        for key in ('shops', 'datas', 'shop_list'):
-            v = data.get(key)
-            if isinstance(v, list):
-                return v
-    if isinstance(result.get('shops'), list):
-        return result['shops']
-    return []
-
-
-def _jst_orders_list_from_response(result):
-    """解析 orders.single.query 返回的订单数组。"""
-    if not result or result.get('code') != 0:
-        return []
-    data = result.get('data')
-    if isinstance(data, list):
-        return data
-    if isinstance(data, dict):
-        for key in ('orders', 'datas', 'order'):
-            v = data.get(key)
-            if isinstance(v, list):
-                return v
-    if isinstance(result.get('orders'), list):
-        return result['orders']
-    return []
-
-
-def _jst_shop_lookup_by_id(max_pages=10):
-    """分页拉取 shops.query，构建 shop_id -> {shop_site, shop_name}。"""
-    out = {}
-    pages = 0
-    for pi in range(1, max(1, min(max_pages, 30)) + 1):
-        r = _jst_request('shops.query', {'page_index': str(pi), 'page_size': '100'})
-        pages += 1
-        if r.get('code') != 0:
-            return out, pages, r
-        shops = _jst_shops_list_from_response(r)
-        for s in shops:
-            sid = str(s.get('shop_id', '') or '')
-            if sid:
-                out[sid] = {
-                    'shop_site': (s.get('shop_site') or s.get('site') or '') or '',
-                    'shop_name': (s.get('shop_name') or '') or '',
-                }
-        if len(shops) < 100:
-            break
-    return out, pages, None
-
-
-def _jst_guess_sales_channel(shop_name, shop_site, extra=''):
-    """根据站点/店名粗分渠道（用于探测展示，非官方枚举）。"""
-    text = ' '.join([str(shop_name or ''), str(shop_site or ''), str(extra or '')])
-    if not text.strip():
-        return ['无站点信息']
-    tl = text.lower()
-    labels = []
-    if '1688' in text or '阿里巴巴' in text or 'alibaba' in tl:
-        labels.append('1688')
-    if '天猫' in text or 'tmall' in tl:
-        labels.append('天猫')
-    if '淘宝' in text or 'taobao' in tl:
-        labels.append('淘宝')
-    if '抖音' in text or 'douyin' in tl:
-        labels.append('抖音')
-    if '拼多多' in text or 'pdd' in tl or 'yangkeduo' in tl:
-        labels.append('拼多多')
-    if '京东' in text or 'jd.com' in tl:
-        labels.append('京东')
-    if not labels and shop_site:
-        labels.append(str(shop_site).strip())
-    return labels or ['未识别']
-
-
-@app.route('/api/jst/shops', methods=['GET'])
-def jst_query_shops():
-    """聚水潭店铺列表 shops.query：核对开放接口是否返回淘宝/天猫/1688 等（shop_site）。
-    官方说明仅返回 ERP 中已启用的店铺。"""
-    page_index = str(request.args.get('page_index', '1') or '1')
-    raw_ps = request.args.get('page_size', '100') or '100'
-    try:
-        page_size_int = max(1, min(100, int(raw_ps)))
-    except ValueError:
-        page_size_int = 100
-    page_size = str(page_size_int)
-    biz = {'page_index': page_index, 'page_size': page_size}
-    nick = (request.args.get('nick') or '').strip()
-    if nick:
-        biz['nicks'] = [nick]
-    result = _jst_request('shops.query', biz)
-    return jsonify(result)
-
-
-@app.route('/api/jst/orders_probe', methods=['GET'])
-def jst_orders_probe():
-    """
-    抽样调用 orders.single.query，按店铺/粗分渠道汇总。
-    用于验证：开放接口能否拉到淘宝/天猫/1688 等线上单（与打单管理是否同源需 ERP 配置一致）。
-    查询参数：
-      page_index, page_size(<=100)
-      modified_begin / modified_end（可选，格式以聚水潭文档为准，常见 yyyy-MM-dd HH:mm:ss）
-      shop_id（可选）
-      enrich_shops=1 时额外分页拉 shops.query，用 shop_id 对齐 shop_site（更准确）
-    """
-    try:
-        page_size = max(1, min(100, int(request.args.get('page_size', '50') or 50)))
-    except ValueError:
-        page_size = 50
-    page_index = str(request.args.get('page_index', '1') or '1')
-    biz = {'page_index': page_index, 'page_size': str(page_size)}
-    mb = (request.args.get('modified_begin') or '').strip()
-    me = (request.args.get('modified_end') or '').strip()
-    if mb:
-        biz['modified_begin'] = mb
-    if me:
-        biz['modified_end'] = me
-    shop_id = (request.args.get('shop_id') or '').strip()
-    if shop_id:
-        biz['shop_id'] = shop_id
-
-    enrich = (request.args.get('enrich_shops') or '').lower() in ('1', 'true', 'yes')
-    lookup = {}
-    shop_pages = 0
-    shop_err = None
-    if enrich:
-        lookup, shop_pages, shop_err = _jst_shop_lookup_by_id()
-
-    raw = _jst_request('orders.single.query', biz)
-    orders = _jst_orders_list_from_response(raw)
-
-    if raw.get('code') != 0:
-        out = {
-            'probe': True,
-            'success': False,
-            'jst_code': raw.get('code'),
-            'jst_msg': raw.get('msg', ''),
-            'request_biz': biz,
-            'enrich_shops': enrich,
-            'shop_lookup_error': shop_err,
-            'raw_excerpt': raw if isinstance(raw, dict) else {'msg': str(raw)},
-        }
-        return jsonify(out)
-
-    by_shop = {}
-    by_guess = {}
-    samples = []
-
-    for o in orders[:500]:
-        sid = str(
-            o.get('shop_id', '')
-            or o.get('shop_i_id', '')
-            or o.get('shop_id_i', '')
-            or ''
-        )
-        sname = o.get('shop_name', '') or ''
-        site = o.get('shop_site', '') or o.get('shop_site_name', '') or ''
-        if enrich and sid and sid in lookup:
-            site = site or lookup[sid].get('shop_site', '')
-            if not sname:
-                sname = lookup[sid].get('shop_name', '') or sname
-        otype = o.get('type', '') or o.get('order_type', '') or ''
-        labels = _jst_guess_sales_channel(sname, site, otype)
-        key = (sid, sname)
-        by_shop[key] = by_shop.get(key, 0) + 1
-        for lb in labels:
-            by_guess[lb] = by_guess.get(lb, 0) + 1
-        if len(samples) < 25:
-            samples.append(
-                {
-                    'so_id': o.get('so_id', o.get('o_id', o.get('id', ''))),
-                    'shop_id': sid,
-                    'shop_name': sname,
-                    'shop_site': site,
-                    'guess': labels,
-                    'status': o.get('status', o.get('order_status', '')),
-                    'modified': o.get('modified', o.get('modified_time', o.get('pay_date', ''))),
-                }
-            )
-
-    online_hit = any(k in by_guess for k in ('1688', '天猫', '淘宝'))
-    if not online_hit:
-        for k in by_guess:
-            if isinstance(k, str) and (
-                '淘宝' in k or '天猫' in k or '1688' in k or 'taobao' in k.lower() or 'tmall' in k.lower()
-            ):
-                online_hit = True
-                break
-
-    return jsonify(
-        {
-            'probe': True,
-            'success': True,
-            'jst_code': raw.get('code'),
-            'jst_msg': raw.get('msg', ''),
-            'request_biz': biz,
-            'enrich_shops': enrich,
-            'shop_lookup_pages': shop_pages if enrich else 0,
-            'shop_lookup_count': len(lookup),
-            'shop_lookup_error': (
-                {'code': shop_err.get('code'), 'msg': shop_err.get('msg')}
-                if enrich and shop_err and shop_err.get('code') != 0
-                else None
-            ),
-            'order_count': len(orders),
-            'by_shop': [
-                {'shop_id': k[0], 'shop_name': k[1], 'count': v}
-                for k, v in sorted(by_shop.items(), key=lambda x: -x[1])
-            ],
-            'by_guess': by_guess,
-            'has_taobao_tmall_1688_hint': online_hit,
-            'samples': samples,
-            'print_integration_note': '打单管理列表来自 /api/production/dashboard（或你们生产分支等价接口）；若此处能识别线上单，则技术上可用聚水潭订单驱动同一套 so_id 打单流程，需把订单入库/同步改为以聚水潭为准。',
-        }
-    )
-
-
-# ===== 聚水潭前端展示接口（带模拟数据兜底） =====
-
-@app.route('/api/jst/dashboard', methods=['GET'])
-def jst_dashboard():
-    """聚水潭概览：订单统计、今日同步等"""
-    # 先尝试真实接口
-    try:
-        result = _jst_request('orders.single.query', {'page_index': '1', 'page_size': '10'})
-        if result.get('code') == 0:
-            orders = result.get('data', [])
-            total = len(orders)
-            return jsonify({
-                'success': True,
-                'real_data': True,
-                'total_orders': total,
-                'today_orders': total,
-                'recent_orders': orders[:10]
-            })
-    except:
-        pass
-    
-    # 模拟数据
-    return jsonify({
-        'success': True,
-        'real_data': False,
-        'total_orders': 128,
-        'today_orders': 15,
-        'recent_orders': [
-            {'so_id': 'SO20260430001', 'shop_name': '三羊包装旗舰店', 'receiver_name': '张三', 'items': [{'sku_id': 'SKU001', 'name': '飞机盒30*20*15', 'qty': 100}], 'order_status': '已打印', 'created': '2026-04-30 08:30'},
-            {'so_id': 'SO20260430002', 'shop_name': '三羊包装企业店', 'receiver_name': '李四', 'items': [{'sku_id': 'SKU002', 'name': '飞机盒25*15*10', 'qty': 200}], 'order_status': '已发货', 'created': '2026-04-30 09:15'},
-            {'so_id': 'SO20260429088', 'shop_name': '三羊包装旗舰店', 'receiver_name': '王五', 'items': [{'sku_id': 'SKU003', 'name': '飞机盒40*30*20', 'qty': 50}], 'order_status': '待打印', 'created': '2026-04-29 14:20'},
-        ]
-    })
-
-@app.route('/api/jst/orders_ui', methods=['GET'])
-def jst_orders_ui():
-    """前端聚水潭订单列表"""
-    page = request.args.get('page', '1')
-    page_size = request.args.get('page_size', '20')
-    search = request.args.get('search', '')
-    
-    try:
-        biz = {'page_index': page, 'page_size': page_size}
-        if search:
-            biz['so_ids'] = search
-        result = _jst_request('orders.single.query', biz)
-        if result.get('code') == 0:
-            orders = result.get('data', [])
-            for o in orders:
-                o.setdefault('items', [])
-                o.setdefault('receiver_name', '')
-                o.setdefault('shop_name', '')
-                o.setdefault('order_status', '')
-                o.setdefault('created', o.get('created', ''))
-            return jsonify({'success': True, 'real_data': True, 'data': orders, 'total': result.get('total', len(orders))})
-    except:
-        pass
-    
-    # 模拟数据
-    mock_orders = [
-        {'so_id': 'SO20260430001', 'shop_name': '三羊包装旗舰店', 'receiver_name': '张三', 'receiver_mobile': '138****1234', 'receiver_address': '广东省东莞市大朗镇洋坑塘村', 'items': [{'sku_id': 'SKU001', 'name': '飞机盒30*20*15', 'qty': 100, 'price': 2.5}], 'order_status': '已打印', 'created': '2026-04-30 08:30:00', 'remark': '加急'},
-        {'so_id': 'SO20260430002', 'shop_name': '三羊包装企业店', 'receiver_name': '李四', 'receiver_mobile': '139****5678', 'receiver_address': '广东省东莞市大朗镇', 'items': [{'sku_id': 'SKU002', 'name': '飞机盒25*15*10', 'qty': 200, 'price': 1.8}], 'order_status': '已发货', 'created': '2026-04-30 09:15:00', 'remark': ''},
-        {'so_id': 'SO20260429088', 'shop_name': '三羊包装旗舰店', 'receiver_name': '王五', 'receiver_mobile': '136****9012', 'receiver_address': '广东省东莞市长安镇', 'items': [{'sku_id': 'SKU003', 'name': '飞机盒40*30*20', 'qty': 50, 'price': 3.2}], 'order_status': '待打印', 'created': '2026-04-29 14:20:00', 'remark': '急单'},
-        {'so_id': 'SO20260428012', 'shop_name': '三羊包装拼多多店', 'receiver_name': '赵六', 'receiver_mobile': '137****3456', 'receiver_address': '广东省深圳市宝安区', 'items': [{'sku_id': 'SKU004', 'name': '飞机盒35*25*18', 'qty': 300, 'price': 2.8}], 'order_status': '已打印', 'created': '2026-04-28 16:45:00', 'remark': ''},
-        {'so_id': 'SO20260428005', 'shop_name': '三羊包装旗舰店', 'receiver_name': '孙七', 'receiver_mobile': '158****7890', 'receiver_address': '广东省广州市白云区', 'items': [{'sku_id': 'SKU005', 'name': '飞机盒20*15*10', 'qty': 150, 'price': 1.5}], 'order_status': '已完成', 'created': '2026-04-28 10:00:00', 'remark': ''},
-    ]
-    if search:
-        mock_orders = [o for o in mock_orders if search.lower() in o['so_id'].lower()]
-    
-    return jsonify({'success': True, 'real_data': False, 'data': mock_orders, 'total': len(mock_orders)})
-
-@app.route('/api/jst/order_detail', methods=['GET'])
-def jst_order_detail():
-    """聚水潭订单详情"""
-    so_id = request.args.get('so_id', '')
-    if not so_id:
-        return jsonify({'success': False, 'error': '缺少订单号'})
-    
-    try:
-        result = _jst_request('orders.single.query', {'so_ids': so_id})
-        if result.get('code') == 0:
-            orders = result.get('data', [])
-            if orders:
-                return jsonify({'success': True, 'real_data': True, 'data': orders[0]})
-    except:
-        pass
-    
-    # 模拟详情
-    mock_detail = {
-        'so_id': so_id,
-        'shop_name': '三羊包装旗舰店',
-        'shop_id': '12345',
-        'receiver_name': '张三',
-        'receiver_mobile': '138****1234',
-        'receiver_address': '广东省东莞市大朗镇洋坑塘村',
-        'receiver_zip': '523770',
-        'order_status': '已打印',
-        'created': '2026-04-30 08:30:00',
-        'pay_time': '2026-04-30 08:25:00',
-        'remark': '加急，当天发货',
-        'items': [
-            {'sku_id': 'SKU001', 'name': '飞机盒30*20*15', 'qty': 100, 'price': 2.5, 'amount': 250.0},
-            {'sku_id': 'SKU006', 'name': '飞机盒配套内衬', 'qty': 100, 'price': 0.5, 'amount': 50.0},
-        ],
-        'logistics': {'company': '顺丰速运', 'number': 'SF1234567890'},
-        'payment': 300.0,
-        'seller_flag': 1,
-    }
-    return jsonify({'success': True, 'real_data': False, 'data': mock_detail})
-
-@app.route('/api/jst/inventory_ui', methods=['GET'])
-def jst_inventory_ui():
-    """聚水潭库存查询"""
-    sku = request.args.get('sku', '')
-    warehouse = request.args.get('warehouse', '')
-    
-    try:
-        biz = {'page_index': '1', 'page_size': '200'}
-        if sku:
-            biz['sku_ids'] = sku
-        if warehouse:
-            biz['warehouse'] = warehouse
-        result = _jst_request('inventory.query', biz)
-        if result.get('code') == 0:
-            return jsonify({'success': True, 'real_data': True, 'data': result.get('data', [])})
-    except:
-        pass
-    
-    mock_inv = [
-        {'sku_id': 'SKU001', 'name': '飞机盒30*20*15', 'warehouse': '主仓', 'qty': 500, 'lock_qty': 100, 'available_qty': 400},
-        {'sku_id': 'SKU002', 'name': '飞机盒25*15*10', 'warehouse': '主仓', 'qty': 1200, 'lock_qty': 200, 'available_qty': 1000},
-        {'sku_id': 'SKU003', 'name': '飞机盒40*30*20', 'warehouse': '主仓', 'qty': 300, 'lock_qty': 50, 'available_qty': 250},
-        {'sku_id': 'SKU004', 'name': '飞机盒35*25*18', 'warehouse': '主仓', 'qty': 800, 'lock_qty': 300, 'available_qty': 500},
-        {'sku_id': 'SKU005', 'name': '飞机盒20*15*10', 'warehouse': '主仓', 'qty': 2000, 'lock_qty': 150, 'available_qty': 1850},
-    ]
-    if sku:
-        mock_inv = [i for i in mock_inv if sku.lower() in i['sku_id'].lower()]
-    return jsonify({'success': True, 'real_data': False, 'data': mock_inv})
 
 from io import BytesIO
 import qrcode
@@ -3677,26 +3250,36 @@ def _sync_orders_task():
 
 @app.route('/api/sync/force', methods=['POST'])
 def api_sync_force():
-    """手动触发快麦订单同步（写入 orders_cache.json）"""
+    """手动触发快麦订单同步（后台执行，立即返回 JSON，避免网关超时）"""
     if not resolve_login_user():
         return jsonify({'success': False, 'error': '未登录'}), 401
-    try:
-        import order_sync as _osync
-        report = _osync.sync_orders_to_cache(
-            ORDERS_CACHE_FILE,
-            days_back=30,
-            memo_getter=get_order_memo,
-            include_1688_direct=True,
-        )
-        n = report.get('pending_count', 0)
-        return jsonify({
-            'success': True,
-            'count': n,
-            'report': report,
-            'message': f'已同步 {n} 条待发货订单（1688含快麦+直连）',
-        })
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+    import order_sync as _osync
+    ok, msg = _osync.start_force_sync_async(
+        ORDERS_CACHE_FILE,
+        days_back=30,
+        memo_getter=get_order_memo,
+        include_1688_direct=True,
+    )
+    if not ok:
+        return jsonify({'success': False, 'error': msg}), 409
+    return jsonify({'success': True, 'async': True, 'message': msg})
+
+
+@app.route('/api/sync/status', methods=['GET'])
+def api_sync_status():
+    """查询后台同步进度（配合 /api/sync/force async）"""
+    if not resolve_login_user():
+        return jsonify({'success': False, 'error': '未登录'}), 401
+    import order_sync as _osync
+    st = _osync.force_sync_status()
+    last = st.get('last') or {}
+    return jsonify({
+        'success': True,
+        'running': st.get('running'),
+        'error': st.get('error'),
+        'last': last,
+        'count': last.get('pending_count') if isinstance(last, dict) else None,
+    })
 
 
 @app.route('/api/km/probe', methods=['GET'])

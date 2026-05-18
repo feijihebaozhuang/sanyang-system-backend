@@ -344,10 +344,10 @@
             #page-raw .search-bar input { width: 100% !important; font-size: 16px !important; }
 
             /* =============================================================
-             * 聚水潭页面 (page-jst)
+             * 快麦ERP页面 (page-jst)
              * ============================================================= */
-            #page-jst .subnav a { font-size: 12px; padding: 6px 8px; }
-            #page-jst > div[style*="display:flex"] { flex-direction: column; }
+            #page-removed-jst .subnav a { font-size: 12px; padding: 6px 8px; }
+            #page-removed-jst > div[style*="display:flex"] { flex-direction: column; }
             #jstTabOrders > div[style*="display:flex"] { flex-direction: column; }
             #jstTabOrders input, #jstTabOrders select { width: 100% !important; font-size: 16px !important; }
             #jstTabOrders table { font-size: 11px; }
@@ -662,7 +662,6 @@
     <a onclick="switchSubPage('databoard', this)">📈 店铺数据看板</a>
     <a onclick="switchSubPage('realtime', this)">📋 实时订单</a>
     <a onclick="switchSubPage('diemold', this)">📄 WPS刀模嵌入</a>
-    <a onclick="switchSubPage('jst', this)">🔄 聚水潭嵌入</a>
 </div>
 
 <!-- ====== 主内容 ====== -->
@@ -1024,66 +1023,13 @@
         </div>
     </div>
 
-    <!-- ===== 聚水潭页（iframe嵌入官网） ===== -->
-    <div id="page-jst" class="page-section">
-        <div style="padding:8px 16px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-            <h3 style="margin:0;font-size:16px;">🔄 聚水潭</h3>
-            <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;">
-                <button type="button" onclick="jstRefreshToken()" style="padding:4px 10px;border:1px solid #d9d9d9;border-radius:4px;background:#fff;cursor:pointer;font-size:12px;">刷新 Token</button>
-            </div>
-        </div>
-        <div id="jstDevToolbar" style="padding:10px 16px;background:#fafafa;border-bottom:1px solid #eee;font-size:12px;">
-            <div style="margin-bottom:8px;color:#555;line-height:1.5;">开发校验：请求开放接口 <code style="font-size:11px;">shops.query</code>，看是否含淘宝/天猫/1688 等（字段 <code style="font-size:11px;">shop_site</code>）。聚水潭文档说明仅返回 ERP 里<strong>已启用</strong>的店铺。</div>
-            <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
-                <label>页码 <input type="number" id="jstShopsPage" value="1" min="1" style="width:56px;padding:4px 6px;border:1px solid #d9d9d9;border-radius:4px;"></label>
-                <label>每页 <input type="number" id="jstShopsPageSize" value="100" min="1" max="100" style="width:56px;padding:4px 6px;border:1px solid #d9d9d9;border-radius:4px;"></label>
-                <label title="可选，按主账号精确筛选">主账号 <input type="text" id="jstShopsNick" placeholder="可选" style="width:120px;padding:4px 6px;border:1px solid #d9d9d9;border-radius:4px;"></label>
-                <button type="button" onclick="jstDevFetchShops(false)" style="padding:6px 12px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">拉取本页店铺</button>
-                <button type="button" onclick="jstDevFetchShops(true)" style="padding:6px 12px;background:#722ed1;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">从当前页连续翻页直到无数据</button>
-            </div>
-            <div id="jstShopsDevStatus" style="margin-top:8px;font-size:12px;color:#666;word-break:break-all;"></div>
-            <div id="jstShopsDevTableWrap" style="margin-top:8px;max-height:240px;overflow:auto;border:1px solid #e8e8e8;border-radius:6px;background:#fff;"></div>
-            <div style="margin-top:14px;padding-top:12px;border-top:1px dashed #ddd;">
-                <div style="margin-bottom:8px;color:#555;line-height:1.5;">订单抽样：<code style="font-size:11px;">orders.single.query</code>，看本页样本里是否出现 <strong>淘宝 / 天猫 / 1688</strong>（<code>has_taobao_tmall_1688_hint</code>）。勾选「对齐店铺站点」会用 <code>shops.query</code> 补全 <code>shop_site</code>，更接近真实渠道。</div>
-                <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
-                    <label>页 <input type="number" id="jstOrdProbePage" value="1" min="1" style="width:52px;padding:4px 6px;border:1px solid #d9d9d9;border-radius:4px;"></label>
-                    <label>每页 <input type="number" id="jstOrdProbeSize" value="50" min="1" max="100" style="width:52px;padding:4px 6px;border:1px solid #d9d9d9;border-radius:4px;"></label>
-                    <label style="flex:1;min-width:200px;">modified_begin <input type="text" id="jstOrdProbeMb" placeholder="可选 如 2026-05-01 00:00:00" style="width:100%;max-width:220px;padding:4px 6px;border:1px solid #d9d9d9;border-radius:4px;font-size:11px;"></label>
-                    <label style="flex:1;min-width:200px;">modified_end <input type="text" id="jstOrdProbeMe" placeholder="可选" style="width:100%;max-width:220px;padding:4px 6px;border:1px solid #d9d9d9;border-radius:4px;font-size:11px;"></label>
-                    <label title="分页拉取 shops.query 对齐 shop_site"><input type="checkbox" id="jstOrdProbeEnrich"> 对齐店铺站点</label>
-                    <button type="button" onclick="jstDevFetchOrdersProbe()" style="padding:6px 12px;background:#13c2c2;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">拉取订单样本</button>
-                </div>
-                <div id="jstOrdProbeStatus" style="margin-top:8px;font-size:12px;color:#666;word-break:break-all;"></div>
-                <pre id="jstOrdProbeJson" style="margin-top:8px;max-height:200px;overflow:auto;font-size:11px;background:#1a1a2e;color:#e6edf3;padding:10px;border-radius:6px;white-space:pre-wrap;"></pre>
-            </div>
-        </div>
-        <div id="jstIframeWrap" style="width:100%;height:calc(100vh - 480px);overflow:hidden;">
-            <iframe id="jstIframe" src="https://zhaccount.scm121.com/user/login" 
-                style="width:100%;height:100%;border:none;" 
-                allow="clipboard-read; clipboard-write" 
-                sandbox="allow-scripts allow-forms allow-same-origin allow-popups">
-            </iframe>
-        </div>
-    </div>
-
-    <!-- ===== 聚水潭订单详情弹窗 ===== -->
-    <div class="modal-overlay" id="jstOrderModal">
-        <div class="modal" style="max-width:700px;">
-            <div class="modal-header">
-                <h3>📋 聚水潭订单详情</h3>
-                <button class="close" onclick="closeModal('jstOrderModal')">✕</button>
-            </div>
-            <div class="modal-body" id="jstOrderModalBody" style="max-height:70vh;overflow-y:auto;"></div>
-        </div>
-    </div>
-
     <!-- ===== 首页 ===== -->
     <div id="page-main" class="page-section active">
 
         <!-- 搜索框 -->
         <div class="search-bar">
             <span style="color: #999;">🔍</span>
-            <input type="text" id="searchInput" placeholder="扫码输入聚水潭单号查询订单..." onkeydown="if(event.key==='Enter') searchOrder()" onfocus="this.select()">
+            <input type="text" id="searchInput" placeholder="扫码输入订单号查询订单..." onkeydown="if(event.key==='Enter') searchOrder()" onfocus="this.select()">
             <button onclick="searchOrder()">查询</button>
             <button onclick="openSearchScanner()" style="padding:6px 12px;font-size:12px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap;" title="扫码搜索">📷</button>
         </div>
@@ -1094,9 +1040,9 @@
                 <h4>📊 订单生产进度</h4>
                 <p id="resultProduction">点击查看该订单的生产进度详情</p>
             </div>
-            <div class="search-result-card" onclick="showJSTModal()">
-                <h4>🔄 聚水潭详情</h4>
-                <p id="resultJST">点击查看聚水潭订单信息</p>
+            <div class="search-result-card" onclick="showOrderDetailModal()">
+                <h4>📦 订单详情</h4>
+                <p id="resultJST">点击查看订单信息</p>
             </div>
         </div>
 
@@ -1180,7 +1126,7 @@
         <div class="overview-header">
             <h3>📊 订单生产进度</h3>
             <div style="display:flex;gap:8px;align-items:center;">
-                <span style="font-size:12px;color:#888;">仅显示聚水潭已打印销售单</span>
+                <span style="font-size:12px;color:#888;">仅显示快麦已打印销售单</span>
                 <input type="text" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;width:160px;" placeholder="搜索内部单号..." onkeydown="if(event.key==='Enter') filterProdOrders(this.value)" onfocus="this.select()">
                 <button style="padding:4px 12px;background:#1a1a2e;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;" onclick="filterProdOrders(this.previousElementSibling.value)">搜索</button>
             </div>
@@ -1559,14 +1505,14 @@
     </div>
 </div>
 
-<!-- ===== 聚水潭详情弹窗 ===== -->
-<div class="modal-overlay" id="jstModal">
+<!-- ===== 订单详情弹窗 ===== -->
+<div class="modal-overlay" id="orderDetailModal">
     <div class="modal">
         <div class="modal-header">
-            <h3>🔄 聚水潭订单详情</h3>
-            <button class="close" onclick="closeModal('jstModal')">✕</button>
+            <h3>📦 订单详情</h3>
+            <button class="close" onclick="closeModal('orderDetailModal')">✕</button>
         </div>
-        <div class="modal-body" id="jstModalBody"></div>
+        <div class="modal-body" id="orderDetailModalBody"></div>
     </div>
 </div>
 
@@ -1700,8 +1646,8 @@
         topLinks.forEach(a => {
             const onclick = a.getAttribute('onclick') || '';
             const text = a.textContent.trim();
-            if (onclick.includes('jst')) {
-                a.style.display = hasPerm('聚水潭') ? '' : 'none';
+            if (false && onclick.includes('jst')) {
+                a.style.display = hasPerm('快麦ERP') ? '' : 'none';
             } else if (onclick.includes('diemold')) {
                 a.style.display = hasPerm('刀模') ? '' : 'none';
             } else if (onclick.includes('dimoldb')) {
@@ -1737,19 +1683,19 @@
         // ===== 搜索框控制 =====
         const searchBar = document.querySelector('.search-bar');
         if (searchBar) {
-            // 搜索框：有聚水潭权限 或 客服角色 或 有订单生产进度权限都能看到搜索框
-            const hasJST = hasPerm('聚水潭');
+            // 搜索框：有快麦ERP查单权限 或 客服角色 或 有订单生产进度权限都能看到搜索框
+            const hasOrderSearch = hasPerm('快麦ERP');
             const isKeFu = role === '客服';
             const hasProd = hasPerm('订单生产进度');
             const showSearch = hasJST || isKeFu || hasProd;
             searchBar.style.display = showSearch ? '' : 'none';
         }
 
-        // ===== 聚水潭详情卡片控制 =====
+        // ===== 订单详情卡片控制 =====
         document.querySelectorAll('.search-result-card').forEach(card => {
             const onclick = card.getAttribute('onclick') || '';
-            if (onclick.includes('showJSTModal')) {
-                card.style.display = hasPerm('聚水潭') ? '' : 'none';
+            if (onclick.includes('showOrderDetailModal')) {
+                card.style.display = hasPerm('快麦ERP') ? '' : 'none';
             }
         });
 
@@ -1802,7 +1748,7 @@
             'dimoldb': '刀模库',
             'inventory': '库存',
             'raw': '库存',
-            'jst': '聚水潭',
+            '__removed__': '快麦ERP',
             'production': '订单生产进度',
             'scan': '扫码报工',
             'report': '日报表',
@@ -2002,10 +1948,9 @@
     // ===== 统一权限检查函数（唯一权限来源，前端永不自行推断）=====
     function hasPerm(feature) {
         if (!_currentUser) return false;
-        // 超级管理员全开
         if (_currentUser.role === '超级管理员') return true;
-        // 从服务器返回的权限映射中读取（来源 /api/my_permissions）
         if (window._myPerms && window._myPerms[feature] === true) return true;
+        if (feature === '快麦ERP' && window._myPerms && window._myPerms['聚水潭'] === true) return true;
         return false;
     }
 
@@ -2050,7 +1995,7 @@
         }
 
         // iframe懒加载
-        if (name === 'diemold' || name === 'jst') {
+        if (name === 'diemold') {
             const targetIframe = document.querySelector(`#page-${name} iframe[data-src]`);
             if (targetIframe && !targetIframe.src) {
                 targetIframe.src = targetIframe.dataset.src;
@@ -2123,11 +2068,6 @@
             // 延迟加载iframe
             const iframe = document.querySelector('#page-diemold iframe[data-src]');
             if (iframe && !iframe.src) iframe.src = iframe.dataset.src;
-        } else if (name === 'jst') {
-            document.getElementById('page-main').classList.remove('active');
-            document.getElementById('page-jst').classList.add('active');
-            // 刷新聚水潭状态
-            if (typeof jstRefreshToken === 'function') jstRefreshToken();
         } else {
             document.body.classList.remove('dark-bg');
             document.querySelector('.content').classList.remove('databoard-mode');
@@ -2162,8 +2102,8 @@
         document.getElementById('resultProduction').textContent = 
             '当前工序：' + ps.current_process + ' | 进度：' + ps.progress + '%';
 
-        // 填充聚水潭详情
-        const jd = data.jst_detail;
+        // 填充快麦ERP详情
+        const jd = data.order_detail || data.jst_detail;
         const isYangkengtang = _currentUser && (_currentUser.role === '客服' || _currentUser.role === '超级管理员');
         document.getElementById('resultJST').textContent = 
             isYangkengtang 
@@ -2174,7 +2114,7 @@
         window._prodData = ps;
         window._prodData._order_id = data.order_id;
         window._prodData._urgent = data.urgent || false;
-        window._jstData = jd;
+        window._orderDetailData = jd;
 
         document.getElementById('searchResults').classList.add('show');
     }
@@ -2256,19 +2196,19 @@
         }
     }
 
-    function showJSTModal() {
-        const d = window._jstData;
+    function showOrderDetailModal() {
+        const d = window._orderDetailData;
         if (!d) return;
-        // 聚水潭详情：有聚水潭权限的人才能查看
-        const canViewJST = _currentUser && hasPerm('聚水潭');
+        // 快麦ERP详情：有快麦ERP权限的人才能查看
+        const canViewJST = _currentUser && hasPerm('快麦ERP');
         if (!canViewJST) {
-            document.getElementById('jstModalBody').innerHTML = `
+            document.getElementById('orderDetailModalBody').innerHTML = `
                 <div style="text-align:center;padding:30px 0;color:#999;">
                     <div style="font-size:14px;">暂未接入</div>
                 </div>
             `;
         } else {
-            document.getElementById('jstModalBody').innerHTML = `
+            document.getElementById('orderDetailModalBody').innerHTML = `
                 <div class="info-row"><span class="label">订单号</span><span>${d.order_id}</span></div>
                 <div class="info-row"><span class="label">店铺</span><span>${d.store}</span></div>
                 <div class="info-row"><span class="label">客户</span><span>${d.customer}</span></div>
@@ -2281,7 +2221,7 @@
                 <div class="info-row"><span class="label">物流</span><span>${d.logistics}</span></div>
             `;
         }
-        document.getElementById('jstModal').classList.add('show');
+        document.getElementById('orderDetailModal').classList.add('show');
     }
 
     function closeModal(id) { document.getElementById(id).classList.remove('show'); }
@@ -3672,7 +3612,7 @@
         const empList = Array.isArray(empData) ? empData : (empData.employees || []);
         const allEmpNames = empList.map(e => e.name);
         
-        const features = ['首页', '实时订单', '订单生产进度', '扫码报工', '日报表', '数据看板', '刀模', '刀模库', '库存', '聚水潭', '员工', '权限管理', '报价'];
+        const features = ['首页', '实时订单', '订单生产进度', '扫码报工', '日报表', '数据看板', '刀模', '刀模库', '库存', '快麦ERP', '员工', '权限管理', '报价'];
         // 用_allPerms（来自/api/my_permissions），服务端保证完整
         const perms = window._allPerms || data.permissions || {};
         
@@ -5681,9 +5621,10 @@
 
         if (filtered.length === 0) {
             if (_rtAllOrders.length === 0) {
-                const hint = _rtCacheStatus === 'empty'
-                    ? '📭 缓存暂无订单<br><span style="font-size:12px;color:#888;">请点击「同步订单」</span>'
-                    : '📭 暂无待发货订单';
+                let hint = '📭 暂无待发货订单';
+                if (_rtCacheStatus === 'empty' || _rtCacheStatus === 'missing') {
+                    hint = '📭 缓存暂无订单<br><span style="font-size:12px;color:#888;">请点击「同步订单」拉取</span>';
+                }
                 list.innerHTML = '<div style="text-align:center;padding:40px 0;color:#999;font-size:13px;">' + hint + '</div>';
                 rtSetStatus('已加载 0 条', 'ok');
             } else {
@@ -5812,29 +5753,77 @@
         }
     }
 
+    async function rtParseApiJson(res) {
+        const text = await res.text();
+        const ct = (res.headers.get('content-type') || '').toLowerCase();
+        const trimmed = text.trim();
+        if (ct.includes('application/json') || trimmed.startsWith('{') || trimmed.startsWith('[')) {
+            try { return JSON.parse(trimmed); } catch (e) { /* fall through */ }
+        }
+        if (res.status === 404) {
+            throw new Error('接口不存在（HTTP 404）：服务器请 git pull main 后执行 ./deploy.sh');
+        }
+        if (res.status === 502 || res.status === 504) {
+            throw new Error('网关超时（HTTP ' + res.status + '），请稍后刷新列表或联系管理员加大 Nginx 超时');
+        }
+        throw new Error('服务器返回网页而非 JSON（HTTP ' + res.status + '），请确认已部署最新版');
+    }
+
+    async function rtPollSyncUntilDone() {
+        for (let i = 0; i < 120; i++) {
+            await new Promise(r => setTimeout(r, 2000));
+            const res = await SY_AUTH.apiFetch('/api/sync/status');
+            const st = await rtParseApiJson(res);
+            if (st.running) {
+                rtSetStatus('同步中…(' + (i + 1) + ')', 'load');
+                continue;
+            }
+            if (st.error) {
+                rtSetStatus('同步失败', 'err');
+                alert('同步失败: ' + st.error);
+                return;
+            }
+            await rtLoadOrders();
+            const rep = st.last || {};
+            const n = st.count != null ? st.count : (rep.pending_count || 0);
+            rtSetStatus('已同步 ' + n + ' 条', 'ok');
+            const extra = rep.direct_1688_count != null
+                ? '\n1688直连:' + rep.direct_1688_count + ' 快麦1688:' + (rep.km_1688_count || 0)
+                : '';
+            alert('已同步 ' + n + ' 条待发货订单' + extra);
+            return;
+        }
+        rtSetStatus('同步超时', 'err');
+        alert('同步时间较长，请 1 分钟后再点「同步订单」或刷新页面查看列表');
+    }
+
     async function rtSyncForce() {
         if (!_currentUser) { alert('请先登录'); return; }
         rtSetStatus('同步中…', 'load');
         try {
             const res = await SY_AUTH.apiFetch('/api/sync/force', { method: 'POST' });
-            const data = await res.json();
+            const data = await rtParseApiJson(res);
             if (res.status === 401 || (data.error && String(data.error).indexOf('未登录') >= 0)) {
                 rtSetStatus('未登录', 'err');
                 alert('未登录：请退出后重新登录，再点同步');
                 return;
             }
-            if (data.success) {
-                await rtLoadOrders();
-                const rep = data.report || {};
-                const msg = data.message || ('已同步 ' + (data.count || 0) + ' 条');
-                const extra = rep.direct_1688_count != null
-                    ? '\n1688直连:' + rep.direct_1688_count + ' 快麦1688:' + (rep.km_1688_count || 0)
-                    : '';
-                alert(msg + extra);
-            } else {
+            if (!data.success) {
                 rtSetStatus('同步失败', 'err');
                 alert(data.error || data.message || '同步失败');
+                return;
             }
+            if (data.async) {
+                await rtPollSyncUntilDone();
+                return;
+            }
+            await rtLoadOrders();
+            const rep = data.report || {};
+            const msg = data.message || ('已同步 ' + (data.count || 0) + ' 条');
+            const extra = rep.direct_1688_count != null
+                ? '\n1688直连:' + rep.direct_1688_count + ' 快麦1688:' + (rep.km_1688_count || 0)
+                : '';
+            alert(msg + extra);
         } catch (e) {
             rtSetStatus('同步失败', 'err');
             alert('同步失败: ' + e.message);
@@ -6064,174 +6053,6 @@
         document.getElementById('newShopName').value = '';
         document.getElementById('newShopKefu').value = '';
         loadShopConfig();
-    }
-
-    // ===== 聚水潭开发校验：shops.query / Token =====
-    async function jstRefreshToken() {
-        try {
-            const resp = await fetch('/api/jst/refresh_token');
-            const data = await resp.json();
-            if (data.code === 0) {
-                alert('Token 刷新成功');
-            } else {
-                alert('Token 刷新失败: ' + (data.msg || JSON.stringify(data)));
-            }
-        } catch (e) {
-            alert('请求失败: ' + e.message);
-        }
-    }
-
-    function jstExtractShopsFromResponse(d) {
-        if (!d || typeof d !== 'object') return [];
-        const data = d.data;
-        if (Array.isArray(data)) return data;
-        if (data && Array.isArray(data.shops)) return data.shops;
-        if (data && Array.isArray(data.datas)) return data.datas;
-        if (Array.isArray(d.shops)) return d.shops;
-        return [];
-    }
-
-    async function jstDevFetchShops(multiPage) {
-        var st = document.getElementById('jstShopsDevStatus');
-        var tw = document.getElementById('jstShopsDevTableWrap');
-        if (!st || !tw) return;
-        tw.innerHTML = '';
-        st.textContent = '请求中…';
-        var pageSize = Math.min(100, Math.max(1, parseInt(document.getElementById('jstShopsPageSize').value, 10) || 100));
-        document.getElementById('jstShopsPageSize').value = String(pageSize);
-        var startPage = Math.max(1, parseInt(document.getElementById('jstShopsPage').value, 10) || 1);
-        var nick = (document.getElementById('jstShopsNick') && document.getElementById('jstShopsNick').value || '').trim();
-        var all = [];
-        var lastCode = null;
-        var lastMsg = '';
-        var pages = 0;
-
-        async function onePage(pi) {
-            var q = 'page_index=' + encodeURIComponent(String(pi)) + '&page_size=' + encodeURIComponent(String(pageSize));
-            if (nick) q += '&nick=' + encodeURIComponent(nick);
-            var r = await fetch('/api/jst/shops?' + q);
-            return r.json();
-        }
-
-        try {
-            if (!multiPage) {
-                var d0 = await onePage(startPage);
-                lastCode = d0.code;
-                lastMsg = d0.msg || '';
-                all = jstExtractShopsFromResponse(d0);
-                pages = 1;
-                if (d0.code !== 0) {
-                    st.textContent = '错误 code=' + d0.code + ' ' + (d0.msg || '') + '（若提示 method 不存在，请到聚水潭开放平台核对应用是否开通店铺查询类接口）';
-                    st.style.color = '#e94560';
-                    tw.innerHTML = '<pre style="padding:8px;font-size:11px;white-space:pre-wrap;margin:0;">' + JSON.stringify(d0, null, 2).replace(/</g, '&lt;') + '</pre>';
-                    return;
-                }
-            } else {
-                var pi = startPage;
-                for (var guard = 0; guard < 50; guard++) {
-                    var d = await onePage(pi);
-                    lastCode = d.code;
-                    lastMsg = d.msg || '';
-                    if (d.code !== 0) {
-                        st.textContent = '在第 ' + pi + ' 页停止：code=' + d.code + ' ' + (d.msg || '');
-                        st.style.color = '#e94560';
-                        tw.innerHTML = '<pre style="padding:8px;font-size:11px;white-space:pre-wrap;margin:0;">' + JSON.stringify(d, null, 2).replace(/</g, '&lt;') + '</pre>';
-                        break;
-                    }
-                    var shops = jstExtractShopsFromResponse(d);
-                    pages++;
-                    all = all.concat(shops);
-                    if (shops.length === 0 || shops.length < pageSize) break;
-                    pi++;
-                }
-            }
-
-            var seen = {};
-            var uniq = [];
-            for (var i = 0; i < all.length; i++) {
-                var s = all[i];
-                var id = String(s.shop_id != null ? s.shop_id : '');
-                if (id) {
-                    if (seen[id]) continue;
-                    seen[id] = true;
-                }
-                uniq.push(s);
-            }
-
-            var sites = {};
-            for (var j = 0; j < uniq.length; j++) {
-                var site = (uniq[j].shop_site || uniq[j].site || '(空)').toString();
-                sites[site] = (sites[site] || 0) + 1;
-            }
-            var siteSummary = Object.keys(sites).map(function (k) { return k + ':' + sites[k]; }).join(' · ');
-
-            st.textContent = 'code=' + lastCode + ' · 请求 ' + pages + ' 次 · 去重后 ' + uniq.length + ' 店 · 站点分布: ' + (siteSummary || '无');
-            st.style.color = '#333';
-
-            var esc = function (t) {
-                if (t == null) return '';
-                return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-            };
-            var html = '<table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr style="background:#f5f5f5;">';
-            html += '<th style="padding:6px 8px;text-align:left;border-bottom:1px solid #eee;">shop_id</th>';
-            html += '<th style="padding:6px 8px;text-align:left;border-bottom:1px solid #eee;">shop_name</th>';
-            html += '<th style="padding:6px 8px;text-align:left;border-bottom:1px solid #eee;">shop_site</th>';
-            html += '<th style="padding:6px 8px;text-align:left;border-bottom:1px solid #eee;">nick</th>';
-            html += '<th style="padding:6px 8px;text-align:left;border-bottom:1px solid #eee;">session_expired</th>';
-            html += '</tr></thead><tbody>';
-            for (var k = 0; k < uniq.length; k++) {
-                var row = uniq[k];
-                html += '<tr>';
-                html += '<td style="padding:5px 8px;border-bottom:1px solid #f5f5f5;">' + esc(row.shop_id) + '</td>';
-                html += '<td style="padding:5px 8px;border-bottom:1px solid #f5f5f5;">' + esc(row.shop_name) + '</td>';
-                html += '<td style="padding:5px 8px;border-bottom:1px solid #f5f5f5;">' + esc(row.shop_site) + '</td>';
-                html += '<td style="padding:5px 8px;border-bottom:1px solid #f5f5f5;">' + esc(row.nick) + '</td>';
-                html += '<td style="padding:5px 8px;border-bottom:1px solid #f5f5f5;">' + esc(row.session_expired) + '</td>';
-                html += '</tr>';
-            }
-            html += '</tbody></table>';
-            if (uniq.length === 0) html += '<div style="padding:12px;color:#999;">本页无店铺数据（检查 ERP 店铺是否启用、Token 是否有效）</div>';
-            tw.innerHTML = html;
-        } catch (e) {
-            st.textContent = '请求异常: ' + e.message;
-            st.style.color = '#e94560';
-        }
-    }
-
-    async function jstDevFetchOrdersProbe() {
-        var st = document.getElementById('jstOrdProbeStatus');
-        var pre = document.getElementById('jstOrdProbeJson');
-        if (!st || !pre) return;
-        st.textContent = '请求中…';
-        st.style.color = '#666';
-        pre.textContent = '';
-        var pi = Math.max(1, parseInt(document.getElementById('jstOrdProbePage').value, 10) || 1);
-        var ps = Math.min(100, Math.max(1, parseInt(document.getElementById('jstOrdProbeSize').value, 10) || 50));
-        document.getElementById('jstOrdProbeSize').value = String(ps);
-        var mb = (document.getElementById('jstOrdProbeMb') && document.getElementById('jstOrdProbeMb').value || '').trim();
-        var me = (document.getElementById('jstOrdProbeMe') && document.getElementById('jstOrdProbeMe').value || '').trim();
-        var enrich = document.getElementById('jstOrdProbeEnrich') && document.getElementById('jstOrdProbeEnrich').checked;
-        var q = 'page_index=' + encodeURIComponent(String(pi)) + '&page_size=' + encodeURIComponent(String(ps));
-        if (mb) q += '&modified_begin=' + encodeURIComponent(mb);
-        if (me) q += '&modified_end=' + encodeURIComponent(me);
-        if (enrich) q += '&enrich_shops=1';
-        try {
-            var r = await fetch('/api/jst/orders_probe?' + q);
-            var d = await r.json();
-            var summary = d.success
-                ? ('订单条数(本响应): ' + (d.order_count != null ? d.order_count : '?') +
-                   ' · has_taobao_tmall_1688_hint=' + !!d.has_taobao_tmall_1688_hint +
-                   (d.enrich_shops ? ' · 店铺对照表 ' + (d.shop_lookup_count || 0) + ' 条' : ''))
-                : ('失败 jst_code=' + d.jst_code + ' ' + (d.jst_msg || ''));
-            st.textContent = summary;
-            st.style.color = d.success ? (d.has_taobao_tmall_1688_hint ? '#389e0d' : '#d48806') : '#e94560';
-            var show = Object.assign({}, d);
-            if (show.samples && show.samples.length > 8) show.samples = show.samples.slice(0, 8).concat([{ note: '…其余见 by_shop / by_guess' }]);
-            pre.textContent = JSON.stringify(show, null, 2);
-        } catch (e) {
-            st.textContent = '请求异常: ' + e.message;
-            st.style.color = '#e94560';
-        }
     }
 </script>
 

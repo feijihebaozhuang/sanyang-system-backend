@@ -259,8 +259,8 @@
             #scannerModal .modal { max-width: 95% !important; margin: 10px; }
             /* 订单详情弹窗 */
             .modal { max-width: 95% !important; margin: 10px; }
-            /* 聚水潭手机适配 */
-            #page-jst .subnav a { font-size: 12px; padding: 6px 8px; }
+            /* 快麦ERP手机适配 */
+            #page-removed-jst .subnav a { font-size: 12px; padding: 6px 8px; }
             #jstTabOrders > div[style*="display:flex"] { flex-direction: column; }
             #jstTabOrders input, #jstTabOrders select { width: 100% !important; font-size: 16px !important; }
             /* 日报表 */
@@ -817,13 +817,13 @@
         </div>
     </div>
 
-    <!-- ===== 聚水潭页 ===== -->
+    <!-- ===== 快麦ERP页 ===== -->
     <div id="page-main" class="page-section active">
 
         <!-- 搜索框 -->
         <div class="search-bar">
             <span style="color: #999;">🔍</span>
-            <input type="text" id="searchInput" placeholder="扫码输入聚水潭单号查询订单..." onkeydown="if(event.key==='Enter') searchOrder()" onfocus="this.select()">
+            <input type="text" id="searchInput" placeholder="扫码输入订单号查询订单..." onkeydown="if(event.key==='Enter') searchOrder()" onfocus="this.select()">
             <button onclick="searchOrder()">查询</button>
             <button onclick="openSearchScanner()" style="padding:6px 12px;font-size:12px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap;" title="扫码搜索">📷</button>
         </div>
@@ -834,9 +834,9 @@
                 <h4>📊 订单生产进度</h4>
                 <p id="resultProduction">点击查看该订单的生产进度详情</p>
             </div>
-            <div class="search-result-card" onclick="showJSTModal()">
-                <h4>🔄 聚水潭详情</h4>
-                <p id="resultJST">点击查看聚水潭订单信息</p>
+            <div class="search-result-card" onclick="showOrderDetailModal()">
+                <h4>📦 订单详情</h4>
+                <p id="resultJST">点击查看订单信息</p>
             </div>
         </div>
 
@@ -1174,11 +1174,6 @@
         <div class="f-title">WPS刀模嵌入</div>
         <div class="f-desc">查看和管理固定刀模</div>
     </div>
-    <div class="footer-card" onclick="goJSTPage()" data-perm="聚水潭">
-        <div class="icon">📦</div>
-        <div class="f-title">聚水潭嵌入</div>
-        <div class="f-desc">聚水潭订单查询</div>
-    </div>
     <div class="footer-card" onclick="openProcessSettings()" data-perm="管理员">
         <div class="icon">⚙️</div>
         <div class="f-title">工序超时设置</div>
@@ -1197,14 +1192,14 @@
     </div>
 </div>
 
-<!-- ===== 聚水潭详情弹窗 ===== -->
-<div class="modal-overlay" id="jstModal">
+<!-- ===== 订单详情弹窗 ===== -->
+<div class="modal-overlay" id="orderDetailModal">
     <div class="modal">
         <div class="modal-header">
-            <h3>🔄 聚水潭订单详情</h3>
-            <button class="close" onclick="closeModal('jstModal')">✕</button>
+            <h3>📦 订单详情</h3>
+            <button class="close" onclick="closeModal('orderDetailModal')">✕</button>
         </div>
-        <div class="modal-body" id="jstModalBody"></div>
+        <div class="modal-body" id="orderDetailModalBody"></div>
     </div>
 </div>
 
@@ -1328,8 +1323,8 @@
         topLinks.forEach(a => {
             const onclick = a.getAttribute('onclick') || '';
             const text = a.textContent.trim();
-            if (onclick.includes('jst')) {
-                a.style.display = hasPerm('聚水潭') ? '' : 'none';
+            if (false && onclick.includes('jst')) {
+                a.style.display = hasPerm('快麦ERP') ? '' : 'none';
             } else if (onclick.includes('diemold')) {
                 a.style.display = hasPerm('刀模') ? '' : 'none';
             } else if (onclick.includes('dimoldb')) {
@@ -1363,19 +1358,19 @@
         // ===== 搜索框控制 =====
         const searchBar = document.querySelector('.search-bar');
         if (searchBar) {
-            // 搜索框：有聚水潭权限 或 客服角色 或 有订单生产进度权限都能看到搜索框
-            const hasJST = hasPerm('聚水潭');
+            // 搜索框：有快麦ERP查单权限 或 客服角色 或 有订单生产进度权限都能看到搜索框
+            const hasOrderSearch = hasPerm('快麦ERP');
             const isKeFu = role === '客服';
             const hasProd = hasPerm('订单生产进度');
             const showSearch = hasJST || isKeFu || hasProd;
             searchBar.style.display = showSearch ? '' : 'none';
         }
 
-        // ===== 聚水潭详情卡片控制 =====
+        // ===== 订单详情卡片控制 =====
         document.querySelectorAll('.search-result-card').forEach(card => {
             const onclick = card.getAttribute('onclick') || '';
-            if (onclick.includes('showJSTModal')) {
-                card.style.display = hasPerm('聚水潭') ? '' : 'none';
+            if (onclick.includes('showOrderDetailModal')) {
+                card.style.display = hasPerm('快麦ERP') ? '' : 'none';
             }
         });
 
@@ -1430,7 +1425,7 @@
             'dimoldb': '刀模库',
             'inventory': '库存',
             'raw': '库存',
-            'jst': '聚水潭',
+            '__removed__': '快麦ERP',
             'production': '订单生产进度',
             'scan': '扫码报工',
             'report': '日报表',
@@ -1606,10 +1601,9 @@
     // ===== 统一权限检查函数（唯一权限来源，前端永不自行推断）=====
     function hasPerm(feature) {
         if (!_currentUser) return false;
-        // 超级管理员全开
         if (_currentUser.role === '超级管理员') return true;
-        // 从服务器返回的权限映射中读取（来源 /api/my_permissions）
         if (window._myPerms && window._myPerms[feature] === true) return true;
+        if (feature === '快麦ERP' && window._myPerms && window._myPerms['聚水潭'] === true) return true;
         return false;
     }
 
@@ -1666,7 +1660,7 @@
         }
 
         // iframe懒加载
-        if (name === 'diemold' || name === 'jst') {
+        if (name === 'diemold') {
             const targetIframe = document.querySelector(`#page-${name} iframe[data-src]`);
             if (targetIframe && !targetIframe.src) {
                 targetIframe.src = targetIframe.dataset.src;
@@ -1740,18 +1734,15 @@
             document.getElementById('page-main').classList.remove('active');
             document.getElementById('page-raw').classList.add('active');
             loadRaw();
-        } else if (name === 'jst') {
-            document.getElementById('page-main').classList.remove('active');
-            document.getElementById('page-jst').classList.add('active');
-        } else {
+                } else {
             document.body.classList.remove('dark-bg');
             document.querySelector('.content').classList.remove('databoard-mode');
         }
     }
 
-    // ===== 从底部功能栏进入聚水潭嵌入（跳到首页聚焦搜索框）=====
-    function goJSTPage() {
-        if (!hasPerm('聚水潭')) { switchTopPage('main', null); return; }
+    // ===== 从底部功能栏进入订单搜索（跳到首页聚焦搜索框）=====
+    function focusSearchBar() {
+        if (!hasPerm('快麦ERP')) { switchTopPage('main', null); return; }
         switchTopPage('main', null);
         setTimeout(() => {
             const input = document.getElementById('searchInput');
@@ -1787,8 +1778,8 @@
         document.getElementById('resultProduction').textContent = 
             '当前工序：' + ps.current_process + ' | 进度：' + ps.progress + '%';
 
-        // 填充聚水潭详情
-        const jd = data.jst_detail;
+        // 填充快麦ERP详情
+        const jd = data.order_detail || data.jst_detail;
         const isYangkengtang = _currentUser && (_currentUser.role === '客服' || _currentUser.role === '超级管理员');
         document.getElementById('resultJST').textContent = 
             isYangkengtang 
@@ -1799,7 +1790,7 @@
         window._prodData = ps;
         window._prodData._order_id = data.order_id;
         window._prodData._urgent = data.urgent || false;
-        window._jstData = jd;
+        window._orderDetailData = jd;
 
         document.getElementById('searchResults').classList.add('show');
     }
@@ -1853,19 +1844,19 @@
         }
     }
 
-    function showJSTModal() {
-        const d = window._jstData;
+    function showOrderDetailModal() {
+        const d = window._orderDetailData;
         if (!d) return;
-        // 聚水潭详情：有聚水潭权限的人才能查看
-        const canViewJST = _currentUser && hasPerm('聚水潭');
+        // 快麦ERP详情：有快麦ERP权限的人才能查看
+        const canViewJST = _currentUser && hasPerm('快麦ERP');
         if (!canViewJST) {
-            document.getElementById('jstModalBody').innerHTML = `
+            document.getElementById('orderDetailModalBody').innerHTML = `
                 <div style="text-align:center;padding:30px 0;color:#999;">
                     <div style="font-size:14px;">暂未接入</div>
                 </div>
             `;
         } else {
-            document.getElementById('jstModalBody').innerHTML = `
+            document.getElementById('orderDetailModalBody').innerHTML = `
                 <div class="info-row"><span class="label">订单号</span><span>${d.order_id}</span></div>
                 <div class="info-row"><span class="label">店铺</span><span>${d.store}</span></div>
                 <div class="info-row"><span class="label">客户</span><span>${d.customer}</span></div>
@@ -1878,7 +1869,7 @@
                 <div class="info-row"><span class="label">物流</span><span>${d.logistics}</span></div>
             `;
         }
-        document.getElementById('jstModal').classList.add('show');
+        document.getElementById('orderDetailModal').classList.add('show');
     }
 
     function closeModal(id) { document.getElementById(id).classList.remove('show'); }
@@ -3443,7 +3434,7 @@
         const empData = await getAPI('/api/employees');
         const allEmpNames = empData.employees.map(e => e.name);
         
-        const features = ['首页', '订单生产进度', '扫码报工', '日报表', '数据看板', '刀模', '刀模库', '库存', '原材料', '聚水潭', '员工', '权限管理'];
+        const features = ['首页', '订单生产进度', '扫码报工', '日报表', '数据看板', '刀模', '刀模库', '库存', '原材料', '快麦ERP', '员工', '权限管理'];
         // 用_allPerms（来自/api/my_permissions），服务端保证完整
         const perms = window._allPerms || data.permissions || {};
         
