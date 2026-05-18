@@ -5675,6 +5675,40 @@
         return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     }
 
+    function rtEscHtml(s) {
+        return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    /** 1688/快麦脱敏后的长字母串，界面统一显示为星号 */
+    function rtIsMessyBuyerText(s) {
+        var t = String(s || '').trim();
+        if (!t) return false;
+        if (/^[\*＊·\-\s]+$/.test(t)) return true;
+        var han = (t.match(/[\u4e00-\u9fff]/g) || []).length;
+        if (han >= 2) return false;
+        if (t.length > 18 && han === 0) return true;
+        if (t.length > 12 && /^[a-zA-Z0-9_\-:@.]+$/.test(t)) return true;
+        return false;
+    }
+
+    function rtFormatBuyerText(s, maxLen) {
+        var t = String(s || '').trim();
+        if (!t) return '—';
+        if (rtIsMessyBuyerText(t)) return '***';
+        maxLen = maxLen || 32;
+        if (t.length > maxLen) return t.slice(0, maxLen) + '…';
+        return t;
+    }
+
+    function rtBuyerDisplay(o) {
+        var name = String((o && o.receiver_name) || '').trim();
+        var login = String((o && o.buyer_login_id) || '').trim();
+        if (name && !rtIsMessyBuyerText(name)) return rtFormatBuyerText(name, 20);
+        if (login && !rtIsMessyBuyerText(login)) return rtFormatBuyerText(login, 20);
+        if (name || login) return '***';
+        return '—';
+    }
+
     function rtFindOrder(id) {
         var q = String(id || '');
         return _rtAllOrders.find(function(x) {
@@ -5858,18 +5892,20 @@
             var orderNo = rtOrderNo(o);
 
             var dateStr = (o.created || '').replace(/^(\d{4})(\d{2})(\d{2}).*/, '$2-$3');
-            var buyerMemo = o.buyer_memo || '';
-            var sellerMemo = o.seller_memo || '';
+            var buyerMemo = rtFormatBuyerText(o.buyer_memo || '', 36);
+            var sellerMemoRaw = String(o.seller_memo || '').trim();
+            var sellerMemo = sellerMemoRaw ? (sellerMemoRaw.length > 36 ? sellerMemoRaw.slice(0, 36) + '…' : sellerMemoRaw) : '—';
+            var buyerCell = rtBuyerDisplay(o);
 
             html += '<tr style="cursor:pointer;" onclick="rtShowDetail(\'' + rtEscJs(orderNo) + '\')">' +
                 '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;font-size:11px;color:#999;white-space:nowrap;">' + dateStr + '</td>' +
                 '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;">' + platformBadge + '</td>' +
                 '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;font-size:11px;">' + (o.shop_name || '') + '</td>' +
                 '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;font-family:monospace;font-size:11px;">' + orderNo + '</td>' +
-                '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;">' + (o.receiver_name || o.buyer_login_id || '') + '</td>' +
+                '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;max-width:100px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + rtEscHtml(buyerCell) + '</td>' +
                 '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;max-width:400px;font-size:11px;">' + specHtml + '</td>' +
-                '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;max-width:120px;font-size:11px;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + buyerMemo + '">' + buyerMemo + '</td>' +
-                '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;max-width:120px;font-size:11px;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + sellerMemo + '">' + sellerMemo + '</td>' +
+                '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;max-width:120px;font-size:11px;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="买家备注">' + rtEscHtml(buyerMemo) + '</td>' +
+                '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;max-width:120px;font-size:11px;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="卖家备注">' + rtEscHtml(sellerMemo) + '</td>' +
                 '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;text-align:right;">¥' + rtFmtMoney(o.total_amount) + '</td>' +
                 '<td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;text-align:center;"><span style="color:#1677ff;font-size:11px;">详情</span></td>' +
                 '</tr>';
@@ -6136,6 +6172,9 @@
                 '</tr>';
         }).join('');
         const orderNo = rtOrderNo(o);
+        const buyerLabel = rtBuyerDisplay(o);
+        const buyerMemoLabel = rtFormatBuyerText(o.buyer_memo || '', 80);
+        const sellerMemoRaw = rtIsMessyBuyerText(o.seller_memo) ? '' : (o.seller_memo || '');
 
         body.innerHTML = `
             <div style="background:#f9f9f9;border-radius:8px;padding:16px;">
@@ -6148,7 +6187,8 @@
                     <span style="font-size:13px;color:#52c41a;font-weight:600;">${o.status_label || '待发货'}</span>
                 </div>
                 <div style="font-size:13px;margin-bottom:8px;"><b>下单时间：</b>${o.created || ''}</div>
-                <div style="font-size:13px;margin-bottom:8px;"><b>买家：</b>${o.receiver_name || o.buyer_login_id || ''}</div>
+                <div style="font-size:13px;margin-bottom:8px;"><b>买家：</b>${rtEscHtml(buyerLabel)}</div>
+                <div style="font-size:13px;margin-bottom:8px;"><b>买家备注：</b><span style="color:#1677ff;">${rtEscHtml(buyerMemoLabel)}</span></div>
                 <div style="font-size:13px;margin-bottom:8px;"><b>实付：</b>¥${rtFmtMoney(o.total_amount)} ${(parseFloat(o.shipping_fee) || 0) > 0 ? '(含运费¥' + rtFmtMoney(o.shipping_fee) + ')' : ''}</div>
                 <div style="font-size:13px;font-weight:600;margin:12px 0 6px;">📦 商品明细</div>
                 <table style="width:100%;border-collapse:collapse;font-size:12px;">
@@ -6161,7 +6201,7 @@
                 </table>
                 <div style="margin-top:16px;border-top:1px solid #e8e8e8;padding-top:12px;">
                     <div style="font-size:13px;font-weight:600;margin-bottom:6px;">📝 卖家备注</div>
-                    <textarea id="rtSellerMemoInput" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;min-height:60px;resize:vertical;">${o.seller_memo || ''}</textarea>
+                    <textarea id="rtSellerMemoInput" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;min-height:60px;resize:vertical;">${sellerMemoRaw}</textarea>
                     <button onclick="rtSaveSellerMemo('${orderNo.replace(/'/g, "\\'")}')" style="margin-top:6px;padding:6px 16px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">💾 保存备注并同步1688</button>
                     <span id="rtMemoStatus" style="margin-left:8px;font-size:11px;color:#999;"></span>
                 </div>
