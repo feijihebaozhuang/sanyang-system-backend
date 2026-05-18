@@ -74,9 +74,55 @@ def _read_token_file() -> dict:
         return {}
 
 
+# 刷新 token 时须保留（勿被 API 响应覆盖）
+_TOKEN_CREDENTIAL_KEYS = (
+    "app_key",
+    "app_secret",
+    "appKey",
+    "appSecret",
+    "note",
+)
+
+
+def _credential_fields(src: dict) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for k in _TOKEN_CREDENTIAL_KEYS:
+        v = src.get(k)
+        if v is not None and str(v).strip():
+            out[k] = v
+    if KM_APP_KEY and not out.get("app_key") and not out.get("appKey"):
+        out["app_key"] = KM_APP_KEY
+    if KM_APP_SECRET and not out.get("app_secret") and not out.get("appSecret"):
+        out["app_secret"] = KM_APP_SECRET
+    return out
+
+
 def _write_token_file(data: dict) -> None:
+    prev = _read_token_file()
+    out = {**prev, **data}
+    out.update(_credential_fields(prev))
+    out.update(_credential_fields(data))
+    # 去掉误写入的 API 包装字段
+    for junk in (
+        "success",
+        "code",
+        "msg",
+        "sub_code",
+        "sub_msg",
+        "request_id",
+        "error_response",
+    ):
+        out.pop(junk, None)
+    if isinstance(out.get("session"), dict):
+        sess = out.pop("session")
+        access = sess.get("accessToken") or sess.get("access_token")
+        if access and not out.get("access_token"):
+            out["access_token"] = access
+        refresh = sess.get("refreshToken") or sess.get("refresh_token")
+        if refresh and not out.get("refresh_token"):
+            out["refresh_token"] = refresh
     Path(KM_TOKEN_FILE).write_text(
-        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+        json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
 
@@ -129,33 +175,31 @@ def _expires_at_from_token(tok: dict) -> float:
 
 
 def _merge_refresh_into_token(tok: dict, res: dict) -> dict:
-    sess = res.get("session") if isinstance(res.get("session"), dict) else res
-    merged = {**tok, **sess, **res}
-    access = (
-        sess.get("accessToken")
-        or sess.get("access_token")
-        or res.get("accessToken")
-        or tok.get("access_token")
-    )
-    refresh = (
-        sess.get("refreshToken")
-        or sess.get("refresh_token")
-        or tok.get("refresh_token")
-    )
-    if access:
-        merged["access_token"] = access
-    if refresh:
-        merged["refresh_token"] = refresh
-    exp = sess.get("expiresIn") or res.get("expiresIn")
-    if exp is not None:
-        merged["expiresIn"] = exp
-        try:
-            fv = float(exp)
-            merged["expires_at"] = fv / 1000.0 if fv > 1e12 else (
-                fv if fv > 1e9 else time.time() + fv
-            )
-        except (TypeError, ValueError):
-            pass
+    """仅合并 token 字段，禁止把整段 API 响应写入 km_token.json。"""
+    merged = dict(tok)
+    sess = res.get("session") if isinstance(res.get("session"), dict) else {}
+    for src in (sess, res):
+        if not isinstance(src, dict):
+            continue
+        access = src.get("accessToken") or src.get("access_token")
+        refresh = src.get("refreshToken") or src.get("refresh_token")
+        if access:
+            merged["access_token"] = access
+        if refresh:
+            merged["refresh_token"] = refresh
+        exp = src.get("expiresIn") or src.get("expires_in")
+        if exp is not None:
+            merged["expiresIn"] = exp
+            try:
+                fv = float(exp)
+                merged["expires_at"] = (
+                    fv / 1000.0
+                    if fv > 1e12
+                    else (fv if fv > 1e9 else time.time() + fv)
+                )
+            except (TypeError, ValueError):
+                pass
+    merged.update(_credential_fields(tok))
     merged["refreshed_at"] = time.time()
     return merged
 

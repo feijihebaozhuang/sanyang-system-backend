@@ -94,6 +94,7 @@
 
 - `km_token.json` 保存 `access_token`、`refresh_token`、`expires_at`（accessToken 有效期约 30 天）  
 - 距到期不足 **25 天**（`KM_REFRESH_BEFORE_SEC`）或接口提示会话失效时调用 `open.token.refresh`  
+- 刷新时**只更新** `access_token` / `refresh_token` / `expires_*`，**保留** `app_key` / `app_secret`（勿把整段 API 响应写回文件）  
 - 建议 crontab：`scripts/km_refresh_token_cron.sh`（每月 1 日、26 日凌晨 3 点）  
 
 ## 9. 本仓库实现
