@@ -483,11 +483,12 @@ def finalize_cache_order(o: dict) -> dict:
             continue
         if it.get("price") is not None:
             it["price"] = km_to_float(it.get("price"))
-        attrs = km_platform_item_attrs(it)
-        if attrs:
-            it["spec"] = attrs
-            it["display"] = attrs
-            it["platform_attrs"] = attrs
+        display = km_resolve_item_display(it)
+        if display:
+            it["spec"] = display
+            it["display"] = display
+            it["platform_attrs"] = display
+            it["is_customization"] = display == "定制"
         elif not (it.get("display") or "").strip():
             it["display"] = (it.get("spec") or "").strip()
     km_normalize_so_id_fields(o)
@@ -1156,6 +1157,14 @@ _BUYER_NUM_DIM_RE = re.compile(
     r"\d+\.?\d*\s*[*×xX]\s*\d+\.?\d*\s*[*×xX]\s*\d+\.?\d*\s*(?:mm|MM|厘米|cm|CM)?",
     re.I,
 )
+_BUYER_NUM_DIM2_RE = re.compile(
+    r"\d+\.?\d*\s*[*×xX]\s*\d+\.?\d*\s*(?:mm|MM|厘米|cm|CM)?",
+    re.I,
+)
+_CUSTOM_HINT_RE = re.compile(
+    r"定制链接|来图定制|买家定制|个性化定制|【定制】|定制商品",
+    re.I,
+)
 _BUYER_MATERIAL_KEY_RE = re.compile(r"颜色|材质|材料|硬度|瓦楞|层次|规格", re.I)
 _BUYER_SKIP_NAME_KEY_RE = re.compile(
     r"编码|货号|标题|名称|链接|定制链接|商品|sku|条形码",
@@ -1186,6 +1195,13 @@ def _buyer_spec_pieces_from_text(text: str) -> list[str]:
         if any(s in f or f in s for f in found):
             continue
         found.append(s)
+    for m in _BUYER_NUM_DIM2_RE.finditer(t):
+        s = m.group(0).strip()
+        if not s or _is_product_code_segment(s):
+            continue
+        if any(s in f or f in s for f in found):
+            continue
+        found.append(s)
     if found:
         return found
 
@@ -1199,11 +1215,15 @@ def _buyer_spec_pieces_from_text(text: str) -> list[str]:
         sub = _buyer_spec_pieces_from_text(val)
         if sub:
             return sub
-        # 颜色/材质类：只要值（如 特硬、优质特硬【外尺寸】单个）
+        # 材质/尺寸/规格：只要值（如 特硬E瓦、210*210*100 mm）
         if len(val) <= 56 and (
-            _BUYER_MATERIAL_KEY_RE.search(key) or "【" in val or "单个" in val
+            _BUYER_MATERIAL_KEY_RE.search(key)
+            or re.search(r"尺寸|长宽高|大小|规格", key, re.I)
+            or "【" in val
+            or "单个" in val
+            or re.search(r"\d\s*[*×xX]\s*\d", val)
         ):
-            if not _is_product_listing_title(val):
+            if not _is_product_listing_title(val) and not _is_product_code_segment(val):
                 return [val]
         return []
 
@@ -1213,11 +1233,202 @@ def _buyer_spec_pieces_from_text(text: str) -> list[str]:
         return [t]
     if _BUYER_NUM_DIM_RE.search(t):
         return [t]
-    if len(t) <= 24 and re.search(
-        r"特硬|优质|牛皮|白色|三层|加硬|台湾|超硬", t
+    if len(t) <= 32 and re.search(
+        r"特硬|优质|牛皮|白色|三层|加硬|台湾|超硬|E瓦|瓦楞|瓦", t
     ):
         return [t]
     return []
+
+
+def _buyer_property_values_only(raw: str) -> str:
+    """严格格式化后仍为空时：去掉属性名，仅保留各段值（过滤货号/标题）。"""
+    if not raw:
+        return ""
+    parts: list[str] = []
+    seen: set[str] = set()
+    for seg in re.split(r"[;；]+", raw):
+        t = _norm_spec_text(seg)
+        if not t or _is_junk_spec_segment(t):
+            continue
+        if ":" in t or "：" in t:
+            _, _, t = t.partition(":") if ":" in t else t.partition("：")
+            t = t.strip()
+        if (
+            not t
+            or _is_product_listing_title(t)
+            or _is_product_code_segment(t)
+            or _BUYER_SKIP_NAME_KEY_RE.search(t)
+        ):
+            continue
+        k = _norm_spec_seg_key(t)
+        if k in seen:
+            continue
+        seen.add(k)
+        parts.append(t)
+    return "；".join(parts)
+
+
+def _has_meaningful_customization_payload(val: Any) -> bool:
+    if val is None:
+        return False
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        return val != 0
+    if isinstance(val, str):
+        s = val.strip()
+        if not s or s.lower() in ("{}", "[]", "null", "false", "0", "none"):
+            return False
+        if s.startswith(("{", "[")):
+            try:
+                obj = json.loads(s)
+                return bool(obj)
+            except json.JSONDecodeError:
+                return len(s) > 4
+        return len(s) > 2
+    if isinstance(val, (dict, list)):
+        return bool(val)
+    return False
+
+
+def km_item_is_customization(it: dict) -> bool:
+    if not isinstance(it, dict):
+        return False
+    for key in (
+        "customization",
+        "customizationInfo",
+        "customInfo",
+        "customizationData",
+        "buyerCustomization",
+    ):
+        if _has_meaningful_customization_payload(it.get(key)):
+            return True
+    for key in ("isCustomization", "isCustom", "customFlag", "hasCustomization"):
+        v = it.get(key)
+        if v is True or str(v).lower() in ("1", "true", "y", "yes"):
+            return True
+    for field in _SKU_SPEC_FIELD_KEYS + ("spec", "sysSkuRemark", "sysItemRemark"):
+        t = _norm_spec_text(it.get(field))
+        if _CUSTOM_HINT_RE.search(t) or t.strip() in ("定制", "自定义", "来图定制", "定制款"):
+            return True
+    title = _norm_spec_text(
+        it.get("sysTitle") or it.get("title") or it.get("shortTitle") or it.get("name") or ""
+    )
+    if _CUSTOM_HINT_RE.search(title):
+        return True
+    ext = it.get("orderExt") or it.get("extInfo") or it.get("itemExt")
+    if isinstance(ext, str) and "custom" in ext.lower():
+        return _has_meaningful_customization_payload(ext)
+    if isinstance(ext, dict) and _has_meaningful_customization_payload(ext):
+        return True
+    return False
+
+
+_KM_ITEM_SNAPSHOT_KEYS = (
+    "skuInfos",
+    "skuPropertiesName",
+    "sysSkuPropertiesName",
+    "sysSkuPropertiesAlias",
+    "sysSkuRemark",
+    "sysItemRemark",
+    "customization",
+    "customizationInfo",
+    "orderExt",
+    "sysTitle",
+    "title",
+    "shortTitle",
+    "isCustomization",
+    "isCustom",
+)
+
+
+def km_item_snapshot(it: dict) -> dict:
+    """同步时保留快麦子单原始字段，便于读缓存后重新解析规格。"""
+    if not isinstance(it, dict):
+        return {}
+    snap: dict[str, Any] = {}
+    for key in _KM_ITEM_SNAPSHOT_KEYS:
+        val = it.get(key)
+        if val is None or val == "":
+            continue
+        snap[key] = val
+    return snap
+
+
+def km_item_for_resolve(it: dict) -> dict:
+    """合并缓存行与 _km 快照，供规格解析使用。"""
+    if not isinstance(it, dict):
+        return {}
+    snap = it.get("_km")
+    if isinstance(snap, dict) and snap:
+        merged = dict(snap)
+        for k, v in it.items():
+            if k == "_km" or v in (None, ""):
+                continue
+            merged[k] = v
+        return merged
+    return dict(it)
+
+
+def km_collect_item_raw_attrs(it: dict) -> str:
+    """收集平台买家属性原文（未做展示格式化）。"""
+    if not isinstance(it, dict):
+        return ""
+    ali = merge_1688_sku_infos(it.get("skuInfos"))
+    if ali:
+        return _strip_attrs_pollution(ali)
+
+    plat = _norm_spec_text(it.get("skuPropertiesName"))
+    sys = _norm_spec_text(it.get("sysSkuPropertiesName"))
+    alias = _norm_spec_text(it.get("sysSkuPropertiesAlias"))
+    chunks: list[str] = []
+    if plat:
+        chunks.extend(_dedupe_attr_segments(re.split(r"[;；]+", plat)))
+    if sys and plat != sys:
+        for seg in re.split(r"[;；]+", sys):
+            s = _norm_spec_text(seg)
+            if s and _norm_spec_seg_key(s) not in {_norm_spec_seg_key(c) for c in chunks}:
+                chunks.append(s)
+    if alias and _norm_spec_seg_key(alias) not in {_norm_spec_seg_key(c) for c in chunks}:
+        chunks.append(alias)
+    for key in ("sysSkuRemark", "sysItemRemark"):
+        remark = _norm_spec_text(it.get(key))
+        if remark and not _is_junk_spec_segment(remark):
+            rk = _norm_spec_seg_key(remark)
+            if rk not in {_norm_spec_seg_key(c) for c in chunks}:
+                chunks.append(remark)
+    legacy = _norm_spec_text(it.get("spec"))
+    if chunks:
+        return "；".join(_dedupe_attr_segments(chunks))
+    return _strip_attrs_pollution(legacy)
+
+
+def km_resolve_item_display(it: dict) -> str:
+    """
+    客服/生产行展示：尺寸+材质值；定制单无尺寸时显示「定制」。
+    """
+    src = km_item_for_resolve(it)
+    raw = km_collect_item_raw_attrs(src)
+    if raw:
+        display = km_format_buyer_spec_display(raw)
+        if display:
+            return display
+        values = _buyer_property_values_only(raw)
+        if values:
+            return values
+    if km_item_is_customization(src):
+        return "定制"
+    for field in ("sysSkuRemark", "sysItemRemark"):
+        dim = km_format_dimensions_from_text(_norm_spec_text(src.get(field)), int(src.get("qty") or src.get("num") or 0))
+        if dim:
+            return dim
+    dim = km_format_dimensions_from_text(
+        _norm_spec_text(src.get("sysTitle") or src.get("title") or src.get("name") or ""),
+        int(src.get("qty") or src.get("num") or 0),
+    )
+    if dim:
+        return dim
+    return ""
 
 
 def km_format_buyer_spec_display(raw: str) -> str:
@@ -1241,44 +1452,8 @@ def km_format_buyer_spec_display(raw: str) -> str:
 
 
 def km_platform_item_attrs(it: dict) -> str:
-    """
-    各平台买家下单时选择的 SKU 属性（与店铺后台子订单一致）。
-    1688: skuInfos；淘系: skuPropertiesName；兜底 sysSkuPropertiesName / 备注。
-    """
-    if not isinstance(it, dict):
-        return ""
-
-    ali = merge_1688_sku_infos(it.get("skuInfos"))
-    if ali:
-        return km_format_buyer_spec_display(_strip_attrs_pollution(ali))
-
-    plat = _norm_spec_text(it.get("skuPropertiesName"))
-    sys = _norm_spec_text(it.get("sysSkuPropertiesName"))
-    alias = _norm_spec_text(it.get("sysSkuPropertiesAlias"))
-
-    chunks: list[str] = []
-    if plat:
-        chunks.extend(_dedupe_attr_segments(re.split(r"[;；]+", plat)))
-    if sys and plat != sys:
-        for seg in re.split(r"[;；]+", sys):
-            s = _norm_spec_text(seg)
-            if s and _norm_spec_seg_key(s) not in {_norm_spec_seg_key(c) for c in chunks}:
-                chunks.append(s)
-    if alias and _norm_spec_seg_key(alias) not in {_norm_spec_seg_key(c) for c in chunks}:
-        chunks.append(alias)
-
-    for key in ("sysSkuRemark", "sysItemRemark"):
-        remark = _norm_spec_text(it.get(key))
-        if remark and not _is_junk_spec_segment(remark):
-            rk = _norm_spec_seg_key(remark)
-            if rk not in {_norm_spec_seg_key(c) for c in chunks}:
-                chunks.append(remark)
-
-    legacy = _norm_spec_text(it.get("spec"))
-    raw = "；".join(_dedupe_attr_segments(chunks)) if chunks else legacy
-    if not raw:
-        return ""
-    return km_format_buyer_spec_display(_strip_attrs_pollution(raw))
+    """各平台买家下单 SKU 展示（尺寸+材质；定制无规格时为「定制」）。"""
+    return km_resolve_item_display(it)
 
 
 def km_sanitize_spec_text(spec: str) -> str:
@@ -1327,16 +1502,21 @@ def km_trade_to_cache_order(trade: dict, shops: dict[str, dict] | None = None) -
     for it in lines:
         if not isinstance(it, dict):
             continue
-        attrs = km_platform_item_attrs(it)
+        qty = int(it.get("num") or it.get("quantity") or 0)
+        snap = km_item_snapshot(it)
+        src = {**snap, "qty": qty}
+        display = km_resolve_item_display(src)
         items.append(
             {
                 "name": (it.get("sysTitle") or it.get("title") or it.get("shortTitle") or ""),
                 "sku": (it.get("sysOuterId") or it.get("outerId") or ""),
-                "qty": int(it.get("num") or it.get("quantity") or 0),
+                "qty": qty,
                 "price": it.get("price") or it.get("payment") or 0,
-                "spec": attrs,
-                "display": attrs,
-                "platform_attrs": attrs,
+                "spec": display,
+                "display": display,
+                "platform_attrs": display,
+                "is_customization": display == "定制",
+                "_km": snap,
             }
         )
 

@@ -1071,6 +1071,12 @@ def _find_cached_order(query):
         so_id = str(o.get("so_id") or o.get("km_sid", "") or "")
         tid = str(o.get("tid", "") or o.get("platform_tid", "") or "")
         if query == so_id or query == tid or q in so_id.lower() or (tid and q in tid.lower()):
+            try:
+                import km_api as _km
+
+                _km.finalize_cache_order(o)
+            except ImportError:
+                pass
             return o
     return None
 
@@ -3354,14 +3360,9 @@ def api_realtime_orders():
                 import km_api as _km
 
                 for o_ in cached_orders:
-                    if not o_.get('source') or not o_.get('status'):
-                        _km.finalize_cache_order(o_)
+                    _km.finalize_cache_order(o_)
             except ImportError:
                 pass
-            for o_ in cached_orders:
-                for _it in o_.get('items') or []:
-                    if isinstance(_it, dict) and not (_it.get('display') or '').strip():
-                        _it['display'] = (_it.get('spec') or '').strip()
             cached_orders.sort(key=lambda x: x.get('created', ''), reverse=True)
             status = 'hit' if cached_orders else 'empty'
             print(
