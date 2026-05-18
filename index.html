@@ -837,7 +837,8 @@
 
     <div id="page-main" class="page-section active">
 
-        <!-- 搜索框 -->
+        <!-- 生产端不展示订单搜索/详情（仅客服端保留） -->
+        <div id="homeOrderSearchBlock" style="display:none;">
         <div class="search-bar">
             <span style="color: #999;">🔍</span>
             <input type="text" id="searchInput" placeholder="扫码输入订单号查询订单..." onkeydown="if(event.key==='Enter') searchOrder()" onfocus="this.select()">
@@ -855,6 +856,7 @@
                 <h4>📦 订单详情</h4>
                 <p id="resultJST">点击查看订单信息</p>
             </div>
+        </div>
         </div>
 
         <!-- 概览 -->
@@ -905,8 +907,8 @@
             </div>
         </div>
 
-        <!-- 今日订单列表（管理/客服查看；生产员工默认隐藏） -->
-        <div class="order-table-wrap" id="todayOrdersWrap">
+        <!-- 今日订单列表（生产端隐藏） -->
+        <div class="order-table-wrap" id="todayOrdersWrap" style="display:none;">
             <div class="table-title" id="todayOrdersTitle" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
                 <span>📋 今日订单列表</span>
                 <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
@@ -1393,24 +1395,11 @@
             }
         });
 
-        // ===== 搜索框控制 =====
-        const searchBar = document.querySelector('.search-bar');
-        if (searchBar) {
-            // 搜索框：有快麦ERP查单权限 或 客服角色 或 有订单生产进度权限都能看到搜索框
-            const hasOrderSearch = hasPerm('快麦ERP');
-            const isKeFu = role === '客服';
-            const hasProd = hasPerm('订单生产进度');
-            const showSearch = hasOrderSearch || isKeFu || hasProd;
-            searchBar.style.display = showSearch ? '' : 'none';
-        }
-
-        // ===== 订单详情卡片控制 =====
-        document.querySelectorAll('.search-result-card').forEach(card => {
-            const onclick = card.getAttribute('onclick') || '';
-            if (onclick.includes('showOrderDetailModal')) {
-                card.style.display = hasPerm('快麦ERP') ? '' : 'none';
-            }
-        });
+        // ===== 生产端：隐藏首页订单搜索/详情 =====
+        const homeOrderBlock = document.getElementById('homeOrderSearchBlock');
+        if (homeOrderBlock) homeOrderBlock.style.display = 'none';
+        const todayWrap = document.getElementById('todayOrdersWrap');
+        if (todayWrap) todayWrap.style.display = 'none';
 
         // ===== 底部功能栏控制 =====
         const footerBar = document.querySelector('.footer-bar');
@@ -1433,27 +1422,13 @@
             });
         }
 
-        // ===== 员工首页：只显示「当日加急订单」，隐藏今日订单列表 =====
+        // ===== 员工首页：只显示「当日加急订单」 =====
         if (role === '员工') {
             const overviewHeader = document.querySelector('.overview-header');
             if (overviewHeader) overviewHeader.style.display = 'none';
             document.querySelectorAll('.stats-cards').forEach(el => el.style.display = 'none');
-            const todayWrap = document.getElementById('todayOrdersWrap');
-            if (todayWrap) todayWrap.style.display = 'none';
             const urgentWrap = document.getElementById('urgentTodayWrap');
             if (urgentWrap) urgentWrap.style.display = '';
-            const orderTable = document.querySelector('#todayOrdersWrap table');
-            if (orderTable) {
-                const headers = orderTable.querySelectorAll('thead th');
-                headers.forEach((th, idx) => {
-                    const texts = ['客服', '店铺', '备注', '操作'];
-                    if (texts.some(t => th.textContent.includes(t))) {
-                        th.style.display = 'none';
-                    } else {
-                        th.style.display = '';
-                    }
-                });
-            }
         }
     }
 
@@ -1749,6 +1724,7 @@
             document.getElementById('page-production').classList.add('active');
         }
         if (name === 'scan') {
+            loadProductionOrdersForScan();
             loadScanLogs();
             document.getElementById('page-main').classList.remove('active');
             document.getElementById('page-scan').classList.add('active');
@@ -2260,26 +2236,21 @@
         document.getElementById('statUrgent').textContent = summary.urgent_orders ?? '--';
         document.getElementById('statDone').textContent = summary.completed ?? '--';
 
-        const urgentList = data.urgent_orders || (data.today_orders || []).filter(o => o.urgent);
+        const urgentList = data.urgent_orders || [];
         renderUrgentTodayOrders(urgentList);
-        allOrders = data.today_orders || [];
-
+        allOrders = [];
         const todayWrap = document.getElementById('todayOrdersWrap');
-        const isWorker = _currentUser && _currentUser.role === '员工';
+        if (todayWrap) todayWrap.style.display = 'none';
+    }
 
-        if (isWorker) {
-            if (todayWrap) todayWrap.style.display = 'none';
-            return;
+    async function loadProductionOrdersForScan() {
+        try {
+            const data = await getAPI('/api/production_orders');
+            allProdOrders = data.orders || [];
+        } catch (e) {
+            console.error('加载扫码订单失败', e);
+            allProdOrders = [];
         }
-
-        if (todayWrap) todayWrap.style.display = '';
-        document.getElementById('filterStore').innerHTML = '<option value="">全部店铺</option>';
-        document.getElementById('filterWorker').innerHTML = '<option value="">全部客服</option>';
-        filteredOrders = [...allOrders];
-        const orderTitle = document.getElementById('todayOrdersTitle');
-        if (orderTitle) orderTitle.style.display = '';
-        curPage = 1;
-        renderOrderPage();
     }
 
     // ===== 加载生产进度页 =====
@@ -2637,9 +2608,10 @@
         const input = document.getElementById('scanInput');
         const orderId = input.value.trim();
         if (!orderId) { alert('请输入内部单号'); return; }
-        
+        if (!allProdOrders.length) await loadProductionOrdersForScan();
+
         // 查找订单的下一道工序
-        const order = allProdOrders.find(o => o.inner_id === orderId);
+        const order = allProdOrders.find(o => o.inner_id === orderId || String(o.inner_id) === orderId);
         if (!order) {
             document.getElementById('scanResult').style.display = 'block';
             document.getElementById('scanResult').innerHTML = `<div style="padding:16px;background:#fff2f0;border:1px solid #ffccc7;border-radius:8px;color:#e94560;">❌ 未找到订单 ${orderId}</div>`;
@@ -2684,7 +2656,11 @@
             body: JSON.stringify({order_id: orderId, step: step, worker: worker})
         });
         const data = await res.json();
-        
+        if (!data.success) {
+            alert(data.message || '报工失败');
+            return;
+        }
+
         // 标记当前工序为已完成（前端本地更新）
         const order = allProdOrders.find(o => o.inner_id === orderId);
         let allDone = false;
@@ -2738,8 +2714,9 @@
             </div>
         `;
         
-        // 刷新报工记录
+        // 刷新报工记录与订单进度
         loadScanLogs();
+        await loadProductionOrdersForScan();
         document.getElementById('scanInput').value = '';
         document.getElementById('scanInput').focus();
     }
@@ -2933,14 +2910,9 @@
             </div>`;
         }).join('');
         
-        // 最新动态
-        const news = [
-            {icon: '✅', text: 'JST-20260426-003 清废完成', time: '14:30'},
-            {icon: '🏭', text: '自动平压平线 今日产出5800', time: '14:25'},
-            {icon: '📦', text: 'JST-20260425-005 已打包发货', time: '14:00'},
-            {icon: '🔧', text: 'DM-004刀模维修中（预计明日完成）', time: '13:30'},
-            {icon: '📋', text: '覃海霞完成 5单审单分单', time: '12:00'},
-            {icon: '🚚', text: '3单已安排下午送货', time: '11:30'},
+        // 最新动态（订单缓存）
+        const news = (data.recent_news && data.recent_news.length) ? data.recent_news : [
+            {icon: '📦', text: '暂无近期订单', time: ''},
         ];
         document.getElementById('boardNews').innerHTML = news.map(n => 
             `<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:12px;">
@@ -3621,7 +3593,7 @@
         }
         
         // 树形渲染
-            html = '';
+        let html = '';
         processes.forEach((dept, di) => {
             html += `<div style="margin-bottom:8px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;background:#f0f2ff;padding:6px 8px;border-radius:6px;margin-bottom:4px;">
@@ -3650,6 +3622,15 @@
         el.innerHTML = html;
     }
 
+    function persistProcessTree() {
+        if (!_permData || !_permData.processes) return;
+        fetch('/api/processes/save', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({processes: _permData.processes})
+        }).catch(e => console.error('保存工序树失败', e));
+    }
+
     // ===== 树形流程操作 =====
     function addProcessDept() {
         const name = prompt('请输入新部门名称（如：手啤机工序）：');
@@ -3657,6 +3638,7 @@
         if (!_permData) return;
         _permData.processes.push({dept: name.trim(), steps: []});
         renderPermProcesses(_permData.processes);
+        persistProcessTree();
     }
 
     function editProcessDeptName(di, oldName) {
@@ -3665,12 +3647,7 @@
         if (!_permData) return;
         _permData.processes[di].dept = name.trim();
         renderPermProcesses(_permData.processes);
-        // 自动保存到后端
-        fetch('/api/processes/save', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({processes: _permData.processes})
-        }).catch(e => console.error('保存部门失败', e));
+        persistProcessTree();
     }
 
     function deleteProcessDept(di, name) {
@@ -3678,6 +3655,7 @@
         if (!_permData) return;
         _permData.processes.splice(di, 1);
         renderPermProcesses(_permData.processes);
+        persistProcessTree();
     }
 
     function addProcessStep(di) {
@@ -3688,6 +3666,7 @@
         const newId = steps.length > 0 ? Math.max(...steps.map(s => s.id)) + 1 : 1;
         steps.push({id: newId, name: name.trim()});
         renderPermProcesses(_permData.processes);
+        persistProcessTree();
     }
 
     function editProcessStep(di, si, oldName) {
@@ -3696,12 +3675,7 @@
         if (!_permData) return;
         _permData.processes[di].steps[si].name = name.trim();
         renderPermProcesses(_permData.processes);
-        // 自动保存到后端，重启不丢失
-        fetch('/api/processes/save', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({processes: _permData.processes})
-        }).catch(e => console.error('保存工序失败', e));
+        persistProcessTree();
     }
 
     function deleteProcessStep(di, si, name) {
@@ -3709,6 +3683,7 @@
         if (!_permData) return;
         _permData.processes[di].steps.splice(si, 1);
         renderPermProcesses(_permData.processes);
+        persistProcessTree();
     }
 
     function renderPermPositions(positions) {

@@ -13,6 +13,7 @@ from pypinyin import lazy_pinyin
 import pymysql
 
 from settings import DB_CONFIG, FLASK_SECRET_KEY
+import production_helpers as ph
 
 
 def _auth_token_for(username: str) -> str:
@@ -402,8 +403,9 @@ def dashboard():
     # 从1688订单缓存读取真实数据
     real_orders = []
     try:
-        if os.path.exists(ORDERS_CACHE_FILE):
-            with open(ORDERS_CACHE_FILE, 'r', encoding='utf-8') as f:
+        cache_path = _orders_cache_path()
+        if os.path.exists(cache_path):
+            with open(cache_path, 'r', encoding='utf-8') as f:
                 cache = json.load(f)
             real_orders = cache.get('orders', [])
     except Exception as e:
@@ -418,25 +420,31 @@ def dashboard():
         if name and cs:
             store_workers[name] = cs
 
-    # 格式化所有待发货订单（统计卡片用）
+    try:
+        import km_api as _km
+        for o in real_orders:
+            _km.finalize_cache_order(o)
+    except ImportError:
+        pass
+
     all_orders = []
     for o in real_orders:
         items = o.get('items', [])
         product_parts = []
         total_qty = 0
         for item in items:
-            spec = item.get('spec', '') or item.get('name', '')
+            spec = item.get('spec', '') or ''
             qty = item.get('qty', 0)
             total_qty += qty
             if spec:
                 product_parts.append(f"{spec}×{qty}")
         product_str = '; '.join(product_parts) if product_parts else '待确认'
 
-        so_id = o.get('so_id', '')
-        saved = _order_extra.get(so_id, {})
+        oid = ph.internal_order_id(o)
+        saved = _order_extra.get(oid, {})
         shop_name = o.get('shop_name', '亚润')
         all_orders.append({
-            "id": so_id,
+            "id": oid,
             "store": shop_name,
             "worker": store_workers.get(shop_name, ""),
             "product": product_str,
@@ -446,353 +454,108 @@ def dashboard():
             "status": "待发货",
             "urgent": saved.get("urgent", False),
             "remark": saved.get("remark", "") or o.get('seller_memo', ''),
-            "pay_time": o.get('pay_time', '')
+            "pay_time": o.get('pay_time', '') or o.get('created', ''),
         })
 
-    # 统计卡片 = 所有待发货订单的统计
-    date_num = date.replace('-', '')
-
-    # 今日订单列表 = 按付款日期过滤当天
-    today_orders = [o for o in all_orders if str(o.get('pay_time', '')) == date_num]
-
-    # 统计
-    total_all = len(all_orders)           # 总发货（所有订单）
-    total_waiting = len([o for o in all_orders if o['status'] == '待发货'])  # 待发货
-    urgent_count = len([o for o in all_orders if o.get('urgent')])          # 加急单
+    total_all = len(all_orders)
+    total_waiting = len([o for o in all_orders if o['status'] == '待发货'])
     urgent_orders = [o for o in all_orders if o.get('urgent')]
-    completed_count = 0                    # 已完成（暂无数据源）
+    urgent_count = len(urgent_orders)
+    completed_count = len([
+        o for o in all_orders
+        if o.get('status') == '已完成'
+    ])
 
     return jsonify({
         "date": date,
         "summary": {
             "total_orders": total_all,
+            "in_production": total_waiting,
             "waiting": total_waiting,
             "urgent_orders": urgent_count,
             "completed": completed_count,
         },
-        "today_orders": today_orders,
+        "today_orders": [],
         "urgent_orders": urgent_orders,
     })
 
 # ==================== 订单生产进度 ====================
 @app.route('/api/production_orders')
 def production_orders():
-    """1688待发货订单转为生产进度数据"""
+    """待发货订单 + 工序树进度（扫码报工/进度查询）"""
     process_tree = _permission_data.get("processes", [])
-    
-    def get_flow_for_order(order_type):
-        if not process_tree:
-            return [{"step": "客服接单", "done": False, "time": "-", "person": ""}]
-        is_tree = isinstance(process_tree[0], dict) and 'dept' in process_tree[0]
-        if not is_tree:
-            return [{"step": s, "done": False, "time": "-", "person": ""} for s in process_tree]
-        target_dept = None
-        if order_type == '纸箱':
-            for d in process_tree:
-                if '纸箱' in d.get('dept', ''):
-                    target_dept = d; break
-        else:
-            for d in process_tree:
-                if '美丽湾' in d.get('dept', '') or '飞机盒' in d.get('dept', ''):
-                    target_dept = d; break
-        if not target_dept: target_dept = process_tree[0]
-        if not target_dept or not target_dept.get('steps'):
-            return [{"step": "客服接单", "done": False, "time": "-", "person": ""}]
-        return [{"step": s["name"], "done": False, "time": "-", "person": ""} for s in target_dept.get("steps", [])]
-    
-    orders_data = []
-    try:
-        if os.path.exists(ORDERS_CACHE_FILE):
-            with open(ORDERS_CACHE_FILE, 'r', encoding='utf-8') as f:
-                cache = json.load(f)
-            for o in cache.get('orders', []):
-                first_item = (o.get('items') or [{}])[0]
-                prod_name = first_item.get('name', '')
-                order_type = '纸箱' if '纸箱' in prod_name else '飞机盒'
-                # 所有规格分行
-                specs = []
-                for item in (o.get('items') or []):
-                    spec = item.get('spec', '') or ''
-                    qty = item.get('qty', 0) or 0
-                    specs.append({'spec': spec, 'qty': qty})
-                total_qty = sum(i.get('qty', 0) for i in (o.get('items') or []))
-                addr = o.get('receiver_address', '')
-                addr_parts = addr.split() if addr else []
-                province = addr_parts[0] if len(addr_parts) > 0 else ''
-                city = addr_parts[1] if len(addr_parts) > 1 else ''
-                orders_data.append({
-                    "inner_id": o.get('so_id', ''),
-                    "store": o.get('shop_name', '亚润'),
-                    "province": province, "city": city,
-                    "specs": specs,
-                    "seller_memo": o.get('seller_memo', '') or '',
-                    "qty": total_qty, "type": order_type,
-                    "flow": get_flow_for_order(order_type)
-                })
-    except Exception as e:
-        print(f'[生产进度] 读取缓存失败: {e}')
-    
-    # 已完结工序模拟
-    for i, order in enumerate(orders_data):
-        n = min(i % 4 + 1, len(order["flow"]))
-        for j in range(n):
-            order["flow"][j]["done"] = True
-            order["flow"][j]["time"] = "2026-04-28 09:00"
-            order["flow"][j]["person"] = "张慧平"
-    
+    orders_data = ph.build_production_orders(
+        _orders_cache_path(),
+        DB_CONFIG,
+        process_tree,
+        _order_extra,
+    )
     return jsonify({"orders": orders_data})
 
 # ==================== 扫码报工 ====================
 @app.route('/api/scan_report', methods=['POST'])
 def scan_report():
-    data = request.get_json()
-    order_id = data.get('order_id', '')
-    step = data.get('step', '')
-    worker = data.get('worker', '')
+    data = request.get_json() or {}
+    order_id = (data.get('order_id') or '').strip()
+    step = (data.get('step') or '').strip()
+    worker = (data.get('worker') or '').strip()
+    if not order_id or not step:
+        return jsonify({"success": False, "message": "缺少单号或工序"})
+    if not worker:
+        user = USERS.get(session.get('username', ''), {})
+        worker = user.get('employee_name') or user.get('name') or ''
+    result = ph.apply_scan_report(
+        DB_CONFIG,
+        _permission_data.get("processes", []),
+        order_id,
+        step,
+        worker,
+        _orders_cache_path(),
+    )
+    if not result.get("success"):
+        return jsonify({"success": False, "message": result.get("msg", "报工失败")})
     return jsonify({
         "success": True,
-        "message": f"订单 {order_id} 已报工",
+        "message": f"订单 {result['order_id']} 工序「{step}」已报工",
+        "all_done": result.get("all_done"),
         "record": {
-            "time": datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            "order_id": order_id,
+            "time": result.get("time"),
+            "order_id": result.get("order_id"),
             "step": step,
             "worker": worker,
-            "status": "已完成"
-        }
+            "status": "已完成",
+        },
     })
 
-# ==================== 今日报工记录 ====================
+
 @app.route('/api/scan_logs')
 def scan_logs():
-    return jsonify({
-        "logs": [
-            {"time": "08:30", "order_id": "JST-20260426-001", "step": "黄厂打印", "worker": "黄兴", "status": "✅"},
-            {"time": "08:45", "order_id": "JST-20260426-001", "step": "审单分单", "worker": "覃海霞", "status": "✅"},
-            {"time": "09:00", "order_id": "JST-20260426-001", "step": "算料", "worker": "蒋义红", "status": "✅"},
-            {"time": "09:20", "order_id": "JST-20260426-002", "step": "黄厂打印", "worker": "黄兴", "status": "✅"},
-            {"time": "09:40", "order_id": "JST-20260426-002", "step": "审单分单", "worker": "覃海霞", "status": "✅"},
-            {"time": "10:00", "order_id": "JST-20260426-003", "step": "啤机完成", "worker": "蒋义红组", "status": "✅"},
-            {"time": "10:15", "order_id": "JST-20260426-002", "step": "算料", "worker": "沈齐豪", "status": "✅"},
-            {"time": "14:30", "order_id": "JST-20260426-003", "step": "清废完成", "worker": "清废承包", "status": "✅"},
-        ]
-    })
+    return jsonify({"logs": ph.fetch_scan_logs(DB_CONFIG, 80)})
 
 # ==================== 日报表 ====================
-# 真实报工数据（按你提供的）
-DAILY_REPORT_WORKER_DATA = {
-    "手啤机组": [
-        {"name": "李方国", "total_diemo": 49, "total_pi": 3691, "time": 12},
-        {"name": "李周海", "total_diemo": 49, "total_pi": 5592, "time": 12},
-        {"name": "唐美章", "total_diemo": 49, "total_pi": 3247, "time": 12},
-        {"name": "蒋保平", "total_diemo": 49, "total_pi": 4285, "time": 12},
-        {"name": "陈章远", "total_diemo": 50, "total_pi": 4771, "time": 12},
-        {"name": "黄振辉", "total_diemo": 67, "total_pi": 3816, "time": 12},
-        {"name": "汪成桃", "total_diemo": 29, "total_pi": 5043, "time": 11},
-    ],
-    "啤机分组": [
-        {"name": "易新明", "diemo": 140, "time": 11},
-        {"name": "雷善炎", "diemo": 33, "time": 11},
-        {"name": "陈海斌", "diemo": 114, "time": 11},
-        {"name": "陈奕升", "diemo": 72, "time": 11},
-        {"name": "江旭松", "diemo": 63, "time": 11},
-    ],
-    "刀模组": [
-        {"name": "廖金玲", "find_diemo": 302, "time": 12, "remark": ""},
-        {"name": "陈勇", "group_diemo": 144, "time": 11, "remark": "没得11单没找42张"},
-        {"name": "张吉杰", "remove_diemo": 128, "time": 12, "remark": "没得18单没找42张、查找编号"},
-    ],
-    "放刀模": [
-        {"name": "唐孝定", "time": 12},
-    ],
-    "机械手组": [
-        {"name": "黄恒", "total_diemo": 7, "total_pi": 4808, "time": 11},
-        {"name": "李荣晖", "total_diemo": 17, "total_pi": 8643, "time": 11},
-    ],
-    "平压平组": [
-        {"name": "蒋森响", "total_diemo": 24, "total_pi": 11765, "time": 11},
-        {"name": "周业福", "total_diemo": 20, "total_pi": 21815, "time": 11},
-    ],
-    "车间打包组": [
-        {"name": "陈桂英", "total_qty": 18443, "total_pieces": 141, "time": 12},
-        {"name": "毛良芬", "total_qty": 25249, "total_pieces": 148, "time": 12},
-        {"name": "陈辉文", "total_qty": 24483, "total_pieces": 96, "time": 12},
-        {"name": "文小梅", "total_qty": 29569, "total_pieces": 106, "time": 12},
-        {"name": "帅行朝", "total_qty": 14013, "total_pieces": 89, "time": 12},
-        {"name": "黄张华", "total_qty": None, "total_pieces": None, "time": 11},
-    ],
-    "仓库组": {
-        "找货": [
-            {"name": "宋小国", "count": 140, "time": 11},
-            {"name": "唐忠群", "count": None, "time": None},
-        ],
-        "打包": [
-            {"name": "蒋仁叶", "count": None, "time": None},
-            {"name": "罗照权", "count": 152, "time": 11},
-        ],
-        "放货": [
-            {"name": "黄爱小", "qty": 29540, "time": 12, "remark": "打包71包、找货50单"},
-        ],
-        "打样兼配货": [
-            {"name": "龙雪兰", "size": 79, "time": 12, "remark": "粘二合一，耗时5小时"},
-        ],
-    },
-    "印刷组": [
-        {"name": "李双", "diemo": 11, "qty": 10130, "time": 11},
-    ],
-    "扣底盒组": [
-        {"name": "蒋军林", "size": 12, "qty": None, "time": 11},
-        {"name": "宁哈姝", "size": 15, "qty": 10630, "time": 11},
-        {"name": "黄华", "task": "打包", "size": "打包", "time": 11},
-    ],
-    "纸箱分纸组": [
-        {"name": "陈伟", "size": 65, "qty": None, "time": 7},
-        {"name": "陈陶", "size": 66, "qty": None, "time": 11},
-        {"name": "周石国", "size": 72, "qty": None, "time": 11},
-    ],
-    "纸箱开槽组": [
-        {"name": "杨家忠", "size": 41, "qty": 10419, "time": 11},
-        {"name": "沈奇严", "size": 75, "qty": 3098, "time": 11},
-        {"name": "姚建桥", "size": 62, "qty": 6308, "time": 11},
-    ],
-    "纸箱粘胶组": [
-        {"name": "戴西华", "size": 23, "qty": 4995, "time": 11},
-        {"name": "魏小王", "size": 36, "qty": 8569, "time": 11},
-        {"name": "黄芳", "size": 31, "qty": 1666, "time": 11},
-        {"name": "于天发", "size": 41, "qty": 1878, "time": 11},
-    ],
-}
-
 @app.route('/api/daily_report')
 def daily_report():
-    date = request.args.get('date', datetime.date.today().strftime('%Y-%m-%d'))
-    # 获取考勤状态
+    report_date = request.args.get('date', datetime.date.today().strftime('%Y-%m-%d'))
     today = datetime.date.today().isoformat()
     emp_statuses = _employee_today_status.get(today, {})
-    
-    # 构建员工报工统计
-    worker_stats = []
-    for group_name, members in DAILY_REPORT_WORKER_DATA.items():
-        if isinstance(members, list):
-            for m in members:
-                worker_stats.append({
-                    "name": m.get("name", ""),
-                    "dept": m.get("dept", "美丽湾工厂部"),
-                    "position": group_name,
-                    "group": group_name,
-                    "data": m,
-                    "status": emp_statuses.get(m.get("name", ""), "出勤")
-                })
-        elif isinstance(members, dict):
-            for sub_group, sub_members in members.items():
-                for m in sub_members:
-                    worker_stats.append({
-                        "name": m.get("name", ""),
-                        "dept": m.get("dept", "美丽湾工厂部"),
-                        "position": f"{group_name}-{sub_group}",
-                        "group": f"{group_name}-{sub_group}",
-                        "data": m,
-                        "status": emp_statuses.get(m.get("name", ""), "出勤")
-                    })
-    
-    return jsonify({
-        "date": date,
-        "summary": {
-            "total_orders": 45,
-            "completed_orders": 14,
-            "output_qty": 12500,
-            "defect_rate": "1.2%",
-        },
-        "comparison": [
-            {"name": "总单数", "today": "45", "yesterday": "38", "change": "+18.4%"},
-            {"name": "完成数", "today": "14", "yesterday": "11", "change": "+27.3%"},
-            {"name": "总产出", "today": "12,500", "yesterday": "10,800", "change": "+15.7%"},
-            {"name": "不良率", "today": "1.2%", "yesterday": "1.5%", "change": "-0.3%"},
-        ],
-        "production_lines": [
-            {"line": "飞机盒线-自动平压平", "output": 5800, "status": "正常"},
-            {"line": "飞机盒线-机械手", "output": 3200, "status": "正常"},
-            {"line": "飞机盒线-手啤", "output": 1500, "status": "正常"},
-            {"line": "纸箱线", "output": 2000, "status": "正常"},
-        ],
-        "done_orders": [
-            {"id": "JST-20260425-005", "product": "飞机盒20*15*10（现货）", "qty": 800, "last_step": "打包发货", "done_time": "16:00"},
-            {"id": "JST-20260425-003", "product": "飞机盒25*15*10", "qty": 300, "last_step": "打包发货", "done_time": "15:30"},
-            {"id": "JST-20260426-001", "product": "飞机盒30*20*15", "qty": 200, "last_step": "清废", "done_time": "14:20"},
-        ],
-        # 更新为真实报工数据
-        "worker_stats": worker_stats,
-        "worker_data": DAILY_REPORT_WORKER_DATA  # 原始分组数据
-    })
+    cache_path = _orders_cache_path()
+    payload = ph.build_daily_report(
+        cache_path,
+        DB_CONFIG,
+        report_date,
+        _order_extra,
+        emp_statuses,
+    )
+    return jsonify(payload)
 
-# ==================== 数据看板 ====================
+
 @app.route('/api/databoard')
 def databoard():
     range_type = request.args.get('range', 'week')
-    # 模拟不同时间范围的数据
-    if range_type == 'month':
-        trend = [
-            {"date": "04-01", "output": 1800},{"date": "04-03", "output": 2100},{"date": "04-05", "output": 1950},
-            {"date": "04-07", "output": 2400},{"date": "04-09", "output": 2250},{"date": "04-11", "output": 2600},
-            {"date": "04-13", "output": 2500},{"date": "04-15", "output": 2800},{"date": "04-17", "output": 2700},
-            {"date": "04-19", "output": 2900},{"date": "04-21", "output": 3100},{"date": "04-23", "output": 3050},
-            {"date": "04-25", "output": 3200},{"date": "04-26", "output": 3350},
-        ]
-    elif range_type == 'quarter':
-        trend = [
-            {"date": "02月", "output": 42000},{"date": "03月", "output": 48000},{"date": "04月", "output": 52000},
-        ]
-    else:
-        trend = [
-            {"date": "04-21", "output": 1800},{"date": "04-22", "output": 2100},{"date": "04-23", "output": 1950},
-            {"date": "04-24", "output": 2400},{"date": "04-25", "output": 2250},{"date": "04-26", "output": 2500},
-        ]
-
-    return jsonify({
-        "stats": {
-            "total_output": 12500,
-            "total_orders": 45,
-            "completed": 14,
-            "in_production": 28,
-            "avg_daily": 2080,
-            "on_time_rate": "94.5%",
-            "defect_rate": "1.2%",
-            "urgent_count": 3,
-        },
-        "trend": trend,
-        "store_distribution": [
-            {"name": "友尚旗舰店", "count": 12, "pct": 27},
-            {"name": "亚润跨境", "count": 8, "pct": 18},
-            {"name": "三羊现货", "count": 7, "pct": 16},
-            {"name": "正方形定制", "count": 5, "pct": 11},
-            {"name": "其他店铺", "count": 13, "pct": 28},
-        ],
-        "process_load": [
-            {"name": "审单", "current": 5, "capacity": 10, "pct": 50},
-            {"name": "算料", "current": 8, "capacity": 10, "pct": 80},
-            {"name": "啤机", "current": 12, "capacity": 15, "pct": 80},
-            {"name": "清废", "current": 6, "capacity": 10, "pct": 60},
-            {"name": "打包发货", "current": 9, "capacity": 12, "pct": 75},
-        ],
-        "product_type": [
-            {"name": "飞机盒(固定刀模)", "count": 15, "pct": 33},
-            {"name": "飞机盒(组合刀模)", "count": 8, "pct": 18},
-            {"name": "飞机盒(手啤)", "count": 7, "pct": 16},
-            {"name": "纸箱", "count": 10, "pct": 22},
-            {"name": "现货直发", "count": 5, "pct": 11},
-        ],
-        "hourly_output": [
-            {"hour": "08", "val": 120},{"hour": "09", "val": 350},{"hour": "10", "val": 580},
-            {"hour": "11", "val": 720},{"hour": "12", "val": 800},{"hour": "13", "val": 650},
-            {"hour": "14", "val": 920},{"hour": "15", "val": 1100},{"hour": "16", "val": 1250},
-            {"hour": "17", "val": 1350},{"hour": "18", "val": 1100},{"hour": "19", "val": 850},
-        ],
-        "worker_productivity": [
-            {"name": "蒋义红组", "output": 4500, "target": 5000, "pct": 90},
-            {"name": "沈齐豪组", "output": 3500, "target": 4000, "pct": 88},
-            {"name": "清废承包", "output": 2800, "target": 3000, "pct": 93},
-            {"name": "仓库组", "output": 1700, "target": 2000, "pct": 85},
-        ]
-    })
+    cache_path = _orders_cache_path()
+    return jsonify(
+        ph.build_databoard(cache_path, range_type, _order_extra)
+    )
 
 def _orders_cache_path():
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "orders_cache.json")
@@ -1646,6 +1409,7 @@ def save_processes():
     data = request.get_json()
     if data and 'processes' in data:
         _permission_data['processes'] = data['processes']
+        persist()
     return jsonify({"success": True, "message": "流程已保存"})
 
 # ==================== 扫码报工-可选操作人（按角色过滤） ====================
@@ -3892,7 +3656,7 @@ def production_dashboard():
     
     result = []
     for o in all_orders:
-        so_id = o.get('so_id', '')
+        so_id = ph.internal_order_id(o)
         first_item = (o.get('items') or [{}])[0]
         prod_name = first_item.get('name', '')
         order_type = '飞机盒'
@@ -3916,17 +3680,17 @@ def production_dashboard():
         progress = 0
         steps = []
         if flow:
-            try:
-                steps_list = json.loads(flow['steps_json']) if isinstance(flow['steps_json'], str) else flow['steps_json']
-            except:
-                steps_list = []
+            parsed = ph.parse_flow_steps(flow.get('steps_json'))
             current_idx = flow.get('current_step_index', 0) or 0
-            total_s = flow.get('total_steps', 0) or len(steps_list)
-            progress = round(current_idx / total_s * 100) if total_s > 0 else 0
-            for i, s in enumerate(steps_list):
-                sname = s['name'] if isinstance(s, dict) else s
-                done = i < current_idx
-                steps.append({"name": sname, "done": done, "active": i == current_idx})
+            total_s = flow.get('total_steps', 0) or len(parsed)
+            done_n = sum(1 for s in parsed if s.get('done'))
+            progress = round(done_n / total_s * 100) if total_s > 0 else 0
+            for i, s in enumerate(parsed):
+                steps.append({
+                    "name": s.get('step') or s.get('name'),
+                    "done": bool(s.get('done')),
+                    "active": (not s.get('done')) and i == done_n,
+                })
         
         total_qty = sum(i.get('qty', 0) for i in (o.get('items') or []))
         addr = o.get('receiver_address', '')
@@ -4081,61 +3845,31 @@ def production_print():
 
 @app.route('/api/flow/create', methods=['POST'])
 def production_flow_create():
-    """创建生产工单"""
+    """创建生产工单（工序来自权限树：岗位→接单→工序）"""
     data = request.get_json() or {}
-    order_id = data.get('order_id', '')
+    order_id = (data.get('order_id') or '').strip()
     if not order_id:
         return jsonify({'success': False, 'error': '缺少order_id'})
     try:
-        db = get_db()
-        cur = db.cursor()
-        # 检查是否已存在
-        cur.execute("SELECT * FROM production_flows WHERE order_id=%s", (order_id,))
-        existing = cur.fetchone()
-        if existing:
-            # 重置已有工单
-            cur.execute("UPDATE production_flows SET current_step_index=0, status='active', updated_at=NOW() WHERE order_id=%s", (order_id,))
-            db.close()
-            return jsonify({'success': True, 'flow': {'order_id': order_id, 'status': 'active'}, 'message': '工单已重置'})
-        
-        # 读取订单类型
-        order_type = '飞机盒'
-        try:
-            cache_file = ORDERS_CACHE_FILE
-            if not os.path.isabs(cache_file):
-                cache_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), cache_file)
-            if os.path.exists(cache_file):
-                with open(cache_file, 'r', encoding='utf-8') as f:
-                    cache = json.load(f)
-                for o in cache.get('orders', []):
-                    if o.get('so_id') == order_id:
-                        fn = ((o.get('items') or [{}])[0]).get('name', '')
-                        if '纸箱' in fn: order_type = '纸箱'
-                        elif '扣底盒' in fn or '双插盒' in fn: order_type = '扣底盒'
-                        elif '现货' in fn or '现' in fn: order_type = '现货'
-                        break
-        except:
-            pass
-        
-        # 工单步骤
-        steps_map = {
-            '飞机盒': ['接单', '啤货', '印刷', '裱纸', '模切', '贴胶', '成型', '质检', '打包', '发货'],
-            '纸箱': ['接单', '啤货', '印刷', '裱纸', '模切', '开槽', '打钉', '质检', '打包', '发货'],
-            '扣底盒': ['接单', '啤货', '印刷', '裱纸', '模切', '贴胶', '成型', '质检', '打包', '发货'],
-            '现货': ['接单', '捡货', '质检', '打包', '发货'],
-        }
-        steps = steps_map.get(order_type, ['接单', '生产', '发货'])
-        total = len(steps)
-        
-        # 啤货推荐
-        machine_recommend = ''
-        
-        cur.execute(
-            "INSERT INTO production_flows (id, order_id, product_type, steps_json, current_step_index, total_steps, status, machine_recommend) VALUES (%s,%s,%s,%s,0,%s,'active',%s)",
-            (order_id, order_id, order_type, json.dumps(steps, ensure_ascii=False), total, machine_recommend)
-        )
-        db.close()
-        return jsonify({'success': True, 'flow': {'order_id': order_id, 'product_type': order_type, 'total_steps': total, 'machine_recommend': machine_recommend}})
+        orders = ph.load_cache_orders(_orders_cache_path())
+        o = ph.find_order_in_cache(orders, order_id)
+        oid = ph.internal_order_id(o) if o else order_id
+        order_type = ph.infer_order_type(o) if o else '飞机盒'
+        dept = ph.get_process_dept(_permission_data.get("processes", []), order_type)
+        steps = ph.steps_from_dept(dept)
+        existed = ph.get_flow_row(DB_CONFIG, oid) is not None
+        ph.save_flow_row(DB_CONFIG, oid, order_type, steps)
+        msg = '工单已重置' if existed else '工单已创建'
+        return jsonify({
+            'success': True,
+            'message': msg,
+            'flow': {
+                'order_id': oid,
+                'product_type': order_type,
+                'total_steps': len(steps),
+                'dept': (dept or {}).get('dept', ''),
+            },
+        })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
