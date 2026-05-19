@@ -143,28 +143,166 @@ def order_count_mysql() -> int:
         return 0
 
 
-def _hydrate_order_items(o: dict) -> None:
-    """order_json 可能只有 items_json 字符串而无 items 数组（打单 full_items 依赖 items）。"""
+_ITEM_LIST_KEYS = (
+    "items",
+    "orders",
+    "orderList",
+    "lines",
+    "list",
+    "rows",
+    "productItems",
+)
+_ITEM_JSON_KEYS = (
+    "items_json",
+    "itemsJson",
+    "item_json",
+    "order_items_json",
+    "lines_json",
+)
+
+
+def _coerce_item_dicts(raw: Any) -> list[dict]:
+    if isinstance(raw, list):
+        return [x for x in raw if isinstance(x, dict)]
+    if isinstance(raw, dict):
+        for key in _ITEM_LIST_KEYS:
+            got = raw.get(key)
+            if isinstance(got, list):
+                items = [x for x in got if isinstance(x, dict)]
+                if items:
+                    return items
+    return []
+
+
+def _parse_items_blob(raw: Any) -> list[dict]:
+    """解析 items_json / 双重 JSON 编码 / 嵌套 {items:[...]}。"""
+    if raw is None or raw == "":
+        return []
+    if isinstance(raw, (list, dict)):
+        return _coerce_item_dicts(raw)
+    if not isinstance(raw, str):
+        return []
+    s = raw.strip()
+    if not s:
+        return []
+    for _ in range(4):
+        try:
+            parsed = json.loads(s)
+        except (TypeError, json.JSONDecodeError):
+            return []
+        if isinstance(parsed, str):
+            s = parsed.strip()
+            if not s:
+                return []
+            continue
+        return _coerce_item_dicts(parsed)
+    return []
+
+
+def _order_has_usable_items(o: dict) -> bool:
+    items = o.get("items")
+    if isinstance(items, list):
+        return any(isinstance(x, dict) for x in items)
+    return False
+
+
+def _fetch_line_items_map(cur) -> dict[str, list[dict]]:
+    """从 order_cache_items 表恢复子单（order_json 缺 items 时）。"""
+    try:
+        cur.execute(
+            "SELECT so_id, line_idx, item_json FROM order_cache_items "
+            "ORDER BY so_id, line_idx"
+        )
+    except Exception:
+        return {}
+    out: dict[str, list[dict]] = {}
+    for r in cur.fetchall() or []:
+        sid = str(r.get("so_id") or "").strip()
+        if not sid:
+            continue
+        try:
+            it = json.loads(r.get("item_json") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if isinstance(it, dict):
+            out.setdefault(sid, []).append(it)
+    return out
+
+
+def _hydrate_order_items(
+    o: dict,
+    *,
+    line_items: list[dict] | None = None,
+) -> None:
+    """order_json 常仅有 items_json 字符串；子单也可能只在 order_cache_items 表。"""
     if not isinstance(o, dict):
         return
+    if line_items:
+        o["items"] = line_items
+        return
+    if _order_has_usable_items(o):
+        return
     existing = o.get("items")
-    if isinstance(existing, list) and len(existing) > 0:
-        return
-    raw = o.get("items_json")
-    if raw is None or raw == "":
-        return
-    if isinstance(raw, list):
-        o["items"] = raw
-        return
-    if isinstance(raw, str):
-        try:
-            parsed = json.loads(raw)
-        except (TypeError, json.JSONDecodeError):
+    if isinstance(existing, str):
+        got = _parse_items_blob(existing)
+        if got:
+            o["items"] = got
             return
-        if isinstance(parsed, list):
-            o["items"] = parsed
-        elif isinstance(parsed, dict):
-            o["items"] = [parsed]
+    for key in _ITEM_JSON_KEYS:
+        got = _parse_items_blob(o.get(key))
+        if got:
+            o["items"] = got
+            return
+    for key in ("orders", "orderList", "lines"):
+        got = _coerce_item_dicts(o.get(key))
+        if got:
+            o["items"] = got
+            return
+
+
+def repair_orders_items_in_mysql(*, limit: int = 0) -> int:
+    """把 items_json / 子单表 写回 order_json.items，修复历史脏数据。"""
+    ensure_order_cache_tables()
+    db = _connect()
+    cur = db.cursor()
+    items_map = _fetch_line_items_map(cur)
+    cur.execute("SELECT so_id, order_json FROM order_cache_orders")
+    rows = cur.fetchall() or []
+    fixed = 0
+    try:
+        for r in rows:
+            if limit and fixed >= limit:
+                break
+            sid = str(r.get("so_id") or "").strip()
+            try:
+                o = json.loads(r.get("order_json") or "{}")
+            except (TypeError, json.JSONDecodeError):
+                continue
+            if not isinstance(o, dict):
+                continue
+            before = _order_has_usable_items(o)
+            _hydrate_order_items(o, line_items=items_map.get(sid))
+            if not _order_has_usable_items(o) or before:
+                continue
+            cur.execute(
+                "UPDATE order_cache_orders SET order_json=%s, updated_at=%s WHERE so_id=%s",
+                (
+                    json.dumps(o, ensure_ascii=False, default=str),
+                    time.time(),
+                    sid,
+                ),
+            )
+            fixed += 1
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        cur.close()
+        db.close()
+    if fixed:
+        print(f"[order_cache] repair_orders_items: 已修复 {fixed} 条 order_json")
+    return fixed
 
 
 def _order_row_from_dict(o: dict, updated_at: float) -> tuple:
@@ -279,6 +417,7 @@ def write_orders_snapshot(
             ),
         )
         db.commit()
+        _invalidate_production_dashboard_cache()
         return n
     except Exception:
         db.rollback()
@@ -286,6 +425,15 @@ def write_orders_snapshot(
     finally:
         cur.close()
         db.close()
+
+
+def _invalidate_production_dashboard_cache() -> None:
+    try:
+        import production_dashboard_cache as pdc
+
+        pdc.invalidate_dashboard_cache()
+    except ImportError:
+        pass
 
 
 def read_meta() -> dict[str, Any]:
@@ -316,8 +464,10 @@ def read_orders_mysql(*, finalize: bool = True) -> list[dict]:
     ensure_order_cache_tables()
     db = _connect()
     cur = db.cursor()
+    items_map = _fetch_line_items_map(cur)
     cur.execute(
-        "SELECT order_json FROM order_cache_orders ORDER BY created DESC, so_id DESC"
+        "SELECT order_json, so_id FROM order_cache_orders "
+        "ORDER BY created DESC, so_id DESC"
     )
     rows = cur.fetchall()
     cur.close()
@@ -329,7 +479,8 @@ def read_orders_mysql(*, finalize: bool = True) -> list[dict]:
         except (TypeError, json.JSONDecodeError):
             continue
         if isinstance(o, dict):
-            _hydrate_order_items(o)
+            sid = str(o.get("so_id") or r.get("so_id") or "").strip()
+            _hydrate_order_items(o, line_items=items_map.get(sid))
             orders.append(o)
     if finalize:
         try:
@@ -350,8 +501,9 @@ def find_order_mysql(query: str) -> dict | None:
     db = _connect()
     cur = db.cursor()
     ql = q.lower()
+    items_map = _fetch_line_items_map(cur)
     cur.execute(
-        "SELECT order_json FROM order_cache_orders WHERE so_id=%s OR tid=%s LIMIT 1",
+        "SELECT order_json, so_id FROM order_cache_orders WHERE so_id=%s OR tid=%s LIMIT 1",
         (q, q),
     )
     row = cur.fetchone()
@@ -362,7 +514,8 @@ def find_order_mysql(query: str) -> dict | None:
                 o = json.loads(r["order_json"])
             except (TypeError, json.JSONDecodeError):
                 continue
-            _hydrate_order_items(o)
+            sid = str(o.get("so_id") or r.get("so_id") or "")
+            _hydrate_order_items(o, line_items=items_map.get(sid))
             so_id = str(o.get("so_id") or "")
             tid = str(o.get("tid") or o.get("platform_tid") or "")
             if q == so_id or q == tid or ql in so_id.lower() or (tid and ql in tid.lower()):
@@ -378,7 +531,8 @@ def find_order_mysql(query: str) -> dict | None:
         o = json.loads(row["order_json"])
     except (TypeError, json.JSONDecodeError):
         return None
-    _hydrate_order_items(o)
+    sid = str(o.get("so_id") or row.get("so_id") or "").strip()
+    _hydrate_order_items(o, line_items=items_map.get(sid))
     try:
         import km_api as _km
 

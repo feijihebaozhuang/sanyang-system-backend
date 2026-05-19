@@ -142,6 +142,12 @@ def _write_mysql_snapshot(
     )
     stats = ocs.compute_dashboard_stats(pending)
     ocs.write_stats_cache("dashboard_summary", stats)
+    try:
+        import production_dashboard_cache as _pdc
+
+        _pdc.invalidate_dashboard_cache()
+    except ImportError:
+        pass
     return len(pending)
 
 
