@@ -160,22 +160,6 @@ def build_production_spec(
     combined = f"{text} {name}".strip()
     diam_type = _parse_diameter_type(combined)
 
-    if text == "定制" or (text.startswith("定制") and "；" not in text[len("定制") :]):
-        line = "定制"
-        if diam_type:
-            line = f"{diam_type} {line}"
-        return {
-            "line": line,
-            "size": "",
-            "bundle": "",
-            "qty": int(qty or 0),
-            "material": "",
-            "diameter_type": diam_type,
-            "length": None,
-            "width": None,
-            "height": None,
-        }
-
     dims = _parse_dimensions(text)
     size = ""
     if dims.get("l") and dims.get("w") and dims.get("h"):
