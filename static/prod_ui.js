@@ -8,6 +8,71 @@
     window._prodTotalPages = 1;
     window._prodDashboardOrders = window._prodDashboardOrders || [];
     window._prodOrderDetail = window._prodOrderDetail || {};
+    window._dimoldbNameMap = window._dimoldbNameMap || {};
+    window._dimoldbNameMapPromise = null;
+
+    window.ensureDimoldbNameMap = function () {
+        if (window._dimoldbNameMapPromise) return window._dimoldbNameMapPromise;
+        window._dimoldbNameMapPromise = (async function () {
+            try {
+                var page = 1;
+                var totalPages = 1;
+                while (page <= totalPages) {
+                    var res = await fetch(
+                        '/api/dimoldb?page=' + page + '&page_size=200'
+                    );
+                    var data = await res.json();
+                    if (!data.success) break;
+                    (data.data || []).forEach(function (d) {
+                        if (d && d.id) {
+                            window._dimoldbNameMap[d.id] =
+                                (d.name || '').trim() || d.id;
+                        }
+                    });
+                    totalPages = data.total_pages || 1;
+                    page += 1;
+                }
+                if (
+                    window._prodDashboardOrders &&
+                    window._prodDashboardOrders.length &&
+                    typeof renderProdDashboard === 'function'
+                ) {
+                    renderProdDashboard(window._prodDashboardOrders);
+                }
+            } catch (e) {
+                /* ignore */
+            }
+        })();
+        return window._dimoldbNameMapPromise;
+    };
+
+    window.prodDimoldbDisplayName = function (idOrMc) {
+        if (!idOrMc) return '';
+        if (typeof idOrMc === 'object') {
+            var mc = idOrMc;
+            var id =
+                mc.dimoldb_id ||
+                (mc.dimoldb && mc.dimoldb.dimoldb_id) ||
+                '';
+            var label = (mc.dimoldb_label || '').trim();
+            var fromName =
+                (mc.dimoldb_name || '').trim() ||
+                (mc.dimoldb && mc.dimoldb.name) ||
+                (id && window._dimoldbNameMap[id]) ||
+                '';
+            if (fromName) return fromName;
+            if (label && label.indexOf('dm_') !== 0) return label;
+            return (
+                (mc.dimoldb_code || '').trim() ||
+                (id && window._dimoldbNameMap[id]) ||
+                id ||
+                ''
+            );
+        }
+        var id = String(idOrMc).trim();
+        if (!id) return '';
+        return window._dimoldbNameMap[id] || id;
+    };
 
     window.openWpsKdocsEmbed = function () {
         if (typeof switchTopPage === 'function') {
@@ -88,9 +153,10 @@
             if (!raw) return false;
             var data = JSON.parse(raw);
             if (!data.orders || !data.orders.length) return false;
+            var cachedPage = parseInt(data.page, 10) || 1;
+            if (cachedPage !== window._prodPage) return false;
             window._prodDashboardOrders = data.orders;
             window._prodTotalPages = data.total_pages || 1;
-            window._prodPage = data.page || 1;
             if (data.filters && data.filters.shops) {
                 var shopSel = document.getElementById('prodFilterShop');
                 if (shopSel && shopSel.options.length <= 1) {
@@ -159,6 +225,7 @@
 
     window.loadProdDashboard = async function (resetPage) {
         if (resetPage === true) window._prodPage = 1;
+        ensureDimoldbNameMap();
         var hadCache = prodApplyCachedDashboard();
         if (!hadCache) {
             renderProdDashboard([]);
@@ -468,12 +535,8 @@
         var paper = mc.paper_display || mc.paper_spec || (mc.paper && mc.paper.paper_spec) || '—';
         var boards = mc.boards_needed != null ? mc.boards_needed : '—';
         var per = mc.sheets_per_board != null ? mc.sheets_per_board : '—';
-        var dm =
-            mc.dimoldb_label ||
-            mc.dimoldb_id ||
-            mc.dimoldb_code ||
-            (mc.dimoldb && mc.dimoldb.dimoldb_id) ||
-            '—';
+        var dm = prodDimoldbDisplayName(mc);
+        if (!dm) dm = '—';
         return (
             '<div style="font-size:10px;color:#555;margin-top:2px;line-height:1.4;">' +
             icon +

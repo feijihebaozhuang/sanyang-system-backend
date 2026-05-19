@@ -224,6 +224,23 @@
         .db-card .db-label { font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 4px; }
         .db-chart { background: #1e293b; border-radius: 10px; padding: 14px; }
         .db-chart-title { font-size: 13px; color: rgba(255,255,255,0.7); margin-bottom: 10px; font-weight: 500; }
+        .board-hourly-chart {
+            display: flex;
+            align-items: flex-end;
+            gap: 4px;
+            height: 150px;
+            padding: 8px 4px;
+            box-sizing: border-box;
+        }
+        .board-hourly-chart .hourly-col {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-end;
+            height: 100%;
+            min-width: 0;
+        }
 
         @media (max-width: 768px) {
             .topbar { padding: 0 10px; flex-wrap: wrap; height: auto; min-height: 48px; }
@@ -260,6 +277,22 @@
             #page-databoard > div > div[style*="grid-template-columns:repeat(7,1fr)"] { grid-template-columns: repeat(2,1fr) !important; }
             #page-databoard > div > div[style*="grid-template-columns:repeat(3,1fr)"] { grid-template-columns: 1fr !important; }
             #page-databoard > div > div[style*="grid-template-columns:repeat(2,1fr)"] { grid-template-columns: 1fr !important; }
+            #boardHourly.board-hourly-chart,
+            #boardHourly {
+                display: grid !important;
+                grid-template-columns: repeat(3, 1fr) !important;
+                gap: 10px 8px !important;
+                height: auto !important;
+                min-height: 0 !important;
+                overflow-x: visible !important;
+                align-items: end !important;
+                padding: 10px 8px !important;
+            }
+            #boardHourly .hourly-col {
+                flex: none !important;
+                height: auto !important;
+                min-height: 72px;
+            }
             /* 扫码弹窗 */
             #scannerModal .modal { max-width: 95% !important; margin: 10px; }
             /* 订单详情弹窗 */
@@ -1177,7 +1210,7 @@
                 <div class="db-chart"><div class="db-chart-title">📈 每日产出趋势</div><div class="bar-chart" id="boardTrendChart" style="height:180px;"></div></div>
                 <div class="db-chart">
                     <div class="db-chart-title">⏰ 今日各时段产出</div>
-                    <div style="display:flex;align-items:flex-end;gap:4px;height:150px;padding:8px 4px;" id="boardHourly"></div>
+                    <div class="board-hourly-chart" id="boardHourly"></div>
                 </div>
             </div>
 
@@ -2810,7 +2843,7 @@
         const maxH = Math.max(...data.hourly_output.map(d => d.val));
         document.getElementById('boardHourly').innerHTML = data.hourly_output.map(d => {
             const h = Math.max((d.val / maxH * 130), 4);
-            return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;">
+            return `<div class="hourly-col">
                 <div style="font-size:9px;color:rgba(255,255,255,0.4);margin-bottom:2px;">${d.val}</div>
                 <div style="width:100%;height:${h}px;background:linear-gradient(180deg,#a78bfa,#7c3aed);border-radius:2px 2px 0 0;min-height:4px;"></div>
                 <div style="font-size:9px;color:rgba(255,255,255,0.3);margin-top:4px;">${d.hour}:00</div>
