@@ -3230,21 +3230,77 @@ def permissions():
 def login_simple():
     return send_from_directory('.', 'simple_login.html')
 
-# ==================== 原材料库存 API ====================
+# ==================== 原材料库存 API（MySQL raw_materials） ====================
 RAW_DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'raw_data.json')
 
+
 def load_raw_data():
-    if not os.path.exists(RAW_DATA_FILE):
-        return []
+    """从 MySQL 加载纸板规格（与 app.py 客服端一致）。"""
     try:
-        with open(RAW_DATA_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except:
+        db = get_db()
+        cur = db.cursor()
+        cur.execute(
+            "SELECT id, date, name, supplier, paper_width, paper_length, qty, remark, created_at, updated_at "
+            "FROM raw_materials ORDER BY id DESC"
+        )
+        rows = cur.fetchall()
+        result = []
+        for r in rows:
+            result.append(
+                {
+                    "id": r["id"],
+                    "date": r["date"] or "",
+                    "name": r["name"] or "",
+                    "supplier": r["supplier"] or "",
+                    "paper_width": str(r["paper_width"] or ""),
+                    "paper_length": str(r["paper_length"] or ""),
+                    "qty": r["qty"] or 0,
+                    "remark": r["remark"] or "",
+                    "created_at": str(r["created_at"] or ""),
+                    "updated_at": str(r["updated_at"] or ""),
+                }
+            )
+        cur.close()
+        db.close()
+        return result
+    except Exception as e:
+        print(f"[MySQL load_raw_data] 错误: {e}")
         return []
 
+
 def save_raw_data(data):
-    with open(RAW_DATA_FILE, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    """批量写回 MySQL（管理端导入/维护用）。"""
+    try:
+        db = get_db()
+        cur = db.cursor()
+        cur.execute("TRUNCATE TABLE raw_materials")
+        for item in data:
+            cur.execute(
+                "INSERT INTO raw_materials (id, date, name, supplier, paper_width, paper_length, qty, remark, created_at, updated_at) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                (
+                    item.get("id", ""),
+                    item.get("date", ""),
+                    item.get("name", ""),
+                    item.get("supplier", ""),
+                    item.get("paper_width", ""),
+                    item.get("paper_length", ""),
+                    item.get("qty", 0),
+                    item.get("remark", ""),
+                    item.get("created_at", ""),
+                    item.get("updated_at", ""),
+                ),
+            )
+        db.commit()
+        cur.close()
+        db.close()
+        import material_calc as _mc
+
+        _mc._raw_cache = {"ts": 0, "rows": []}
+        return True
+    except Exception as e:
+        print(f"[MySQL save_raw_data] 错误: {e}")
+        return False
 
 @app.route('/api/raw/template', methods=['GET'])
 def template_raw():
@@ -3370,8 +3426,8 @@ def get_raw():
         data = [d for d in data if str(d.get('paper_length', '')) == paper_length]
     if search:
         data = [d for d in data if search.lower() in d.get('name', '').lower() or search.lower() in d.get('remark', '').lower()]
-    data.sort(key=lambda x: x.get('created_at', ''), reverse=True)
-    return jsonify({"success": True, "data": data})
+    data.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    return jsonify({"success": True, "data": data, "total": len(data)})
 
 @app.route('/api/raw', methods=['POST'])
 def add_raw():
@@ -4028,6 +4084,160 @@ def _send_xlsx_template(headers: list, sample_rows: list, filename: str):
         download_name=filename,
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+
+
+# ==================== 生产公告 ====================
+try:
+    import production_announcements as prod_ann
+
+    prod_ann.ensure_tables(get_db)
+except Exception as _ann_ex:
+    print(f"[公告] 表初始化: {_ann_ex}")
+
+
+def _require_manager_json():
+    un = resolve_login_user()
+    if not un or un not in USERS:
+        return jsonify({"success": False, "error": "未登录"}), 401
+    if USERS[un].get("role") not in ("超级管理员", "管理"):
+        return jsonify({"success": False, "error": "仅管理员可编辑公告"}), 403
+    return None
+
+
+@app.route("/api/production/announcements")
+def production_announcements_list():
+    un = resolve_login_user()
+    if not un:
+        return jsonify({"success": False, "error": "未登录"}), 401
+    items = prod_ann.list_active_for_user(get_db, un)
+    unread = prod_ann.unread_count(get_db, un)
+    role = USERS.get(un, {}).get("role", "")
+    return jsonify(
+        {
+            "success": True,
+            "announcements": items,
+            "unread_count": unread,
+            "can_edit": role in ("超级管理员", "管理"),
+        }
+    )
+
+
+@app.route("/api/production/announcements", methods=["POST"])
+def production_announcements_save():
+    err = _require_manager_json()
+    if err:
+        return err
+    body = request.get_json() or {}
+    title = (body.get("title") or "").strip()
+    content = (body.get("content") or "").strip()
+    ann_id = body.get("id")
+    if not title or not content:
+        return jsonify({"success": False, "error": "标题和内容不能为空"})
+    un = resolve_login_user()
+    row = prod_ann.save_announcement(
+        get_db, title=title, content=content, created_by=un or "", ann_id=ann_id
+    )
+    return jsonify({"success": True, "announcement": row})
+
+
+@app.route("/api/production/announcements/<int:ann_id>/read", methods=["POST"])
+def production_announcements_read(ann_id: int):
+    un = resolve_login_user()
+    if not un:
+        return jsonify({"success": False, "error": "未登录"}), 401
+    prod_ann.mark_read(get_db, un, ann_id)
+    return jsonify({"success": True, "unread_count": prod_ann.unread_count(get_db, un)})
+
+
+@app.route("/api/production/announcements/read-all", methods=["POST"])
+def production_announcements_read_all():
+    un = resolve_login_user()
+    if not un:
+        return jsonify({"success": False, "error": "未登录"}), 401
+    prod_ann.mark_all_read(get_db, un)
+    return jsonify({"success": True, "unread_count": 0})
+
+
+# ==================== 算料 / 纸板匹配 ====================
+import material_calc as mcalc
+
+
+@app.route("/api/production/match-paper", methods=["POST"])
+def production_match_paper():
+    """纸板规格匹配（算料基础）。"""
+    if not resolve_login_user():
+        return jsonify({"success": False, "error": "未登录"}), 401
+    body = request.get_json() or {}
+    spread_l = float(body.get("spread_l_cm") or body.get("spread_l") or 0)
+    spread_w = float(body.get("spread_w_cm") or body.get("spread_w") or 0)
+    material = (body.get("material") or body.get("material_text") or "").strip()
+    rows = mcalc.load_raw_rows(load_raw_data)
+    result = mcalc.match_paper(spread_l, spread_w, material, rows)
+    return jsonify(result)
+
+
+@app.route("/api/production/calc-material", methods=["POST"])
+def production_calc_material():
+    """订单行算料（展开+纸板+刀模）。"""
+    un = resolve_login_user()
+    if not un:
+        return jsonify({"success": False, "error": "未登录"}), 401
+    body = request.get_json() or {}
+    so_id = (body.get("so_id") or body.get("order_id") or "").strip()
+    line_index = body.get("line_index")
+    if line_index is None:
+        line_index = body.get("line_idx", 0)
+    line_index = int(line_index)
+
+    orders = ph.load_cache_orders(_orders_cache_path())
+    order = ph.find_order_in_cache(orders, so_id)
+    if not order:
+        return jsonify({"success": False, "error": "未找到订单"})
+
+    items = order.get("items") or []
+    if line_index < 0 or line_index >= len(items):
+        return jsonify({"success": False, "error": "子单行号无效"})
+
+    it = items[line_index]
+    attrs = (
+        it.get("display") or it.get("platform_attrs") or it.get("spec") or ""
+    ).strip()
+    qty = int(it.get("qty") or 0)
+    order_type = ph.infer_order_type(order)
+    import production_spec as pspec
+
+    mat_map = _production_material_mapping()
+    material_text = pspec.match_production_material(attrs, mat_map) or ""
+
+    qd = load_quote_data() or {}
+    raw_rows = mcalc.load_raw_rows(load_raw_data)
+    dimoldb = load_dimoldb()
+
+    result = mcalc.calc_material_line(
+        attrs=attrs,
+        qty=qty,
+        order_type=order_type,
+        material_text=material_text,
+        quote_data=qd,
+        raw_rows=raw_rows,
+        dimoldb=dimoldb,
+    )
+    mcalc.set_cached_line(so_id, line_index, result)
+    _prod_dash_cache.invalidate_dashboard_cache()
+
+    if result.get("status") == "done":
+        oid = ph.internal_order_id(order)
+        steps = ph.get_or_create_flow_steps(
+            DB_CONFIG, _permission_data.get("processes", []), oid, order_type
+        )
+        for s in steps:
+            if (s.get("step") or s.get("name")) == "算料":
+                s["done"] = True
+                s["active"] = False
+                break
+        ph.save_flow_row(DB_CONFIG, oid, order_type, steps)
+
+    return jsonify({"success": True, "result": result, "so_id": so_id, "line_index": line_index})
 
 
 # ==================== 打单管理 API ====================

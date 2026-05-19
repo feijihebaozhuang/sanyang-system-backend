@@ -265,6 +265,109 @@
         a.click();
     };
 
+    window._prodCurrentAnnId = null;
+
+    window.renderMaterialCalcHtml = function (item) {
+        var mc = item.material_calc || {};
+        var st = mc.status || item.material_status || 'pending';
+        var icon = st === 'done' ? '✅' : st === 'error' ? '❌' : '⏳';
+        if (st !== 'done' && st !== 'error') {
+            return '<div style="font-size:10px;color:#888;margin-top:2px;">算料 ' + icon + '</div>';
+        }
+        var paper = mc.paper_display || (mc.paper && mc.paper.paper_spec) || '—';
+        var boards = mc.boards_needed != null ? mc.boards_needed : '—';
+        var dm = mc.dimoldb_code || (mc.dimoldb && mc.dimoldb.code) || '—';
+        return (
+            '<motion.div style="font-size:10px;color:#555;margin-top:2px;line-height:1.4;">' +
+            icon +
+            ' 纸板：' +
+            paper +
+            '；用量 ' +
+            boards +
+            ' 张；刀模 ' +
+            dm +
+            '</motion.div>'
+        ).replace(/motion\.div/g, 'div');
+    };
+
+    window.calcMaterialLine = async function (soId, lineIdx, ev) {
+        if (ev && ev.stopPropagation) ev.stopPropagation();
+        try {
+            var res = await fetch('/api/production/calc-material', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ so_id: soId, line_index: lineIdx }),
+            });
+            var data = await res.json();
+            if (!data.success) throw new Error(data.error || '算料失败');
+            loadProdDashboard(false);
+        } catch (e) {
+            alert('算料失败：' + e.message);
+        }
+    };
+
+    window.loadProductionAnnouncements = async function () {
+        var bar = document.getElementById('prodAnnouncementBar');
+        if (!bar) return;
+        try {
+            var res = await fetch('/api/production/announcements');
+            var data = await res.json();
+            if (!data.success || !data.announcements || !data.announcements.length) {
+                bar.style.display = 'none';
+                return;
+            }
+            var ann = data.announcements[0];
+            window._prodCurrentAnnId = ann.id;
+            document.getElementById('prodAnnTitle').textContent = ann.title || '公告';
+            document.getElementById('prodAnnContent').textContent = ann.content || '';
+            var badge = document.getElementById('prodAnnBadge');
+            if (badge) badge.style.display = ann.is_read ? 'none' : 'inline';
+            var editBtn = document.getElementById('prodAnnEditBtn');
+            if (editBtn) editBtn.style.display = data.can_edit ? 'inline-block' : 'none';
+            bar.style.display = 'block';
+            if (!ann.is_read && !sessionStorage.getItem('sy_ann_popup_' + ann.id)) {
+                sessionStorage.setItem('sy_ann_popup_' + ann.id, '1');
+                alert('📢 ' + (ann.title || '公告') + '\n\n' + (ann.content || ''));
+            }
+        } catch (e) {
+            bar.style.display = 'none';
+        }
+    };
+
+    window.markAnnouncementRead = async function () {
+        var id = window._prodCurrentAnnId;
+        if (!id) return;
+        try {
+            await fetch('/api/production/announcements/' + id + '/read', { method: 'POST' });
+            var badge = document.getElementById('prodAnnBadge');
+            if (badge) badge.style.display = 'none';
+        } catch (e) {}
+    };
+
+    window.openAnnouncementEditor = async function () {
+        var title = prompt('公告标题', document.getElementById('prodAnnTitle').textContent || '');
+        if (title === null) return;
+        var content = prompt('公告内容（全员可见）', document.getElementById('prodAnnContent').textContent || '');
+        if (content === null) return;
+        try {
+            var res = await fetch('/api/production/announcements', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id: window._prodCurrentAnnId,
+                    title: title,
+                    content: content,
+                }),
+            });
+            var data = await res.json();
+            if (!data.success) throw new Error(data.error || '保存失败');
+            loadProductionAnnouncements();
+            alert('公告已发布');
+        } catch (e) {
+            alert('保存失败：' + e.message);
+        }
+    };
+
     window.submitDataImport = async function () {
         var kind = window._importKind || 'inventory';
         var fileInput = document.getElementById('dataImportFile');

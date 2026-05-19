@@ -80,6 +80,7 @@ def rebuild_dashboard_cache(
     normalize_shop_fn,
 ) -> dict[str, Any]:
     """构建全量打单列表（供分页切片）。"""
+    import material_calc as mcalc
     import production_spec as pspec
 
     printed_info: dict[str, dict] = {}
@@ -165,7 +166,7 @@ def rebuild_dashboard_cache(
                 )
 
         full_items = []
-        for item in o.get("items") or []:
+        for line_idx, item in enumerate(o.get("items") or []):
             if not isinstance(item, dict):
                 continue
             attrs = (
@@ -179,6 +180,8 @@ def rebuild_dashboard_cache(
             ps = pspec.build_production_spec(
                 attrs, qty, material_mapping=material_mapping or []
             )
+            cached_mc = mcalc.get_cached_line(so_id, line_idx)
+            mc_status = (cached_mc or {}).get("status") or "pending"
             full_items.append(
                 {
                     "name": item.get("name", "") or "",
@@ -194,6 +197,9 @@ def rebuild_dashboard_cache(
                     "stock_qty": stock_qty,
                     "stock_info": stock_info,
                     "material_name": ps.get("material") or "—",
+                    "material_status": mc_status,
+                    "material_calc": cached_mc or {"status": mc_status},
+                    "line_index": line_idx,
                 }
             )
 

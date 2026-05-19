@@ -897,6 +897,19 @@
             <div class="stat-card done"><div class="num" id="statDone">--</div><div class="label">总完成</div></div>
         </div>
 
+        <div id="prodAnnouncementBar" style="display:none;margin:12px 0;background:#fff7e6;border:1px solid #ffd591;border-radius:10px;padding:12px 14px;box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;">
+                <div style="flex:1;min-width:200px;">
+                    <div style="font-size:14px;font-weight:600;color:#d48806;margin-bottom:6px;">📢 <span id="prodAnnTitle">公告</span> <span id="prodAnnBadge" style="display:none;background:#e94560;color:#fff;font-size:11px;padding:1px 6px;border-radius:10px;margin-left:6px;">未读</span></div>
+                    <div id="prodAnnContent" style="font-size:13px;color:#333;line-height:1.6;white-space:pre-wrap;"></div>
+                </div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                    <button type="button" id="prodAnnReadBtn" onclick="markAnnouncementRead()" style="padding:6px 12px;background:#1677ff;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;">我知道了</button>
+                    <button type="button" id="prodAnnEditBtn" onclick="openAnnouncementEditor()" style="display:none;padding:6px 12px;background:#52c41a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;">编辑公告</button>
+                </div>
+            </div>
+        </div>
+
         <!-- 刀模快速查询 -->
         <div class="dm-quick-card" style="background:#fff;border-radius:10px;padding:16px;margin:12px 0;box-shadow:0 1px 4px rgba(0,0,0,0.06);">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
@@ -2290,6 +2303,7 @@
         allOrders = [];
         const todayWrap = document.getElementById('todayOrdersWrap');
         if (todayWrap) todayWrap.style.display = 'none';
+        if (typeof loadProductionAnnouncements === 'function') loadProductionAnnouncements();
     }
 
     async function loadProductionOrdersForScan() {
@@ -2433,11 +2447,13 @@
                             return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
                         };
                         var prodLine = renderProductionSpecHtml(item, true);
+                        var mcHtml = typeof renderMaterialCalcHtml === 'function' ? renderMaterialCalcHtml(item) : '';
+                        var calcBtn = '<button type="button" onclick="calcMaterialLine(\'' + o.so_id + '\',' + idx + ',event)" style="margin-left:4px;padding:1px 6px;font-size:10px;background:#722ed1;color:#fff;border:none;border-radius:3px;cursor:pointer;">算料</button>';
                         lines.push('<div style="font-size:11px;line-height:1.5;padding:2px 0;border-bottom:' + (idx < specs.length-1 ? '1px dashed #eee' : 'none') + ';white-space:normal;word-break:break-word;">' +
                             '<span style="color:#333;">' + _escProd(attrs || '—') + '</span> ' +
                             '<strong style="color:#e94560;">×' + (item.qty || 0) + '</strong> ' +
                             '<span style="font-size:10px;' + (item.has_stock ? 'color:#52c41a;' : 'color:#e94560;') + 'font-weight:500;">' + (item.has_stock ? '✅现货' : '📦需生产') + '</span>' +
-                            prodLine +
+                            calcBtn + prodLine + mcHtml +
                             '</div>');
                     });
                     itemsHtml = lines.join('');
