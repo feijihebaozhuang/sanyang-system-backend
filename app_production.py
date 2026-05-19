@@ -2297,7 +2297,9 @@ def add_dimoldb():
     if not _has_dimoldb_edit_perm():
         return jsonify({"success": False, "error": "无权限"})
     try:
-        item = request.get_json()
+        item = request.get_json(silent=True)
+        if not isinstance(item, dict):
+            return jsonify({"success": False, "error": "请求体为空或 Content-Type 不是 application/json"})
         required = ['product_type', 'name', 'length', 'width', 'height']
         for k in required:
             if k not in item:
@@ -2317,7 +2319,9 @@ def update_dimoldb(dm_id):
     if not _has_dimoldb_edit_perm():
         return jsonify({"success": False, "error": "无权限"})
     try:
-        item = request.get_json()
+        item = request.get_json(silent=True)
+        if not isinstance(item, dict):
+            return jsonify({"success": False, "error": "请求体为空或 Content-Type 不是 application/json"})
         data = load_dimoldb()
         for d in data:
             if d.get('id') == dm_id:
@@ -2579,7 +2583,7 @@ def export_inventory():
 def search_dimoldb():
     """查询某尺寸是否有固定刀模（供报价系统调用）"""
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         ptype = data.get('type', '')
         length = data.get('length')
         width = data.get('width')

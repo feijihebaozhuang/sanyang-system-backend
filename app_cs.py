@@ -2204,7 +2204,7 @@ def export_inventory():
 def search_dimoldb():
     """查询某尺寸是否有固定刀模（供报价系统调用）"""
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         ptype = data.get('type', '')
         length = data.get('length')
         width = data.get('width')
