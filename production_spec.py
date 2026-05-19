@@ -18,6 +18,15 @@ _HEIGHT_BRACKET_RE = re.compile(
     r"(?:高度|高)\s*【\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?\s*】",
     re.I,
 )
+# 【高】25cm / 【高】25（无「高度」二字）
+_HEIGHT_TAG_ONLY_RE = re.compile(
+    r"【\s*高\s*】\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?",
+    re.I,
+)
+_PLATFORM_LABEL_RE = re.compile(
+    r"(?:规格|尺寸|材质硬度等级|颜色分类|材质|颜色|硬度等级|硬度)[:：]\s*",
+    re.I,
+)
 # 长x宽【20x20cm】 / 长x宽【20*20】
 _LW_IN_BRACKET_RE = re.compile(
     r"长\s*x?\s*宽\s*【\s*(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?\s*】",
@@ -68,8 +77,21 @@ def _fmt_num(n: float) -> str:
     return s
 
 
-def _parse_dimensions(text: str) -> dict[str, float]:
+def sanitize_sku_attrs(text: str) -> str:
+    """去掉平台字段名前缀，只保留属性值供解析/展示。"""
+    if not text:
+        return ""
+    t = _PLATFORM_LABEL_RE.sub("", text)
+    t = re.sub(r"[;；]+\s*", " ", t)
+    return re.sub(r"\s{2,}", " ", t).strip()
+
+
+def parse_dimensions_cm(text: str) -> dict[str, float]:
     """解析长/宽/高（厘米）。"""
+    return _parse_dimensions(sanitize_sku_attrs(text) or text)
+
+
+def _parse_dimensions(text: str) -> dict[str, float]:
     dims: dict[str, float] = {}
     if not text:
         return dims
@@ -78,6 +100,15 @@ def _parse_dimensions(text: str) -> dict[str, float]:
     if m:
         dims["l"] = float(m.group(1))
         dims["w"] = float(m.group(2))
+
+    m2_early = re.search(
+        r"(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米)?",
+        text,
+        re.I,
+    )
+    if m2_early and "l" not in dims:
+        dims["l"] = float(m2_early.group(1))
+        dims["w"] = float(m2_early.group(2))
 
     for m in _BRACKET_DIM_RE.finditer(text):
         label, val = m.group(1), float(m.group(2))
@@ -91,9 +122,13 @@ def _parse_dimensions(text: str) -> dict[str, float]:
         if key:
             dims[key] = val
 
-    hm = _HEIGHT_BRACKET_RE.search(text)
-    if hm:
-        dims["h"] = float(hm.group(1))
+    for hm in (
+        _HEIGHT_BRACKET_RE.search(text),
+        _HEIGHT_TAG_ONLY_RE.search(text),
+    ):
+        if hm:
+            dims["h"] = float(hm.group(1))
+            break
 
     if len(dims) < 3:
         m3 = _NUM3_RE.search(text)
@@ -186,7 +221,7 @@ def build_production_spec(
     返回 production_spec 字段供打单管理展示（仅解析买家下单 SKU 属性，不用商品标题）。
     line 示例: 外径 18x14x5   50个/捆   特硬   ×1（数量在材料/颜色后）
     """
-    text = (attrs or "").strip()
+    text = sanitize_sku_attrs(attrs) or (attrs or "").strip()
     diam_type = _parse_diameter_type(text)
 
     dims = _parse_dimensions(text)

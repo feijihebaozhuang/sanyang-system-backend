@@ -284,7 +284,7 @@
         }
         if (st === 'shortage') {
             return (
-                '<div style="font-size:10px;color:#d48806;margin-top:2px;">' +
+                '<div style="font-size:10px;color:#cf1322;font-weight:600;margin-top:2px;">' +
                 icon +
                 ' ' +
                 (mc.error || '缺料，请自行决定') +
@@ -294,7 +294,12 @@
         var paper = mc.paper_display || mc.paper_spec || (mc.paper && mc.paper.paper_spec) || '—';
         var boards = mc.boards_needed != null ? mc.boards_needed : '—';
         var per = mc.sheets_per_board != null ? mc.sheets_per_board : '—';
-        var dm = mc.dimoldb_id || mc.dimoldb_code || (mc.dimoldb && mc.dimoldb.dimoldb_id) || '—';
+        var dm =
+            mc.dimoldb_label ||
+            mc.dimoldb_id ||
+            mc.dimoldb_code ||
+            (mc.dimoldb && mc.dimoldb.dimoldb_id) ||
+            '—';
         return (
             '<div style="font-size:10px;color:#555;margin-top:2px;line-height:1.4;">' +
             icon +
@@ -308,6 +313,32 @@
             dm +
             '</div>'
         );
+    };
+
+    window.batchCalcMaterialOrdersImpl = async function (ids) {
+        var statsEl = document.getElementById('prodStats');
+        var oldStats = statsEl ? statsEl.textContent : '';
+        try {
+            if (statsEl) statsEl.textContent = '算料中…';
+            var res = await fetch('/api/production/calc-material/batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ so_ids: ids }),
+            });
+            var data = await res.json();
+            if (!data.success) throw new Error(data.error || '批量算料失败');
+            alert(
+                '批量算料完成\n成功行: ' +
+                    (data.lines_done || 0) +
+                    '\n失败行: ' +
+                    (data.lines_failed || 0)
+            );
+            loadProdDashboard(false);
+        } catch (e) {
+            alert('批量算料失败：' + e.message);
+        } finally {
+            if (statsEl && oldStats) statsEl.textContent = oldStats;
+        }
     };
 
     window.calcMaterialLine = async function (soId, lineIdx, ev) {

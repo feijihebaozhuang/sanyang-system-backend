@@ -169,12 +169,13 @@ def rebuild_dashboard_cache(
         for line_idx, item in enumerate(o.get("items") or []):
             if not isinstance(item, dict):
                 continue
-            attrs = (
+            raw_attrs = (
                 item.get("display")
                 or item.get("platform_attrs")
                 or item.get("spec")
                 or ""
             ).strip()
+            attrs = pspec.sanitize_sku_attrs(raw_attrs) or raw_attrs
             qty = int(item.get("qty", 0) or 0)
             has_stock, stock_qty, stock_info = _match_inventory(attrs, qty, inv_rows)
             ps = pspec.build_production_spec(

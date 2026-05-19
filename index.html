@@ -1016,6 +1016,7 @@
             <button onclick="printAllUnprinted()" style="padding:4px 12px;background:#52c41a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">🖨️ 一键打印全部未打</button>
             <button onclick="batchPrintProdOrders()" style="padding:4px 12px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">🖨️ 批量打印选中</button>
             <button onclick="batchInitFlows()" style="padding:4px 12px;background:#fa8c16;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">📋 创建工单</button>
+            <button onclick="batchCalcMaterialOrders()" style="padding:4px 12px;background:#722ed1;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">📐 批量算料</button>
         </div>
         <div style="display:flex;gap:8px;margin-top:6px;font-size:11px;color:#888;align-items:center;">
             <span id="prodStats">加载中...</span>
@@ -6250,6 +6251,8 @@ function updateBatchPrintBtn() {
     const n = getSelectedProdIds().length;
     const btn = document.querySelector('button[onclick*="batchPrintProdOrders"]');
     if (btn) btn.textContent = n > 0 ? `🖨️ 批量打印(${n})` : '🖨️ 批量打印选中';
+    const calcBtn = document.querySelector('button[onclick*="batchCalcMaterialOrders"]');
+    if (calcBtn) calcBtn.textContent = n > 0 ? `📐 批量算料(${n})` : '📐 批量算料';
 }
 
 function toggleAllProdCheckbox(el) {
@@ -6292,6 +6295,37 @@ async function unmarkPrinted(orderId) {
         loadProdDashboard();
     } catch(e) {
         alert('❌ ' + e.message);
+    }
+}
+
+async function batchCalcMaterialOrders() {
+    const ids = getSelectedProdIds();
+    if (!ids.length) { alert('请先勾选要算料的订单'); return; }
+    if (typeof window.batchCalcMaterialOrdersImpl === 'function') {
+        return window.batchCalcMaterialOrdersImpl(ids);
+    }
+    const statsEl = document.getElementById('prodStats');
+    const oldStats = statsEl ? statsEl.textContent : '';
+    try {
+        if (statsEl) statsEl.textContent = '算料中 0/' + ids.length + ' …';
+        const res = await fetch('/api/production/calc-material/batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ so_ids: ids }),
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || '批量算料失败');
+        alert(
+            '批量算料完成\n成功行: ' +
+                (data.lines_done || 0) +
+                '\n失败行: ' +
+                (data.lines_failed || 0)
+        );
+        loadProdDashboard(false);
+    } catch (e) {
+        alert('批量算料失败：' + e.message);
+    } finally {
+        if (statsEl && oldStats) statsEl.textContent = oldStats;
     }
 }
 

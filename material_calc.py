@@ -11,18 +11,25 @@ from typing import Any, Callable
 
 import quote_calc_core as qcc
 
-# 订单材质关键词 → raw_materials 行需同时包含的供应商/材质标记（按优先级）
-MATERIAL_ROW_RULES: list[tuple[tuple[str, ...], tuple[str, ...]]] = [
+# 飞机盒/扣底等 E坑（同舟/锦丰/龙成）
+E_PIT_ROW_RULES: list[tuple[tuple[str, ...], tuple[str, ...]]] = [
     (("P6D",), ("同舟", "P6D")),
     (("D6D", "特硬", "国产"), ("同舟", "D6D")),
     (("白色", "双白", "W7W"), ("锦丰", "白")),
     (("台湾", "进口"), ("龙成", "台湾")),
     (("黑色", "黑卡"), ("龙成", "黑")),
     (("红色",), ("龙成", "红")),
-    (("EB", "五层EB", "5层"), ("新浦", "EB")),
-    (("BC", "五层BC"), ("新浦", "BC")),
-    (("B坑", "B瓦", "三层", "3层"), ("新浦", "B")),
 ]
+
+# 纸箱仅新浦 B/EB 坑（不与 E坑 红色等混用）
+CARTON_ROW_RULES: list[tuple[tuple[str, ...], tuple[str, ...]]] = [
+    (("EB", "五层EB", "5层EB"), ("新浦", "EB")),
+    (("BC", "五层BC"), ("新浦", "BC")),
+    (("B坑", "B瓦", "三层", "3层", "3层B", "B楞"), ("新浦", "B")),
+]
+
+E_PIT_SUPPLIERS = ("同舟", "锦丰", "龙成")
+CARTON_SUPPLIERS = ("新浦",)
 
 MAX_REMAINDER_INCH = 1.0
 
@@ -43,7 +50,6 @@ def _float_val(v: Any) -> float:
 
 
 def _to_inch(val: float) -> float:
-    """库内数值：≤120 视为英寸；更大视为厘米并换算。"""
     if val <= 0:
         return 0.0
     if val > 120:
@@ -52,7 +58,6 @@ def _to_inch(val: float) -> float:
 
 
 def _paper_dims_inch(row: dict) -> tuple[float, float]:
-    """paper_width=纸度(英寸), paper_length=纸长(英寸)。"""
     pw = _to_inch(_float_val(row.get("paper_width")))
     pl = _to_inch(_float_val(row.get("paper_length")))
     if pw > 0 and pl > 0 and pw > pl * 3:
@@ -64,23 +69,57 @@ def _row_blob(row: dict) -> str:
     return f"{row.get('supplier','')} {row.get('name','')} {row.get('remark','')}"
 
 
-def row_matches_material(row: dict, material_text: str) -> bool:
+def _is_carton_product(product_type: str, attrs: str = "") -> bool:
+    pt = (product_type or "").strip()
+    a = attrs or ""
+    if pt == "纸箱":
+        return True
+    if "纸箱" in a or "3层" in a or "5层" in a:
+        if "飞机盒" not in a:
+            return True
+    return False
+
+
+def _material_rules(product_type: str, attrs: str) -> list[tuple[tuple[str, ...], tuple[str, ...]]]:
+    if _is_carton_product(product_type, attrs):
+        return CARTON_ROW_RULES
+    return E_PIT_ROW_RULES
+
+
+def _supplier_allowed(blob: str, product_type: str, attrs: str) -> bool:
+    if _is_carton_product(product_type, attrs):
+        return any(s in blob for s in CARTON_SUPPLIERS)
+    return any(s in blob for s in E_PIT_SUPPLIERS)
+
+
+def row_matches_material(
+    row: dict,
+    material_text: str,
+    *,
+    product_type: str = "",
+    attrs: str = "",
+) -> bool:
+    blob = _row_blob(row)
+    if not _supplier_allowed(blob, product_type, attrs):
+        return False
     if not material_text:
         return True
     t = material_text.upper()
-    blob = _row_blob(row).upper()
-    for order_kws, row_kws in MATERIAL_ROW_RULES:
+    blob_u = blob.upper()
+    rules = _material_rules(product_type, attrs)
+    for order_kws, row_kws in rules:
         if any(kw.upper() in t for kw in order_kws):
-            return all(rk.upper() in blob for rk in row_kws)
+            return all(rk.upper() in blob_u for rk in row_kws)
+    if _is_carton_product(product_type, attrs):
+        return False
     return any(
-        k.upper() in blob
+        k.upper() in blob_u
         for k in re.split(r"[\s,，/、]+", material_text)
         if len(k) >= 2
     )
 
 
 def _leftover_inch(stock: float, need: float) -> float | None:
-    """开数≥1 且余料≤1英寸；否则该规格不可用。"""
     if need <= 0 or stock < need:
         return None
     n = int(stock // need)
@@ -98,12 +137,10 @@ def match_paper(
     material_text: str,
     raw_rows: list[dict],
     *,
+    product_type: str = "",
+    attrs: str = "",
     prefer_stock: bool = True,
 ) -> dict[str, Any]:
-    """
-    按英寸匹配纸板：纸度≥paper_w_inch、纸长≥paper_l_inch，余料≤1英寸，选浪费最小。
-    优先 qty>0；无库存则退而求其次。
-    """
     need_l = float(paper_l_inch)
     need_w = float(paper_w_inch)
     if need_l <= 0 or need_w <= 0:
@@ -112,7 +149,9 @@ def match_paper(
     def _scan(rows: list[dict]) -> list[dict]:
         out: list[dict] = []
         for row in rows:
-            if not row_matches_material(row, material_text):
+            if not row_matches_material(
+                row, material_text, product_type=product_type, attrs=attrs
+            ):
                 continue
             pw, pl = _paper_dims_inch(row)
             rem_w = _leftover_inch(pw, need_w)
@@ -182,7 +221,15 @@ def match_dimoldb(
     product_type: str = "",
     tol: float = 0.6,
 ) -> dict[str, Any]:
-    del product_type
+    if _is_carton_product(product_type):
+        return {
+            "success": False,
+            "skip": True,
+            "error": "纸箱无刀模",
+            "dimoldb_id": "",
+            "code": "",
+            "name": "",
+        }
     best = None
     for dm in dimoldb:
         try:
@@ -224,7 +271,7 @@ def resolve_material_key(material_text: str, quote_data: dict) -> str:
         return "eb_keng"
     if "BC" in t.upper():
         return "bc_keng"
-    if "B坑" in t or "B瓦" in t:
+    if "B坑" in t or "B瓦" in t or "三层" in t:
         return "b_keng"
     return "d6d"
 
@@ -232,8 +279,10 @@ def resolve_material_key(material_text: str, quote_data: dict) -> str:
 def infer_product_type_for_calc(order_type: str, attrs: str) -> str:
     ot = (order_type or "").strip()
     a = attrs or ""
+    if "纸箱" in a and "飞机盒" not in a:
+        return "纸箱"
     if ot in ("扣底盒", "双插盒", "纸箱", "带扣", "飞机盒"):
-        if ot == "飞机盒" and ("带扣" in a or "扣" in a):
+        if ot == "飞机盒" and ("带扣" in a):
             return "带扣"
         return ot
     if "扣底" in a:
@@ -243,7 +292,7 @@ def infer_product_type_for_calc(order_type: str, attrs: str) -> str:
     if "纸箱" in a:
         return "纸箱"
     if "飞机盒" in a or ot == "飞机盒":
-        return "带扣" if "带扣" in a or "扣" in a else "飞机盒"
+        return "带扣" if "带扣" in a else "飞机盒"
     return "飞机盒"
 
 
@@ -268,6 +317,27 @@ def load_raw_rows(load_raw_fn: Callable[[], list[dict]], *, max_age: int = 120) 
     return rows
 
 
+def _parse_lwh_from_attrs(attrs: str) -> tuple[float, float, float] | None:
+    try:
+        import production_spec as pspec
+
+        dims = pspec.parse_dimensions_cm(attrs or "")
+        l, w, h = dims.get("l"), dims.get("w"), dims.get("h")
+        if l and w and h:
+            return float(l), float(w), float(h)
+        if l and w:
+            return float(l), float(w), float(h or 0)
+    except Exception:
+        pass
+    m3 = re.search(
+        r"(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)",
+        attrs or "",
+    )
+    if m3:
+        return float(m3.group(1)), float(m3.group(2)), float(m3.group(3))
+    return None
+
+
 def calc_material_line(
     *,
     attrs: str,
@@ -278,21 +348,26 @@ def calc_material_line(
     raw_rows: list[dict],
     dimoldb: list[dict],
 ) -> dict[str, Any]:
-    lwh = _parse_lwh_from_attrs(attrs)
+    import production_spec as pspec
+
+    clean_attrs = pspec.sanitize_sku_attrs(attrs)
+    lwh = _parse_lwh_from_attrs(clean_attrs or attrs)
     if not lwh:
         return {"status": "error", "error": "无法从规格解析长宽高", "attrs": attrs}
     l, w, h = lwh
-    pt = infer_product_type_for_calc(order_type, attrs)
+    if h <= 0:
+        return {"status": "error", "error": "缺少高度尺寸", "attrs": attrs}
+    pt = infer_product_type_for_calc(order_type, clean_attrs or attrs)
     is_buckle = pt in ("带扣", "daikou")
-    calc_pt = pt
-    if pt == "纸箱":
-        calc_pt = "纸箱"
-    elif pt == "扣底盒":
-        calc_pt = "扣底盒"
-    elif pt == "双插盒":
-        calc_pt = "双插盒"
-    else:
-        calc_pt = "飞机盒"
+    calc_pt = (
+        "纸箱"
+        if pt == "纸箱"
+        else "扣底盒"
+        if pt == "扣底盒"
+        else "双插盒"
+        if pt == "双插盒"
+        else "飞机盒"
+    )
 
     mat_key = resolve_material_key(material_text, quote_data)
     inches = qcc.calc_paper_inches(
@@ -307,11 +382,19 @@ def calc_material_line(
     paper_l_inch = inches["paper_l_inch"]
     paper_w_inch = inches["paper_w_inch"]
 
-    paper = match_paper(paper_l_inch, paper_w_inch, material_text, raw_rows)
+    paper = match_paper(
+        paper_l_inch,
+        paper_w_inch,
+        material_text,
+        raw_rows,
+        product_type=pt,
+        attrs=clean_attrs or attrs,
+    )
     if not paper.get("success"):
+        st = "shortage" if paper.get("shortage") else "error"
         return {
-            "status": "shortage" if paper.get("shortage") else "error",
-            "material_status": "shortage" if paper.get("shortage") else "error",
+            "status": st,
+            "material_status": st,
             "error": paper.get("error", "纸板匹配失败"),
             "paper_l_inch": paper_l_inch,
             "paper_w_inch": paper_w_inch,
@@ -337,6 +420,16 @@ def calc_material_line(
 
     need_boards = int(math.ceil(qty / per_board * 1.02)) if qty else 0
     dm = match_dimoldb(l, w, h, dimoldb, pt)
+    if dm.get("skip"):
+        dimoldb_id = ""
+        dimoldb_label = "无刀模"
+    elif dm.get("success"):
+        dimoldb_id = dm.get("dimoldb_id") or ""
+        dimoldb_label = dimoldb_id or dm.get("code") or ""
+    else:
+        dimoldb_id = ""
+        dimoldb_label = "未匹配"
+
     spec_label = f"{paper.get('supplier')} - {paper.get('name')} - {paper.get('paper_spec')}"
 
     return {
@@ -358,30 +451,149 @@ def calc_material_line(
         "cuts_width": paper.get("cuts_width"),
         "cuts_length": paper.get("cuts_length"),
         "dimoldb": dm,
-        "dimoldb_id": dm.get("dimoldb_id") if dm.get("success") else "",
+        "dimoldb_id": dimoldb_id,
         "dimoldb_code": dm.get("code") if dm.get("success") else "",
         "dimoldb_name": dm.get("name") if dm.get("success") else "",
+        "dimoldb_label": dimoldb_label,
     }
 
 
-def _parse_lwh_from_attrs(attrs: str) -> tuple[float, float, float] | None:
-    try:
-        import production_spec as pspec
+def mark_flow_calc_done(
+    db_config: dict,
+    processes: list,
+    order: dict,
+    order_type: str,
+    internal_order_id_fn: Callable,
+    get_or_create_flow_steps_fn: Callable,
+    save_flow_row_fn: Callable,
+) -> None:
+    if not order:
+        return
+    oid = internal_order_id_fn(order)
+    steps = get_or_create_flow_steps_fn(db_config, processes, oid, order_type)
+    for s in steps:
+        if (s.get("step") or s.get("name")) == "算料":
+            s["done"] = True
+            s["active"] = False
+            break
+    save_flow_row_fn(db_config, oid, order_type, steps)
 
-        dims = pspec._parse_dimensions(attrs or "")
-        if dims.get("l") and dims.get("w") and dims.get("h"):
-            return float(dims["l"]), float(dims["w"]), float(dims["h"])
-        if dims.get("l") and dims.get("w"):
-            return float(dims["l"]), float(dims["w"]), float(dims.get("h") or 0)
-    except Exception:
-        pass
-    m3 = re.search(
-        r"(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)",
-        attrs or "",
+
+def calc_order_line(
+    order: dict,
+    line_index: int,
+    *,
+    quote_data: dict,
+    raw_rows: list[dict],
+    dimoldb: list[dict],
+    material_mapping: list[dict],
+    mark_flow: bool = False,
+    db_config: dict | None = None,
+    processes: list | None = None,
+    internal_order_id_fn: Callable | None = None,
+    infer_order_type_fn: Callable | None = None,
+    get_or_create_flow_steps_fn: Callable | None = None,
+    save_flow_row_fn: Callable | None = None,
+) -> dict[str, Any]:
+    import production_spec as pspec
+
+    items = order.get("items") or []
+    if line_index < 0 or line_index >= len(items):
+        return {"status": "error", "error": "子单行号无效"}
+    it = items[line_index]
+    raw_attrs = (
+        it.get("display") or it.get("platform_attrs") or it.get("spec") or ""
+    ).strip()
+    attrs = pspec.sanitize_sku_attrs(raw_attrs) or raw_attrs
+    qty = int(it.get("qty") or 0)
+    order_type = (
+        infer_order_type_fn(order) if infer_order_type_fn else infer_product_type_for_calc("", attrs)
     )
-    if m3:
-        return float(m3.group(1)), float(m3.group(2)), float(m3.group(3))
-    return None
+    material_text = pspec.match_production_material(attrs, material_mapping) or ""
+
+    result = calc_material_line(
+        attrs=attrs,
+        qty=qty,
+        order_type=order_type,
+        material_text=material_text,
+        quote_data=quote_data,
+        raw_rows=raw_rows,
+        dimoldb=dimoldb,
+    )
+    so_id = str(order.get("so_id") or order.get("sid") or "")
+    set_cached_line(so_id, line_index, result)
+
+    if mark_flow and result.get("status") == "done" and db_config and internal_order_id_fn:
+        mark_flow_calc_done(
+            db_config,
+            processes or [],
+            order,
+            order_type,
+            internal_order_id_fn,
+            get_or_create_flow_steps_fn,
+            save_flow_row_fn,
+        )
+    return result
+
+
+def auto_calc_all_orders(
+    orders: list[dict],
+    *,
+    quote_data: dict,
+    load_raw_fn: Callable[[], list[dict]],
+    load_dimoldb_fn: Callable[[], list[dict]],
+    material_mapping: list[dict],
+    mark_flow: bool = False,
+    db_config: dict | None = None,
+    processes: list | None = None,
+    internal_order_id_fn: Callable | None = None,
+    infer_order_type_fn: Callable | None = None,
+    get_or_create_flow_steps_fn: Callable | None = None,
+    save_flow_row_fn: Callable | None = None,
+    only_so_ids: set[str] | None = None,
+) -> dict[str, Any]:
+    """订单同步后批量算料，结果写入 material_calc_cache.json。"""
+    raw_rows = load_raw_rows(load_raw_fn)
+    dimoldb = load_dimoldb_fn()
+    done = failed = 0
+    errors: list[str] = []
+
+    for order in orders or []:
+        so_id = str(order.get("so_id") or order.get("sid") or "")
+        if only_so_ids is not None and so_id not in only_so_ids:
+            continue
+        for idx, _it in enumerate(order.get("items") or []):
+            try:
+                r = calc_order_line(
+                    order,
+                    idx,
+                    quote_data=quote_data,
+                    raw_rows=raw_rows,
+                    dimoldb=dimoldb,
+                    material_mapping=material_mapping,
+                    mark_flow=mark_flow,
+                    db_config=db_config,
+                    processes=processes,
+                    internal_order_id_fn=internal_order_id_fn,
+                    infer_order_type_fn=infer_order_type_fn,
+                    get_or_create_flow_steps_fn=get_or_create_flow_steps_fn,
+                    save_flow_row_fn=save_flow_row_fn,
+                )
+                if r.get("status") in ("done", "shortage"):
+                    done += 1
+                else:
+                    failed += 1
+                    errors.append(f"{so_id}#{idx}: {r.get('error','')}")
+            except Exception as ex:
+                failed += 1
+                errors.append(f"{so_id}#{idx}: {ex}")
+
+    return {
+        "success": True,
+        "lines_done": done,
+        "lines_failed": failed,
+        "errors": errors[:50],
+    }
 
 
 def load_calc_cache() -> dict:

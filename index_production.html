@@ -5815,7 +5815,7 @@ async function openProcessSettings() {
     let rows = '';
     sections.forEach(function (sec, si) {
         if (sec.dept) {
-            rows += '<div style="font-weight:600;font-size:13px;color:#1677ff;margin:' + (si > 0 ? '12px' : '0') + ' 0 6px;padding-top:' + (si > 0 ? '8px' : '0') + ';border-top:' + (si > 0 ? '1px solid #e8e8e8' : 'none') + ';">🏭 ' + _escTimeoutHtml(sec.dept) + '</motion.div>';
+            rows += '<div style="font-weight:600;font-size:13px;color:#1677ff;margin:' + (si > 0 ? '12px' : '0') + ' 0 6px;padding-top:' + (si > 0 ? '8px' : '0') + ';border-top:' + (si > 0 ? '1px solid #e8e8e8' : 'none') + ';">🏭 ' + _escTimeoutHtml(sec.dept) + '</div>';
         }
         sec.steps.forEach(function (step) {
             const val = _processStepTimeouts[step] || '';

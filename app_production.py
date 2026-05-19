@@ -3964,12 +3964,40 @@ def _km_sync_orders_to_cache(days_back=14):
     return r
 
 
-def _on_background_sync_done(_report):
+def _run_auto_material_calc():
+    import material_calc as _mc
+
+    try:
+        orders = ph.load_cache_orders(_orders_cache_path())
+        rep = _mc.auto_calc_all_orders(
+            orders,
+            quote_data=load_quote_data() or {},
+            load_raw_fn=load_raw_data,
+            load_dimoldb_fn=load_dimoldb,
+            material_mapping=_production_material_mapping(),
+            mark_flow=True,
+            db_config=DB_CONFIG,
+            processes=_permission_data.get("processes", []),
+            internal_order_id_fn=ph.internal_order_id,
+            infer_order_type_fn=ph.infer_order_type,
+            get_or_create_flow_steps_fn=ph.get_or_create_flow_steps,
+            save_flow_row_fn=ph.save_flow_row,
+        )
+        print(
+            f"[自动算料] 完成 {rep.get('lines_done', 0)} 行, "
+            f"失败 {rep.get('lines_failed', 0)} 行"
+        )
+    except Exception as e:
+        print(f"[自动算料] 失败: {e}")
     _prod_dash_cache.invalidate_dashboard_cache()
     try:
         _prod_dash_cache.get_dashboard_cache(_rebuild_prod_dashboard_cache, force=True)
     except Exception as e:
         print(f"[打单缓存] 同步后重建失败: {e}")
+
+
+def _on_background_sync_done(_report):
+    _th.Thread(target=_run_auto_material_calc, daemon=True).start()
 
 @app.route('/api/sync/force', methods=['POST'])
 def api_sync_force():
@@ -4187,73 +4215,107 @@ def production_match_paper():
     if not paper_w_inch and body.get("spread_w_cm"):
         paper_w_inch = float(body["spread_w_cm"]) / 2.54
     material = (body.get("material") or body.get("material_text") or "").strip()
+    product_type = (body.get("product_type") or "").strip()
+    attrs_hint = (body.get("attrs") or "").strip()
     rows = mcalc.load_raw_rows(load_raw_data)
-    result = mcalc.match_paper(paper_l_inch, paper_w_inch, material, rows)
+    result = mcalc.match_paper(
+        paper_l_inch,
+        paper_w_inch,
+        material,
+        rows,
+        product_type=product_type,
+        attrs=attrs_hint,
+    )
     return jsonify(result)
+
+
+def _calc_material_for_request(so_id: str, line_index: int, *, mark_flow: bool = True) -> dict:
+    import production_spec as pspec
+
+    orders = ph.load_cache_orders(_orders_cache_path())
+    order = ph.find_order_in_cache(orders, so_id)
+    if not order:
+        return {"success": False, "error": "未找到订单"}
+
+    result = mcalc.calc_order_line(
+        order,
+        line_index,
+        quote_data=load_quote_data() or {},
+        raw_rows=mcalc.load_raw_rows(load_raw_data),
+        dimoldb=load_dimoldb(),
+        material_mapping=_production_material_mapping(),
+        mark_flow=mark_flow,
+        db_config=DB_CONFIG,
+        processes=_permission_data.get("processes", []),
+        internal_order_id_fn=ph.internal_order_id,
+        infer_order_type_fn=ph.infer_order_type,
+        get_or_create_flow_steps_fn=ph.get_or_create_flow_steps,
+        save_flow_row_fn=ph.save_flow_row,
+    )
+    _prod_dash_cache.invalidate_dashboard_cache()
+    return {"success": True, "result": result, "so_id": so_id, "line_index": line_index}
 
 
 @app.route("/api/production/calc-material", methods=["POST"])
 def production_calc_material():
     """订单行算料（展开+纸板+刀模）。"""
-    un = resolve_login_user()
-    if not un:
+    if not resolve_login_user():
         return jsonify({"success": False, "error": "未登录"}), 401
     body = request.get_json() or {}
     so_id = (body.get("so_id") or body.get("order_id") or "").strip()
-    line_index = body.get("line_index")
-    if line_index is None:
-        line_index = body.get("line_idx", 0)
-    line_index = int(line_index)
+    line_index = int(body.get("line_index", body.get("line_idx", 0)))
+    return jsonify(_calc_material_for_request(so_id, line_index, mark_flow=True))
+
+
+@app.route("/api/production/calc-material/batch", methods=["POST"])
+def production_calc_material_batch():
+    """批量算料：body.so_ids 为订单号列表。"""
+    if not resolve_login_user():
+        return jsonify({"success": False, "error": "未登录"}), 401
+    body = request.get_json() or {}
+    so_ids = body.get("so_ids") or body.get("order_ids") or []
+    if not isinstance(so_ids, list) or not so_ids:
+        return jsonify({"success": False, "error": "请提供 so_ids 列表"}), 400
 
     orders = ph.load_cache_orders(_orders_cache_path())
-    order = ph.find_order_in_cache(orders, so_id)
-    if not order:
-        return jsonify({"success": False, "error": "未找到订单"})
+    by_id = {str(o.get("so_id") or ""): o for o in orders}
+    done = failed = 0
+    errors: list[str] = []
+    total_lines = 0
 
-    items = order.get("items") or []
-    if line_index < 0 or line_index >= len(items):
-        return jsonify({"success": False, "error": "子单行号无效"})
+    for sid in so_ids:
+        sid = str(sid).strip()
+        order = by_id.get(sid)
+        if not order:
+            failed += 1
+            errors.append(f"{sid}: 未找到订单")
+            continue
+        for idx in range(len(order.get("items") or [])):
+            total_lines += 1
+            try:
+                r = _calc_material_for_request(sid, idx, mark_flow=True)
+                st = (r.get("result") or {}).get("status")
+                if st in ("done", "shortage"):
+                    done += 1
+                else:
+                    failed += 1
+                    errors.append(
+                        f"{sid}#{idx}: {(r.get('result') or {}).get('error', '')}"
+                    )
+            except Exception as ex:
+                failed += 1
+                errors.append(f"{sid}#{idx}: {ex}")
 
-    it = items[line_index]
-    attrs = (
-        it.get("display") or it.get("platform_attrs") or it.get("spec") or ""
-    ).strip()
-    qty = int(it.get("qty") or 0)
-    order_type = ph.infer_order_type(order)
-    import production_spec as pspec
-
-    mat_map = _production_material_mapping()
-    material_text = pspec.match_production_material(attrs, mat_map) or ""
-
-    qd = load_quote_data() or {}
-    raw_rows = mcalc.load_raw_rows(load_raw_data)
-    dimoldb = load_dimoldb()
-
-    result = mcalc.calc_material_line(
-        attrs=attrs,
-        qty=qty,
-        order_type=order_type,
-        material_text=material_text,
-        quote_data=qd,
-        raw_rows=raw_rows,
-        dimoldb=dimoldb,
+    return jsonify(
+        {
+            "success": True,
+            "total_orders": len(so_ids),
+            "total_lines": total_lines,
+            "lines_done": done,
+            "lines_failed": failed,
+            "errors": errors[:100],
+        }
     )
-    mcalc.set_cached_line(so_id, line_index, result)
-    _prod_dash_cache.invalidate_dashboard_cache()
-
-    if result.get("status") == "done":
-        oid = ph.internal_order_id(order)
-        steps = ph.get_or_create_flow_steps(
-            DB_CONFIG, _permission_data.get("processes", []), oid, order_type
-        )
-        for s in steps:
-            if (s.get("step") or s.get("name")) == "算料":
-                s["done"] = True
-                s["active"] = False
-                break
-        ph.save_flow_row(DB_CONFIG, oid, order_type, steps)
-
-    return jsonify({"success": True, "result": result, "so_id": so_id, "line_index": line_index})
 
 
 # ==================== 打单管理 API ====================
