@@ -4065,6 +4065,7 @@ def _rebuild_prod_dashboard_cache():
         permission_data=_permission_data,
         material_mapping=_production_material_mapping(),
         load_inventory_fn=load_inventory,
+        load_dimoldb_fn=load_dimoldb,
         load_cache_orders_fn=lambda: ph.load_cache_orders(_orders_cache_path()),
         get_db_fn=get_db,
         infer_order_type_fn=ph.infer_order_type,

@@ -324,7 +324,7 @@ def _kw_in_attrs(kw: str, text: str) -> bool:
 
 
 def match_airbox_material(text: str) -> str:
-    """飞机盒：按优先级取材料；找不到返回空（不猜默认值）。"""
+    """飞机盒：按优先级取材料；无关键词时由 match_production_material 默认「特硬」。"""
     t = (text or "").strip()
     if not t:
         return ""
@@ -371,11 +371,11 @@ def _match_carton_material(text: str, mapping: list[dict]) -> str:
 
 
 def match_production_material(text: str, mapping: list[dict] | None = None) -> str:
-    """仅从 SKU 属性解析材料；飞机盒走优先级表，纸箱走 mapping。"""
+    """仅从 SKU 属性解析材料；飞机盒走优先级表（无关键词默认特硬），纸箱走 mapping。"""
     raw = platform_spec_raw(text)
     parse_text = sanitize_sku_attrs(raw) or raw
     if is_airbox_product(raw):
-        return match_airbox_material(parse_text)
+        return match_airbox_material(parse_text) or "特硬"
     return _match_carton_material(parse_text, mapping or [])
 
 
@@ -419,8 +419,9 @@ def build_production_spec(
     material_mapping: list[dict] | None = None,
 ) -> dict[str, Any]:
     """
-    两步：① 完整保留 platformSpec 原文；② 逐项解析展示。
-    展示格式：外径/内径  长x宽x高  数量  材料  颜色 ｜ 原文（只增不减）
+    四层展示（C）之解析数据：
+    line1 — 快麦 platformSpec 原文；line2 — 外径|内径  长x宽x高  数量  材料  颜色；
+    line3/4 — 刀模库存、算料由前端 + production_dashboard_cache 渲染。
     """
     raw = platform_spec_raw(attrs)
     dims = _parse_dimensions(raw)
@@ -442,19 +443,17 @@ def build_production_spec(
         material=material,
         color=color,
     )
-    if formatted and raw:
-        line = f"{formatted} ｜ {raw}"
-    elif formatted:
-        line = formatted
-    else:
-        line = raw
+    line2 = formatted or ""
+    line1 = raw
 
     per_group = int(qinfo.get("per_group_qty") or 0)
     order_qty = int(qinfo.get("order_qty") or 0)
     real_qty = int(qinfo.get("total_qty") or 0)
 
     return {
-        "line": line,
+        "line": line2,
+        "line1": line1,
+        "line2": line2,
         "formatted": formatted,
         "platform_spec_raw": raw,
         "size": size,

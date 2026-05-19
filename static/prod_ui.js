@@ -199,9 +199,114 @@
 
     window.prodDisplayAttrs = function (item) {
         if (!item) return '—';
-        var line = (item.production_spec || '').trim();
-        if (line) return line;
-        return (item.platform_spec_raw || item.display || item.platform_attrs || item.spec || '').trim() || '—';
+        var d = item.production_spec_detail;
+        var raw =
+            (d && d.line1) ||
+            (d && d.platform_spec_raw) ||
+            item.platform_spec_raw ||
+            item.display ||
+            item.platform_attrs ||
+            item.spec ||
+            '';
+        return String(raw).trim() || '—';
+    };
+
+    window.prodEscHtml = function (s) {
+        return String(s || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    };
+
+    /** 第三行：刀模编码（刀模库 name）+ 成品库存 */
+    window.renderDimoldbStockHtml = function (item, compact) {
+        if (!item) return '';
+        var fs = compact ? '10px' : '11px';
+        var mt = compact ? '2px' : '3px';
+        var mc = item.material_calc || {};
+        var dmName = '';
+        if (mc.dimoldb_name || mc.dimoldb_id) {
+            dmName = prodDimoldbDisplayName(mc);
+        }
+        if (!dmName && item.dimoldb_name) {
+            dmName = String(item.dimoldb_name).trim();
+        }
+        if (!dmName && item.dimoldb_id) {
+            dmName = prodDimoldbDisplayName(item.dimoldb_id);
+        }
+        var dmLabel;
+        if (item.dimoldb_skip) {
+            dmLabel = '无需刀模';
+        } else if (dmName) {
+            dmLabel = dmName;
+        } else if ((item.production_spec_detail || {}).is_placeholder) {
+            dmLabel = '定制/无规格';
+        } else {
+            dmLabel = '未匹配';
+        }
+        var stockQty = parseInt(item.stock_qty, 10);
+        if (isNaN(stockQty)) stockQty = 0;
+        var stockSuffix =
+            stockQty > 0 && item.has_stock
+                ? stockQty + '（✅现货）'
+                : stockQty > 0
+                  ? stockQty + '（需生产）'
+                  : '0（需生产）';
+        return (
+            '<div style="font-size:' +
+            fs +
+            ';margin-top:' +
+            mt +
+            ';line-height:1.45;color:#595959;">' +
+            '<span style="color:#888;">刀模编码：</span>' +
+            '<span style="font-weight:600;color:#262626;">' +
+            prodEscHtml(dmLabel) +
+            '</span>' +
+            '&nbsp;&nbsp;&nbsp;' +
+            '<span style="color:#888;">库存：</span>' +
+            '<span style="font-weight:600;color:' +
+            (stockQty > 0 && item.has_stock ? '#52c41a' : '#e94560') +
+            ';">' +
+            prodEscHtml(stockSuffix) +
+            '</span></div>'
+        );
+    };
+
+    /**
+     * 打单规格四层块：原文 → 识别 → 刀模/库存 → 算料
+     * @param {object} opts { compact, calcBtnHtml }
+     */
+    window.renderProdItemSpecBlock = function (item, opts) {
+        opts = opts || {};
+        var compact = !!opts.compact;
+        var line1 =
+            typeof prodDisplayAttrs === 'function' ? prodDisplayAttrs(item) : '—';
+        var line2 =
+            typeof renderProductionSpecHtml === 'function'
+                ? renderProductionSpecHtml(item, compact)
+                : '';
+        var line3 =
+            typeof renderDimoldbStockHtml === 'function'
+                ? renderDimoldbStockHtml(item, compact)
+                : '';
+        var line4 =
+            typeof renderMaterialCalcHtml === 'function'
+                ? renderMaterialCalcHtml(item)
+                : '';
+        var extra = opts.calcBtnHtml || '';
+        return (
+            '<div style="line-height:1.45;white-space:normal;word-break:break-word;">' +
+            '<div style="color:#595959;font-size:' +
+            (compact ? '11px' : '12px') +
+            ';">' +
+            prodEscHtml(line1) +
+            '</div>' +
+            line2 +
+            line3 +
+            line4 +
+            (extra ? '<div style="margin-top:3px;">' + extra + '</div>' : '') +
+            '</div>'
+        );
     };
 
     window.prodBuildDashboardQuery = function () {
@@ -348,43 +453,24 @@
                     } else {
                         var lines = [];
                         specs.forEach(function (item, idx) {
-                            var attrs = window.prodDisplayAttrs(item);
-                            var prodLine =
-                                typeof renderProductionSpecHtml === 'function'
-                                    ? renderProductionSpecHtml(item, true)
-                                    : '';
-                            var mcHtml =
-                                typeof renderMaterialCalcHtml === 'function'
-                                    ? renderMaterialCalcHtml(item)
-                                    : '';
                             var calcBtn =
                                 '<button type="button" onclick="calcMaterialLine(\'' +
                                 o.so_id +
                                 '\',' +
                                 idx +
                                 ',event)" style="margin-left:4px;padding:1px 6px;font-size:10px;background:#722ed1;color:#fff;border:none;border-radius:3px;cursor:pointer;">算料</button>';
+                            var block =
+                                typeof renderProdItemSpecBlock === 'function'
+                                    ? renderProdItemSpecBlock(item, {
+                                          compact: true,
+                                          calcBtnHtml: calcBtn,
+                                      })
+                                    : esc(window.prodDisplayAttrs(item));
                             lines.push(
-                                '<div style="font-size:11px;line-height:1.5;padding:2px 0;border-bottom:' +
+                                '<div style="font-size:11px;padding:2px 0;border-bottom:' +
                                     (idx < specs.length - 1 ? '1px dashed #eee' : 'none') +
-                                    ';white-space:normal;word-break:break-word;">' +
-                                    '<span style="color:#333;">' +
-                                    esc(attrs) +
-                                    '</span> ' +
-                                    '<strong style="color:#e94560;">×' +
-                                    (item.per_group_qty > 0
-                                        ? item.order_qty != null
-                                            ? item.order_qty
-                                            : item.qty
-                                        : item.qty || 0) +
-                                    '</strong> ' +
-                                    '<span style="font-size:10px;' +
-                                    (item.has_stock ? 'color:#52c41a;' : 'color:#e94560;') +
-                                    'font-weight:500;">' +
-                                    (item.has_stock ? '✅现货' : '📦需生产') +
-                                    '</span>' +
-                                    calcBtn +
-                                    prodLine +
-                                    mcHtml +
+                                    ';">' +
+                                    block +
                                     '</div>'
                             );
                         });
@@ -512,43 +598,39 @@
     window.renderMaterialCalcHtml = function (item) {
         var mc = item.material_calc || {};
         var st = mc.status || item.material_status || 'pending';
-        var icon =
-            st === 'done'
-                ? '✅'
-                : st === 'shortage'
-                  ? '⚠️缺料'
-                  : st === 'error'
-                    ? '❌'
-                    : '⏳';
         if (st !== 'done' && st !== 'error' && st !== 'shortage') {
-            return '<div style="font-size:10px;color:#888;margin-top:2px;">算料 ' + icon + '</div>';
+            return '';
         }
         if (st === 'shortage') {
+            var err = (mc.error || '').trim();
+            var msg =
+                err.indexOf('缺料') === 0
+                    ? err
+                    : '缺料：' + (err || '未找到合适纸板规格，请员工自行决定');
             return (
-                '<div style="font-size:10px;color:#cf1322;font-weight:600;margin-top:2px;">' +
-                icon +
-                ' ' +
-                (mc.error || '缺料，请自行决定') +
+                '<div style="font-size:10px;color:#cf1322;font-weight:600;margin-top:2px;line-height:1.45;">⚠️' +
+                msg +
+                '</div>'
+            );
+        }
+        if (st === 'error') {
+            return (
+                '<div style="font-size:10px;color:#cf1322;font-weight:600;margin-top:2px;">❌ ' +
+                (mc.error || '算料失败') +
                 '</div>'
             );
         }
         var paper = mc.paper_display || mc.paper_spec || (mc.paper && mc.paper.paper_spec) || '—';
         var boards = mc.boards_needed != null ? mc.boards_needed : '—';
         var per = mc.sheets_per_board != null ? mc.sheets_per_board : '—';
-        var dm = prodDimoldbDisplayName(mc);
-        if (!dm) dm = '—';
         return (
-            '<div style="font-size:10px;color:#555;margin-top:2px;line-height:1.4;">' +
-            icon +
-            ' 纸板：' +
-            paper +
+            '<div style="font-size:10px;color:#389e0d;font-weight:500;margin-top:2px;line-height:1.45;">✅ 纸板：' +
+            prodEscHtml(paper) +
             '；' +
             boards +
             '张；开' +
             per +
-            '个/张；刀模 ' +
-            dm +
-            '</div>'
+            '个/张</div>'
         );
     };
 

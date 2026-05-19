@@ -65,12 +65,47 @@ def _match_inventory(
     return False, 0, "无匹配库存"
 
 
+def _match_dimoldb_for_line(
+    ps: dict[str, Any],
+    order_type: str,
+    dimoldb_rows: list[dict],
+) -> dict[str, Any]:
+    """按尺寸匹配刀模库，返回展示用 name/id（与首页刀模查询一致）。"""
+    import material_calc as mcalc
+
+    attrs = ps.get("platform_spec_raw") or ""
+    if mcalc._is_carton_product(order_type, attrs):
+        return {"skip": True, "matched": False, "dimoldb_id": "", "dimoldb_name": ""}
+    l, w, h = ps.get("length"), ps.get("width"), ps.get("height")
+    if not l or not w:
+        return {"skip": False, "matched": False, "dimoldb_id": "", "dimoldb_name": ""}
+    dm = mcalc.match_dimoldb(
+        float(l),
+        float(w),
+        float(h or 0),
+        dimoldb_rows or [],
+        order_type,
+    )
+    if dm.get("skip"):
+        return {"skip": True, "matched": False, "dimoldb_id": "", "dimoldb_name": ""}
+    if dm.get("success"):
+        name = (dm.get("name") or "").strip()
+        return {
+            "skip": False,
+            "matched": True,
+            "dimoldb_id": dm.get("dimoldb_id") or "",
+            "dimoldb_name": name,
+        }
+    return {"skip": False, "matched": False, "dimoldb_id": "", "dimoldb_name": ""}
+
+
 def rebuild_dashboard_cache(
     *,
     orders_cache_file: str,
     permission_data: dict,
     material_mapping: list[dict],
     load_inventory_fn,
+    load_dimoldb_fn=None,
     load_cache_orders_fn,
     get_db_fn,
     infer_order_type_fn,
@@ -108,6 +143,12 @@ def rebuild_dashboard_cache(
     printed_ids = set(printed_info.keys())
     inventory_data = load_inventory_fn()
     inv_rows = _inv_index(inventory_data.get("finished", []))
+    dimoldb_rows: list[dict] = []
+    if load_dimoldb_fn:
+        try:
+            dimoldb_rows = load_dimoldb_fn() or []
+        except Exception:
+            dimoldb_rows = []
 
     all_orders: list[dict] = []
     try:
@@ -183,8 +224,21 @@ def rebuild_dashboard_cache(
             )
             real_qty = int(ps.get("qty") or order_qty)
             has_stock, stock_qty, stock_info = _match_inventory(raw_attrs, real_qty, inv_rows)
+            dm_info = _match_dimoldb_for_line(ps, order_type, dimoldb_rows)
             cached_mc = mcalc.get_cached_line(so_id, line_idx)
             mc_status = (cached_mc or {}).get("status") or "pending"
+            if cached_mc and cached_mc.get("dimoldb_name"):
+                dm_info = {
+                    **dm_info,
+                    "dimoldb_id": cached_mc.get("dimoldb_id") or dm_info.get("dimoldb_id") or "",
+                    "dimoldb_name": (cached_mc.get("dimoldb_name") or "").strip()
+                    or dm_info.get("dimoldb_name")
+                    or "",
+                    "matched": bool(
+                        (cached_mc.get("dimoldb_name") or "").strip()
+                        or dm_info.get("matched")
+                    ),
+                }
             full_items.append(
                 {
                     "name": item.get("name", "") or "",
@@ -192,7 +246,7 @@ def rebuild_dashboard_cache(
                     "display": raw_attrs,
                     "platform_attrs": raw_attrs,
                     "platform_spec_raw": ps.get("platform_spec_raw") or raw_attrs,
-                    "production_spec": ps.get("line", "") or "",
+                    "production_spec": ps.get("line2") or ps.get("formatted") or "",
                     "production_spec_detail": ps,
                     "qty": real_qty,
                     "order_qty": ps.get("order_qty", order_qty),
@@ -202,6 +256,10 @@ def rebuild_dashboard_cache(
                     "has_stock": has_stock,
                     "stock_qty": stock_qty,
                     "stock_info": stock_info,
+                    "dimoldb_id": dm_info.get("dimoldb_id") or "",
+                    "dimoldb_name": dm_info.get("dimoldb_name") or "",
+                    "dimoldb_matched": bool(dm_info.get("matched")),
+                    "dimoldb_skip": bool(dm_info.get("skip")),
                     "material_name": ps.get("material") or "—",
                     "material_status": mc_status,
                     "material_calc": cached_mc or {"status": mc_status},
