@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-一次性迁移：将 orders_cache.json 导入 MySQL（order_cache_orders / order_cache_items）。
+订单缓存迁移：orders_cache.json 和/或旧 MySQL 表 orders_cache → order_cache_orders。
 
-用法（在项目根目录，已配置 .env 的 MYSQL_*）：
+用法（项目根目录，已配置 .env 的 MYSQL_*）：
   python scripts/migrate_orders_cache_to_mysql.py
   python scripts/migrate_orders_cache_to_mysql.py --cache /path/to/orders_cache.json
-  python scripts/migrate_orders_cache_to_mysql.py --force   # MySQL 已有数据时仍覆盖
+  python scripts/migrate_orders_cache_to_mysql.py --from-table orders_cache
+  python scripts/migrate_orders_cache_to_mysql.py --force   # 已有数据时先清空再导入
 
-部署后首次上线建议在 stable 目录执行本脚本，再重启 3001/3002。
+部署：deploy.sh / deploy-docker.sh 在表空时会自动执行（不 --force）。
+应用启动：order_cache_store.bootstrap_order_cache_if_empty()（双容器用 GET_LOCK）。
 """
 from __future__ import annotations
 
@@ -22,11 +24,18 @@ if str(_ROOT) not in sys.path:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="orders_cache.json → MySQL")
+    parser = argparse.ArgumentParser(
+        description="orders_cache.json / 旧表 orders_cache → order_cache_orders"
+    )
     parser.add_argument(
         "--cache",
-        default=str(_ROOT / "orders_cache.json"),
-        help="orders_cache.json 路径",
+        default="",
+        help="orders_cache.json 路径（默认项目根 orders_cache.json）",
+    )
+    parser.add_argument(
+        "--from-table",
+        default="",
+        help="旧 MySQL 表名，如 orders_cache（可与 --cache 同时尝试，JSON 优先）",
     )
     parser.add_argument(
         "--force",
@@ -34,13 +43,8 @@ def main() -> int:
         help="MySQL 已有订单时先清空再导入",
     )
     args = parser.parse_args()
-    cache_path = Path(args.cache)
 
     import order_cache_store as ocs
-
-    if not cache_path.is_file():
-        print(f"[migrate] 未找到缓存文件: {cache_path}")
-        return 1
 
     ocs.ensure_order_cache_tables()
     existing = ocs.order_count_mysql()
@@ -54,17 +58,43 @@ def main() -> int:
     if existing > 0 and args.force:
         db = ocs._connect()
         cur = db.cursor()
-        cur.execute("DELETE FROM order_cache_items")
-        cur.execute("DELETE FROM order_cache_orders")
-        cur.execute("DELETE FROM order_cache_meta WHERE id=1")
-        db.commit()
-        cur.close()
-        db.close()
+        try:
+            cur.execute("DELETE FROM order_cache_items")
+            cur.execute("DELETE FROM order_cache_orders")
+            cur.execute("DELETE FROM order_cache_meta WHERE id=1")
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            cur.close()
+            db.close()
         print("[migrate] 已清空 MySQL 订单缓存表")
 
-    n = ocs.import_json_file_to_mysql(cache_path)
-    print(f"[migrate] 完成，导入 {n} 条待发货订单")
-    return 0 if n >= 0 else 1
+    cache_path = Path(args.cache) if args.cache else _ROOT / "orders_cache.json"
+    if cache_path.is_file():
+        n = ocs.import_json_file_to_mysql(cache_path)
+        if n > 0:
+            print(f"[migrate] JSON 完成，导入 {n} 条")
+            return 0
+
+    tables = [args.from_table] if args.from_table else ["orders_cache", "order_cache"]
+    for table in tables:
+        n = ocs.import_legacy_mysql_table(table)
+        if n > 0:
+            print(f"[migrate] 旧表 {table} 完成，导入 {n} 条")
+            return 0
+
+    if not cache_path.is_file() and not args.from_table:
+        rep = ocs.bootstrap_order_cache_if_empty()
+        if rep.get("status") == "ok":
+            print(f"[migrate] 自动探测完成: {rep}")
+            return 0
+        print(f"[migrate] 未找到可导入数据源: {rep}")
+        return 1
+
+    print("[migrate] 未导入任何订单（检查 JSON 路径或 --from-table）")
+    return 1
 
 
 if __name__ == "__main__":

@@ -60,6 +60,12 @@ python3 scripts/compile_all_py.py
 python3 scripts/check_truncation.py
 python3 scripts/verify_webhook_route.py
 
+CACHE_JSON="$STABLE_DIR/orders_cache.json"
+if [ ! -f "$CACHE_JSON" ]; then
+  warn "  创建空占位 $CACHE_JSON（无历史订单时可忽略）"
+  echo '{"orders":[],"report":{}}' > "$CACHE_JSON"
+fi
+
 log "[4/6] docker compose build..."
 docker compose build
 
@@ -67,6 +73,15 @@ log "[5/6] docker compose up -d..."
 docker compose up -d
 
 sleep 4
+
+if [ -f "$CACHE_JSON" ]; then
+  log "[5b] 订单缓存迁移（表空时 JSON/旧表 → MySQL）..."
+  docker compose exec -T cs python scripts/migrate_orders_cache_to_mysql.py \
+    --cache /app/orders_cache.json \
+    || warn "  迁移跳过或失败，容器启动后仍会尝试自动迁移"
+else
+  warn "  未找到 $CACHE_JSON，跳过部署期迁移（依赖启动时 bootstrap）"
+fi
 
 log "[6/6] Webhook 探活..."
 FAIL=0

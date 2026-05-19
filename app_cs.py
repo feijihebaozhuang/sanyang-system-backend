@@ -39,6 +39,10 @@ import webhook_routes as _webhook_routes
 
 _webhook_routes.register_webhook_routes(app)
 
+import order_cache_store as _order_cache_store
+
+_order_cache_store.schedule_startup_migration()
+
 # 报价数据文件路径
 QUOTE_DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'quote_data.json')
 

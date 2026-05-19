@@ -50,6 +50,10 @@ import webhook_routes as _webhook_routes
 
 _webhook_routes.register_webhook_routes(app)
 
+import order_cache_store as _order_cache_store
+
+_order_cache_store.schedule_startup_migration()
+
 # ==================== 用户系统 ====================
 USERS = {
     "admin": {
@@ -299,6 +303,7 @@ def persist():
         "resigned_employees": _resigned_employees
     }
     save_data(data)
+    _cfg_json.write_permission_overlay(_permission_data)
 
 # ==================== 登录API ====================
 @app.route('/api/login', methods=['POST'])

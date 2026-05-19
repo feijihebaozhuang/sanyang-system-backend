@@ -22,6 +22,7 @@ services:
       - ./shop_config.json:/app/shop_config.json
       - ./km_token.json:/app/km_token.json
       - ./alibaba_shops.json:/app/alibaba_shops.json
+      - ./orders_cache.json:/app/orders_cache.json:ro
       - ./index_cs.html:/app/index_cs.html
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3001/api/webhook/kuaimai')"]
@@ -49,6 +50,7 @@ services:
       - ./shop_config.json:/app/shop_config.json
       - ./km_token.json:/app/km_token.json
       - ./alibaba_shops.json:/app/alibaba_shops.json
+      - ./orders_cache.json:/app/orders_cache.json:ro
       - ./index.html:/app/index.html
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3002/api/webhook/kuaimai')"]

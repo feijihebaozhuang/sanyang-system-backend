@@ -81,11 +81,13 @@ VENV_DIR="$TARGET_DIR/venv"
 source "$VENV_DIR/bin/activate"
 [ -f "$TARGET_DIR/requirements.txt" ] && pip install -r "$TARGET_DIR/requirements.txt" -q
 
-CACHE_JSON="$TARGET_DIR/orders_cache.json"
-if [ -f "$CACHE_JSON" ] && [ -f "$TARGET_DIR/scripts/migrate_orders_cache_to_mysql.py" ]; then
-  log "[2b] orders_cache.json → MySQL（表空时自动导入）..."
-  python3 "$TARGET_DIR/scripts/migrate_orders_cache_to_mysql.py" --cache "$CACHE_JSON" \
-    || warn "  迁移跳过或失败，可稍后手动执行 migrate_orders_cache_to_mysql.py"
+if [ -f "$TARGET_DIR/scripts/migrate_orders_cache_to_mysql.py" ]; then
+  log "[2b] 订单缓存 → MySQL（表空时：JSON / 旧表 orders_cache）..."
+  MIGRATE_ARGS=()
+  CACHE_JSON="$TARGET_DIR/orders_cache.json"
+  [ -f "$CACHE_JSON" ] && MIGRATE_ARGS+=(--cache "$CACHE_JSON")
+  python3 "$TARGET_DIR/scripts/migrate_orders_cache_to_mysql.py" "${MIGRATE_ARGS[@]}" \
+    || warn "  迁移跳过或失败，可稍后手动: migrate_orders_cache_to_mysql.py --from-table orders_cache"
 fi
 
 log "[2c] Python compile check (all .py)..."

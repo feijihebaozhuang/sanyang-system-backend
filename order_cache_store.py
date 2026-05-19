@@ -12,6 +12,9 @@ import pymysql
 
 _tables_ready = False
 _tables_lock = threading.Lock()
+_startup_migrate_scheduled = False
+_startup_migrate_lock = threading.Lock()
+_MIGRATE_LOCK_NAME = "sanyang_order_cache_bootstrap"
 
 
 def _db_config() -> dict:
@@ -21,8 +24,10 @@ def _db_config() -> dict:
 
 
 def _connect():
-    cfg = _db_config()
-    return pymysql.connect(**cfg, cursorclass=pymysql.cursors.DictCursor)
+    """订单缓存写操作必须显式 commit；禁用 settings 里的 autocommit=True。"""
+    cfg = dict(_db_config())
+    cfg.pop("autocommit", None)
+    return pymysql.connect(**cfg, autocommit=False, cursorclass=pymysql.cursors.DictCursor)
 
 
 def ensure_order_cache_tables() -> None:
@@ -170,9 +175,17 @@ def write_orders_snapshot(
     shops_count: int = 0,
     source: str = "kuaimai+1688",
     partial: bool = False,
+    allow_empty: bool = False,
 ) -> int:
     """全量替换待发货订单缓存（与 JSON 快照语义一致）。"""
     ensure_order_cache_tables()
+    existing = order_count_mysql()
+    if not orders and existing > 0 and not allow_empty:
+        print(
+            f"[order_cache] 拒绝空快照覆盖已有 {existing} 条订单"
+            "（同步失败或未拉单时请检查 KM/1688 配置）"
+        )
+        return existing
     updated_at = time.time()
     rep = dict(report or {})
     db = _connect()
@@ -531,8 +544,120 @@ def read_stats_cache(cache_key: str) -> dict[str, Any] | None:
         return None
 
 
+def _default_json_cache_paths() -> list[Path]:
+    import os
+
+    root = Path(__file__).resolve().parent
+    paths: list[Path] = []
+    env_path = (os.getenv("ORDERS_CACHE_JSON") or "").strip()
+    if env_path:
+        paths.append(Path(env_path))
+    paths.extend(
+        [
+            root / "orders_cache.json",
+            Path("/app/orders_cache.json"),
+        ]
+    )
+    seen: set[str] = set()
+    out: list[Path] = []
+    for p in paths:
+        key = str(p.resolve()) if p.exists() else str(p)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(p)
+    return out
+
+
+def _table_exists(cur, table: str) -> bool:
+    cur.execute("SHOW TABLES LIKE %s", (table,))
+    return bool(cur.fetchone())
+
+
+def _column_names(cur, table: str) -> list[str]:
+    cur.execute(f"SHOW COLUMNS FROM `{table}`")
+    return [str(r.get("Field") or r[0]) for r in cur.fetchall()]
+
+
+def _orders_from_json_blob(raw: Any) -> list[dict]:
+    if isinstance(raw, dict):
+        if isinstance(raw.get("orders"), list):
+            return [o for o in raw["orders"] if isinstance(o, dict)]
+        if raw.get("so_id"):
+            return [raw]
+    if isinstance(raw, str) and raw.strip():
+        try:
+            return _orders_from_json_blob(json.loads(raw))
+        except json.JSONDecodeError:
+            return []
+    return []
+
+
+def import_legacy_mysql_table(table_name: str = "orders_cache") -> int:
+    """从旧版 MySQL 表（如 orders_cache）导入；表不存在或无法解析时返回 0。"""
+    ensure_order_cache_tables()
+    db = _connect()
+    cur = db.cursor()
+    orders: list[dict] = []
+    try:
+        if not _table_exists(cur, table_name):
+            return 0
+        cols = _column_names(cur, table_name)
+        lower = {c.lower(): c for c in cols}
+        if "order_json" in lower:
+            cur.execute(f"SELECT `{lower['order_json']}` FROM `{table_name}`")
+            for row in cur.fetchall():
+                orders.extend(_orders_from_json_blob(row.get(lower["order_json"])))
+        elif "payload_json" in lower:
+            cur.execute(f"SELECT `{lower['payload_json']}` FROM `{table_name}`")
+            for row in cur.fetchall():
+                orders.extend(_orders_from_json_blob(row.get(lower["payload_json"])))
+        elif "payload" in lower:
+            cur.execute(f"SELECT `{lower['payload']}` FROM `{table_name}`")
+            for row in cur.fetchall():
+                orders.extend(_orders_from_json_blob(row.get(lower["payload"])))
+        elif "data" in lower:
+            cur.execute(f"SELECT `{lower['data']}` FROM `{table_name}`")
+            for row in cur.fetchall():
+                orders.extend(_orders_from_json_blob(row.get(lower["data"])))
+        else:
+            cur.execute(f"SELECT * FROM `{table_name}` LIMIT 5000")
+            for row in cur.fetchall():
+                if isinstance(row, dict) and row.get("so_id"):
+                    orders.append(row)
+    except Exception as ex:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        print(f"[order_cache] 读取旧表 {table_name} 失败: {ex}")
+        return 0
+    finally:
+        cur.close()
+        db.close()
+
+    if not orders:
+        return 0
+    dedup: dict[str, dict] = {}
+    for o in orders:
+        sid = str(o.get("so_id") or "").strip()
+        if sid:
+            dedup[sid] = o
+    orders = list(dedup.values())
+    n = write_orders_snapshot(
+        orders,
+        report={"migrated_from": f"mysql:{table_name}"},
+        source="legacy_mysql",
+        allow_empty=True,
+    )
+    stats = compute_dashboard_stats(orders)
+    write_stats_cache("dashboard_summary", stats)
+    print(f"[order_cache] 已从 MySQL 表 {table_name} 导入 {n} 条订单")
+    return n
+
+
 def import_json_file_to_mysql(cache_path: str | Path) -> int:
-    """一次性迁移脚本专用：从 orders_cache.json 导入 MySQL。"""
+    """从 orders_cache.json 导入 MySQL。"""
     path = Path(cache_path)
     if not path.is_file():
         return 0
@@ -550,11 +675,97 @@ def import_json_file_to_mysql(cache_path: str | Path) -> int:
         shops_count=int(data.get("shop_count") or 0),
         source=str(data.get("source") or "kuaimai+1688"),
         partial=bool(data.get("partial")),
+        allow_empty=True,
     )
     stats = compute_dashboard_stats(orders)
     write_stats_cache("dashboard_summary", stats)
     print(f"[order_cache] 已从 JSON 导入 {n} 条订单到 MySQL")
     return n
+
+
+def _acquire_bootstrap_lock(cur) -> bool:
+    cur.execute("SELECT GET_LOCK(%s, 15)", (_MIGRATE_LOCK_NAME,))
+    row = cur.fetchone()
+    if isinstance(row, dict):
+        return int(row.get(list(row.keys())[0]) or 0) == 1
+    return int(row[0] if row else 0) == 1
+
+
+def _release_bootstrap_lock(cur) -> None:
+    try:
+        cur.execute("SELECT RELEASE_LOCK(%s)", (_MIGRATE_LOCK_NAME,))
+    except Exception:
+        pass
+
+
+def bootstrap_order_cache_if_empty(
+    *,
+    cache_json: str | Path | None = None,
+    legacy_tables: tuple[str, ...] = ("orders_cache", "order_cache"),
+) -> dict[str, Any]:
+    """
+    新表为空时：优先 JSON，再尝试旧 MySQL 表 orders_cache。
+    多进程/双容器用 GET_LOCK 防重复导入。
+    """
+    ensure_order_cache_tables()
+    existing = order_count_mysql()
+    if existing > 0:
+        return {"status": "skipped", "reason": "has_data", "count": existing}
+
+    db = _connect()
+    cur = db.cursor()
+    if not _acquire_bootstrap_lock(cur):
+        cur.close()
+        db.close()
+        return {"status": "skipped", "reason": "lock_busy"}
+    try:
+        if order_count_mysql() > 0:
+            return {"status": "skipped", "reason": "has_data_race"}
+
+        paths: list[Path] = []
+        if cache_json:
+            paths.append(Path(cache_json))
+        paths.extend(_default_json_cache_paths())
+
+        for path in paths:
+            if path.is_file():
+                n = import_json_file_to_mysql(path)
+                if n > 0:
+                    return {"status": "ok", "source": str(path), "count": n}
+
+        for table in legacy_tables:
+            n = import_legacy_mysql_table(table)
+            if n > 0:
+                return {"status": "ok", "source": f"mysql:{table}", "count": n}
+
+        return {"status": "empty", "reason": "no_legacy_source"}
+    finally:
+        _release_bootstrap_lock(cur)
+        cur.close()
+        db.close()
+
+
+def schedule_startup_migration() -> None:
+    """应用启动时后台执行一次空表迁移（Docker/裸跑均适用）。"""
+    global _startup_migrate_scheduled
+    with _startup_migrate_lock:
+        if _startup_migrate_scheduled:
+            return
+        _startup_migrate_scheduled = True
+
+    def _run() -> None:
+        try:
+            rep = bootstrap_order_cache_if_empty()
+            if rep.get("status") == "ok":
+                print(f"[order_cache] 启动迁移完成: {rep}")
+            elif rep.get("status") == "empty":
+                print("[order_cache] 启动迁移：无 JSON/旧表数据源，等待同步线程填表")
+        except Exception as ex:
+            print(f"[order_cache] 启动迁移失败: {ex}")
+
+    threading.Thread(
+        target=_run, daemon=True, name="order-cache-bootstrap"
+    ).start()
 
 
 def load_orders_for_api(

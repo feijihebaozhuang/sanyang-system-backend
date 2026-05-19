@@ -123,12 +123,22 @@ def _write_mysql_snapshot(
     if not ocs.mysql_cache_available():
         report["errors"].append({"msg": "MySQL 不可用"})
         return 0
+    allow_empty = (
+        not partial
+        and not pending
+        and not (report.get("errors") or [])
+        and (
+            km_api.km_configured()
+            or int(report.get("direct_1688_count") or 0) > 0
+        )
+    )
     ocs.write_orders_snapshot(
         pending,
         report=dict(report),
         shops_count=len(shops),
         source="kuaimai+1688",
         partial=partial,
+        allow_empty=allow_empty,
     )
     stats = ocs.compute_dashboard_stats(pending)
     ocs.write_stats_cache("dashboard_summary", stats)
