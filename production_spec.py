@@ -217,17 +217,12 @@ def _parse_color(text: str, material: str = "") -> str:
 
 
 def is_airbox_product(attrs: str) -> bool:
-    """飞机盒类目（正方形/长方形/带扣/扣底/双插等），纸箱走独立逻辑。"""
+    """飞机盒类目（正方形/长方形/带扣/扣底/双插等）；仅含「纸箱」时走纸箱逻辑。"""
     t = sanitize_sku_attrs(attrs) or (attrs or "").strip()
     if not t:
         return True
     if "纸箱" in t and "飞机盒" not in t:
         return False
-    if any(k in t for k in ("扣底", "双插", "带扣", "飞机盒", "正方形", "长方形")):
-        return True
-    if re.search(r"3层|5层|五层", t) and "飞机盒" not in t:
-        if not any(k in t for k in ("扣底", "双插")):
-            return False
     return True
 
 
