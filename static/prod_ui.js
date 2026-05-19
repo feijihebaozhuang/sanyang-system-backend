@@ -271,24 +271,43 @@
     window.renderMaterialCalcHtml = function (item) {
         var mc = item.material_calc || {};
         var st = mc.status || item.material_status || 'pending';
-        var icon = st === 'done' ? '✅' : st === 'error' ? '❌' : '⏳';
-        if (st !== 'done' && st !== 'error') {
+        var icon =
+            st === 'done'
+                ? '✅'
+                : st === 'shortage'
+                  ? '⚠️缺料'
+                  : st === 'error'
+                    ? '❌'
+                    : '⏳';
+        if (st !== 'done' && st !== 'error' && st !== 'shortage') {
             return '<div style="font-size:10px;color:#888;margin-top:2px;">算料 ' + icon + '</div>';
         }
-        var paper = mc.paper_display || (mc.paper && mc.paper.paper_spec) || '—';
+        if (st === 'shortage') {
+            return (
+                '<div style="font-size:10px;color:#d48806;margin-top:2px;">' +
+                icon +
+                ' ' +
+                (mc.error || '缺料，请自行决定') +
+                '</div>'
+            );
+        }
+        var paper = mc.paper_display || mc.paper_spec || (mc.paper && mc.paper.paper_spec) || '—';
         var boards = mc.boards_needed != null ? mc.boards_needed : '—';
-        var dm = mc.dimoldb_code || (mc.dimoldb && mc.dimoldb.code) || '—';
+        var per = mc.sheets_per_board != null ? mc.sheets_per_board : '—';
+        var dm = mc.dimoldb_id || mc.dimoldb_code || (mc.dimoldb && mc.dimoldb.dimoldb_id) || '—';
         return (
-            '<motion.div style="font-size:10px;color:#555;margin-top:2px;line-height:1.4;">' +
+            '<div style="font-size:10px;color:#555;margin-top:2px;line-height:1.4;">' +
             icon +
             ' 纸板：' +
             paper +
-            '；用量 ' +
+            '；' +
             boards +
-            ' 张；刀模 ' +
+            '张；开' +
+            per +
+            '个/张；刀模 ' +
             dm +
-            '</motion.div>'
-        ).replace(/motion\.div/g, 'div');
+            '</div>'
+        );
     };
 
     window.calcMaterialLine = async function (soId, lineIdx, ev) {
