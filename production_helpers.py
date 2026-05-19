@@ -139,33 +139,16 @@ def internal_order_id(o: dict) -> str:
     return str(o.get("so_id") or o.get("km_sid") or "").strip()
 
 
-def load_cache_orders(cache_file: str, *, finalize: bool = True) -> list[dict]:
+def load_cache_orders(cache_file: str | None = None, *, finalize: bool = True) -> list[dict]:
+    del cache_file
     try:
         import order_cache_store as ocs
 
-        orders, _status, _meta = ocs.load_orders_for_api(
-            cache_file, finalize=finalize
-        )
-        if orders:
-            return orders
+        orders, _status, _meta = ocs.load_orders_for_api(finalize=finalize)
+        return orders
     except Exception as e:
-        print(f"[load_cache_orders] MySQL 读取失败，尝试 JSON: {e}")
-    if not os.path.exists(cache_file):
+        print(f"[load_cache_orders] MySQL 读取失败: {e}")
         return []
-    try:
-        with open(cache_file, "r", encoding="utf-8") as f:
-            orders = list(json.load(f).get("orders") or [])
-    except (OSError, json.JSONDecodeError):
-        return []
-    if finalize:
-        try:
-            import km_api as _km
-
-            for o in orders:
-                _km.finalize_cache_order(o)
-        except ImportError:
-            pass
-    return orders
 
 
 def item_buyer_attrs(it: dict) -> str:

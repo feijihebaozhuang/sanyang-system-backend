@@ -1476,11 +1476,12 @@
             <div style="display:flex;align-items:center;gap:8px;">
                 <h3 style="margin:0;">📋 实时订单</h3>
                 <span id="rtDataStatus" style="font-size:11px;padding:2px 6px;border-radius:8px;background:#e8e8e8;color:#666;">未加载</span>
+                <span id="rtLastUpdated" style="font-size:11px;color:#999;"></span>
                 <span id="rtOrderCount" style="font-size:12px;color:#999;display:none;"></span>
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;">
                 <span id="rtUnsentCount" style="padding:4px 10px;background:#fff3cd;border-radius:12px;font-size:12px;font-weight:600;color:#856404;">🕐 待发货：<span id="rtUnsentNum">0</span></span>
-                <button type="button" onclick="rtSyncForce()" style="padding:4px 12px;background:#1677ff;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;">🔄 同步订单</button>
+                <button type="button" onclick="rtSyncForce()" style="padding:4px 12px;background:#1677ff;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;">🔄 刷新</button>
             </div>
         </div>
 
@@ -5768,6 +5769,27 @@
         return '';
     }
 
+    function rtFormatUpdatedAgo(sec) {
+        if (sec == null || sec === '' || isNaN(sec)) return '';
+        var s = parseInt(sec, 10);
+        if (s < 5) return '上次更新：刚刚';
+        if (s < 3600) return '上次更新：' + s + ' 秒前';
+        return '上次更新：' + Math.floor(s / 60) + ' 分钟前';
+    }
+
+    function rtUpdateLastUpdated(data) {
+        var el = document.getElementById('rtLastUpdated');
+        if (!el) return;
+        var ago = data && (data.updated_ago_sec != null ? data.updated_ago_sec : null);
+        if (ago == null && data && data.updated_at) {
+            ago = Math.max(0, Math.floor(Date.now() / 1000 - data.updated_at));
+        }
+        el.textContent = rtFormatUpdatedAgo(ago);
+        if (data && data.sync_running) {
+            el.textContent = (el.textContent ? el.textContent + ' · ' : '') + '后台同步中…';
+        }
+    }
+
     function rtSetStatus(text, kind) {
         const statusEl = document.getElementById('rtDataStatus');
         if (!statusEl) return;
@@ -6002,10 +6024,12 @@
                 _rtAllOrders = data.orders || [];
                 _rtShopConfig = data.shop_config || [];
                 rtSaveSessionCache(data);
+                rtUpdateLastUpdated(data);
                 var unsentEl = document.getElementById('rtUnsentNum');
                 if (unsentEl) unsentEl.textContent = _rtAllOrders.length;
                 rtBuildShopFilter();
                 rtRenderOrders();
+                rtSetStatus('已加载 ' + _rtAllOrders.length + ' 条', 'ok');
             } else {
                 _rtLoaded = true;
                 rtSetStatus('加载失败', 'err');

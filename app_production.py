@@ -436,10 +436,13 @@ def dashboard():
     date = request.args.get('date', datetime.date.today().strftime('%Y-%m-%d'))
     shop_config = load_shop_config()
 
-    # 订单缓存：优先 MySQL，JSON fallback
+    # 订单缓存：MySQL + 访问即同步
     real_orders = []
     try:
-        real_orders = ph.load_cache_orders(_orders_cache_path())
+        import order_visit_sync as _ovs
+
+        _ovs.schedule_incremental_sync(memo_getter=get_order_memo, force=False)
+        real_orders = ph.load_cache_orders()
     except Exception as e:
         print(f'[Dashboard] 读缓存失败: {e}')
         real_orders = []
@@ -596,7 +599,7 @@ def _orders_cache_path():
 def _find_cached_order(query):
     import order_cache_store as ocs
 
-    return ocs.find_order(query, _orders_cache_path())
+    return ocs.find_order(query)
 
 
 def _order_detail_from_cache(o):
@@ -3853,15 +3856,31 @@ def api_order_1688_memo():
 
 @app.route('/api/realtime/orders', methods=['GET'])
 def api_realtime_orders():
-    """实时订单：优先 MySQL 缓存，毫秒级返回（后台静默同步）。"""
+    """实时订单：MySQL 秒回 + 后台增量同步。"""
     import order_sync as _osync
 
     payload = _osync.read_realtime_cache_payload(
-        ORDERS_CACHE_FILE, load_shop_config()
+        shop_config=load_shop_config(),
+        memo_getter=get_order_memo,
+        trigger_background_sync=True,
     )
     n = payload.get("total", 0)
-    print(f"[实时订单] 读缓存 {payload.get('cache_status')}: {n} 条")
+    print(f"[实时订单] MySQL {payload.get('cache_status')}: {n} 条")
     return jsonify(payload)
+
+
+@app.route('/api/webhook/kuaimai', methods=['GET', 'POST'])
+def api_webhook_kuaimai():
+    if request.method == 'GET':
+        return jsonify({'success': True, 'msg': 'kuaimai webhook ok'})
+    import kuaimai_webhook as kwh
+
+    body = request.get_json(silent=True) or {}
+    if not body and request.form:
+        body = {k: request.form.get(k) for k in request.form.keys()}
+    report = kwh.apply_webhook_payload(body)
+    code = 200 if report.get('success', True) else 400
+    return jsonify(report), code
 
 # ==================== 店铺客服配置 API ====================
 

@@ -751,13 +751,15 @@ def dashboard():
     """今日订单 - 从 orders_cache（快麦+1688）读取"""
     date = request.args.get('date', datetime.date.today().strftime('%Y-%m-%d'))
     
-    # 读取订单缓存（优先 MySQL，JSON fallback）
+    # 读取订单缓存（MySQL）+ 后台增量同步
     orders = []
     total_sales = 0.0
     try:
+        import order_visit_sync as _ovs
         import production_helpers as _ph
 
-        raw_orders = _ph.load_cache_orders(_orders_cache_path())
+        _ovs.schedule_incremental_sync(memo_getter=get_order_memo, force=False)
+        raw_orders = _ph.load_cache_orders()
         if raw_orders:
             try:
                 import km_api as _km
@@ -1057,7 +1059,7 @@ def _orders_cache_path():
 def _find_cached_order(query):
     import order_cache_store as ocs
 
-    o = ocs.find_order(query, _orders_cache_path())
+    o = ocs.find_order(query)
     if not o:
         return None
     try:
@@ -3321,15 +3323,32 @@ def api_order_1688_memo():
 
 @app.route('/api/realtime/orders', methods=['GET'])
 def api_realtime_orders():
-    """实时订单：只读 orders_cache.json，毫秒级返回（后台静默同步）。"""
+    """实时订单：MySQL 秒回 + 后台增量同步（访问即同步）。"""
     import order_sync as _osync
 
     payload = _osync.read_realtime_cache_payload(
-        ORDERS_CACHE_FILE, load_shop_config()
+        shop_config=load_shop_config(),
+        memo_getter=get_order_memo,
+        trigger_background_sync=True,
     )
     n = payload.get("total", 0)
-    print(f"[实时订单] 读缓存 {payload.get('cache_status')}: {n} 条")
+    print(f"[实时订单] MySQL {payload.get('cache_status')}: {n} 条")
     return jsonify(payload)
+
+
+@app.route('/api/webhook/kuaimai', methods=['GET', 'POST'])
+def api_webhook_kuaimai():
+    """快麦订单状态变更 Webhook（需在开放平台配置回调 URL）。"""
+    if request.method == 'GET':
+        return jsonify({'success': True, 'msg': 'kuaimai webhook ok'})
+    import kuaimai_webhook as kwh
+
+    body = request.get_json(silent=True) or {}
+    if not body and request.form:
+        body = {k: request.form.get(k) for k in request.form.keys()}
+    report = kwh.apply_webhook_payload(body)
+    code = 200 if report.get('success', True) else 400
+    return jsonify(report), code
 
 # ==================== 店铺客服配置 API ====================
 

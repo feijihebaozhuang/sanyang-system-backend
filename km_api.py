@@ -604,6 +604,7 @@ def km_outstock_simple_page(
 def km_fetch_trades_outstock(
     days_back: int = 14,
     *,
+    hours_back: int | None = None,
     time_type: str = "upd_time",
     status: str | None = KM_PENDING_STATUSES,
     page_size: int = 200,
@@ -611,14 +612,26 @@ def km_fetch_trades_outstock(
 ) -> tuple[list[dict], list[dict]]:
     """按天分页拉取出库/订单（淘系等）；source_filter 为 None 时不按 source 过滤。"""
     end = datetime.now()
-    start = end - timedelta(days=max(1, days_back))
+    if hours_back is not None:
+        start = end - timedelta(hours=max(1, int(hours_back)))
+    else:
+        start = end - timedelta(days=max(1, days_back))
     all_orders: list[dict] = []
     errors: list[dict] = []
     seen: set[str] = set()
 
     import time as _time
 
-    for start_time, end_time in _day_ranges(start, end):
+    if hours_back is not None:
+        time_windows = [
+            (
+                start.strftime("%Y-%m-%d %H:%M:%S"),
+                end.strftime("%Y-%m-%d %H:%M:%S"),
+            )
+        ]
+    else:
+        time_windows = list(_day_ranges(start, end))
+    for start_time, end_time in time_windows:
         page_no = 1
         while page_no <= 500:
             res = km_outstock_simple_page(

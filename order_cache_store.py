@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""订单缓存 MySQL 存储：同步写入、查询优先读库，JSON 文件作 fallback。"""
+"""订单缓存 MySQL 存储：同步写入、查询只读 MySQL。"""
 from __future__ import annotations
 
 import json
@@ -307,35 +307,141 @@ def find_order_mysql(query: str) -> dict | None:
     q = (query or "").strip()
     if not q:
         return None
-    orders = read_orders_mysql(finalize=True)
+    ensure_order_cache_tables()
+    db = _connect()
+    cur = db.cursor()
     ql = q.lower()
-    for o in orders:
-        so_id = str(o.get("so_id") or "")
-        tid = str(o.get("tid") or o.get("platform_tid") or "")
-        if q == so_id or q == tid or ql in so_id.lower() or (tid and ql in tid.lower()):
-            return o
-    return None
-
-
-def write_json_fallback(cache_path: Path, payload: dict[str, Any]) -> None:
+    cur.execute(
+        "SELECT order_json FROM order_cache_orders WHERE so_id=%s OR tid=%s LIMIT 1",
+        (q, q),
+    )
+    row = cur.fetchone()
+    if not row:
+        cur.execute("SELECT order_json, so_id, tid FROM order_cache_orders")
+        for r in cur.fetchall():
+            try:
+                o = json.loads(r["order_json"])
+            except (TypeError, json.JSONDecodeError):
+                continue
+            so_id = str(o.get("so_id") or "")
+            tid = str(o.get("tid") or o.get("platform_tid") or "")
+            if q == so_id or q == tid or ql in so_id.lower() or (tid and ql in tid.lower()):
+                row = r
+                break
+        else:
+            row = None
+    cur.close()
+    db.close()
+    if not row:
+        return None
     try:
-        cache_path.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2, default=str),
-            encoding="utf-8",
+        o = json.loads(row["order_json"])
+    except (TypeError, json.JSONDecodeError):
+        return None
+    try:
+        import km_api as _km
+
+        _km.finalize_cache_order(o)
+    except ImportError:
+        pass
+    return o
+
+
+def upsert_order(o: dict) -> None:
+    """单条订单 upsert（Webhook / 增量补丁）。"""
+    ensure_order_cache_tables()
+    updated_at = time.time()
+    row = _order_row_from_dict(o, updated_at)
+    so_id = row[0]
+    db = _connect()
+    cur = db.cursor()
+    try:
+        cur.execute("DELETE FROM order_cache_items WHERE so_id=%s", (so_id,))
+        cur.execute(
+            """
+            INSERT INTO order_cache_orders (
+                so_id, tid, platform, order_status, status_label,
+                shop_name, sync_source, created, pay_time, total_amount,
+                receiver_name, receiver_mobile, receiver_province,
+                receiver_city, receiver_address, order_json, updated_at
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON DUPLICATE KEY UPDATE
+                tid=VALUES(tid), platform=VALUES(platform),
+                order_status=VALUES(order_status), status_label=VALUES(status_label),
+                shop_name=VALUES(shop_name), sync_source=VALUES(sync_source),
+                created=VALUES(created), pay_time=VALUES(pay_time),
+                total_amount=VALUES(total_amount),
+                receiver_name=VALUES(receiver_name),
+                receiver_mobile=VALUES(receiver_mobile),
+                receiver_province=VALUES(receiver_province),
+                receiver_city=VALUES(receiver_city),
+                receiver_address=VALUES(receiver_address),
+                order_json=VALUES(order_json), updated_at=VALUES(updated_at)
+            """,
+            row,
         )
-    except OSError as e:
-        print(f"[order_cache] JSON fallback 写入失败: {e}")
+        item_sql = """
+            INSERT INTO order_cache_items (
+                so_id, line_idx, sku, name, qty, price, display, spec, item_json
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """
+        for idx, it in enumerate(o.get("items") or []):
+            if not isinstance(it, dict):
+                continue
+            cur.execute(
+                item_sql,
+                (
+                    so_id,
+                    idx,
+                    str(it.get("sku") or "")[:128],
+                    str(it.get("name") or "")[:512],
+                    int(it.get("qty") or 0),
+                    float(it.get("price") or 0),
+                    str(it.get("display") or it.get("spec") or "")[:1024],
+                    str(it.get("spec") or "")[:1024],
+                    json.dumps(it, ensure_ascii=False, default=str),
+                ),
+            )
+        cur.execute(
+            """
+            INSERT INTO order_cache_meta (id, updated_at, source, shop_count, partial, report_json)
+            VALUES (1, %s, 'kuaimai+1688', 0, 0, '{}')
+            ON DUPLICATE KEY UPDATE updated_at=VALUES(updated_at)
+            """,
+            (updated_at,),
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        cur.close()
+        db.close()
 
 
-def read_json_fallback(cache_path: Path) -> dict[str, Any] | None:
-    if not cache_path.is_file():
-        return None
-    try:
-        with cache_path.open("r", encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, json.JSONDecodeError) as e:
-        print(f"[order_cache] JSON fallback 读取失败: {e}")
-        return None
+def delete_order(so_id: str) -> bool:
+    sid = (so_id or "").strip()
+    if not sid:
+        return False
+    ensure_order_cache_tables()
+    db = _connect()
+    cur = db.cursor()
+    cur.execute("DELETE FROM order_cache_items WHERE so_id=%s", (sid,))
+    cur.execute("DELETE FROM order_cache_orders WHERE so_id=%s", (sid,))
+    n = cur.rowcount
+    db.commit()
+    cur.close()
+    db.close()
+    return n > 0
+
+
+def read_orders_as_map(*, finalize: bool = False) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    for o in read_orders_mysql(finalize=finalize):
+        sid = str(o.get("so_id") or "").strip()
+        if sid:
+            out[sid] = o
+    return out
 
 
 def compute_dashboard_stats(
@@ -425,113 +531,48 @@ def read_stats_cache(cache_key: str) -> dict[str, Any] | None:
         return None
 
 
-def import_json_file_to_mysql(
-    cache_path: str | Path,
-    *,
-    store_workers: dict[str, str] | None = None,
-) -> int:
-    """一次性/冷启动：将 orders_cache.json 导入 MySQL。"""
+def import_json_file_to_mysql(cache_path: str | Path) -> int:
+    """一次性迁移脚本专用：从 orders_cache.json 导入 MySQL。"""
     path = Path(cache_path)
-    data = read_json_fallback(path)
-    if not data:
+    if not path.is_file():
+        return 0
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
         return 0
     orders = list(data.get("orders") or [])
     if not orders:
         return 0
-    report = data.get("report") or {}
     n = write_orders_snapshot(
         orders,
-        report=report,
+        report=data.get("report") or {},
         shops_count=int(data.get("shop_count") or 0),
         source=str(data.get("source") or "kuaimai+1688"),
         partial=bool(data.get("partial")),
     )
-    stats = compute_dashboard_stats(orders, store_workers)
+    stats = compute_dashboard_stats(orders)
     write_stats_cache("dashboard_summary", stats)
     print(f"[order_cache] 已从 JSON 导入 {n} 条订单到 MySQL")
     return n
 
 
-def auto_import_json_if_mysql_empty(cache_path: str | Path) -> int:
-    if order_count_mysql() > 0:
-        return 0
-    path = Path(cache_path)
-    if not path.is_file():
-        return 0
-    return import_json_file_to_mysql(path)
-
-
 def load_orders_for_api(
-    cache_path: str | Path,
     *,
     finalize: bool = True,
 ) -> tuple[list[dict], str, dict[str, Any]]:
-    """
-    查询优先 MySQL；空表且存在 JSON 则尝试导入；仍无数据则读 JSON fallback。
-    返回 (orders, cache_status, meta)
-    """
-    path = Path(cache_path)
+    """只读 MySQL。空表返回 waiting_sync，由后台同步填充。"""
     meta: dict[str, Any] = {}
-
-    if mysql_cache_available():
-        auto_import_json_if_mysql_empty(path)
-        n = order_count_mysql()
-        if n > 0:
-            meta = read_meta()
-            return read_orders_mysql(finalize=finalize), "hit", meta
-        if path.is_file():
-            data = read_json_fallback(path)
-            if data and data.get("orders"):
-                orders = list(data.get("orders") or [])
-                if finalize:
-                    try:
-                        import km_api as _km
-
-                        for o in orders:
-                            _km.finalize_cache_order(o)
-                    except ImportError:
-                        pass
-                return orders, "json_fallback", {
-                    "updated_at": data.get("updated_at"),
-                    "report": data.get("report") or {},
-                }
-        return [], "waiting_sync", meta
-
-    data = read_json_fallback(path)
-    if not data:
-        return [], "missing", meta
-    orders = list(data.get("orders") or [])
-    if finalize:
-        try:
-            import km_api as _km
-
-            for o in orders:
-                _km.finalize_cache_order(o)
-        except ImportError:
-            pass
-    status = "hit" if orders else "empty"
-    return orders, status, {
-        "updated_at": data.get("updated_at"),
-        "report": data.get("report") or {},
-    }
+    if not mysql_cache_available():
+        return [], "mysql_unavailable", meta
+    n = order_count_mysql()
+    if n > 0:
+        meta = read_meta()
+        return read_orders_mysql(finalize=finalize), "hit", meta
+    return [], "waiting_sync", meta
 
 
-def find_order(
-    query: str,
-    cache_path: str | Path,
-) -> dict | None:
-    if mysql_cache_available() and order_count_mysql() > 0:
-        o = find_order_mysql(query)
-        if o:
-            return o
-    path = Path(cache_path)
-    data = read_json_fallback(path)
-    if not data:
+def find_order(query: str) -> dict | None:
+    if not mysql_cache_available():
         return None
-    q = (query or "").strip().lower()
-    for o in data.get("orders") or []:
-        so_id = str(o.get("so_id") or "")
-        tid = str(o.get("tid") or o.get("platform_tid") or "")
-        if query == so_id or query == tid or q in so_id.lower() or (tid and q in tid.lower()):
-            return o
-    return None
+    return find_order_mysql(query)
