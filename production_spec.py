@@ -270,6 +270,14 @@ def _parse_dimensions(text: str) -> dict[str, float]:
         )
         if m:
             dims["h"] = float(m.group(1))
+    if "h" not in dims:
+        m = re.search(
+            r"(?:高度|高)\s*[:：]\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?",
+            text,
+            re.I,
+        )
+        if m:
+            dims["h"] = float(m.group(1))
 
     if "w" not in dims:
         m = re.search(
@@ -279,9 +287,25 @@ def _parse_dimensions(text: str) -> dict[str, float]:
         )
         if m:
             dims["w"] = float(m.group(1))
+    if "w" not in dims:
+        m = re.search(
+            r"(?:宽度|宽)\s*[:：]\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?",
+            text,
+            re.I,
+        )
+        if m:
+            dims["w"] = float(m.group(1))
     if "l" not in dims:
         m = re.search(
             r"(?:长度|长)\s*【?\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?\s*】?",
+            text,
+            re.I,
+        )
+        if m:
+            dims["l"] = float(m.group(1))
+    if "l" not in dims:
+        m = re.search(
+            r"(?:长度|长)\s*[:：]\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?",
             text,
             re.I,
         )

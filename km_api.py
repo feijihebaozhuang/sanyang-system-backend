@@ -1123,6 +1123,63 @@ def merge_1688_sku_infos(sku_infos: Any) -> str:
     return "；".join(parts)
 
 
+def km_platform_spec_json_to_attrs(val: Any) -> str:
+    """
+    快麦子单 platformSpec：JSON 数组 [{"name":"宽","value":"15cm"}, ...]
+    → 宽:15cm；长度:28cm；高:6cm（与 merge_1688_sku_infos 同规则）。
+    非 JSON 的纯文本返回空，由 skuPropertiesName 等字段承接。
+    """
+    if val is None or val == "":
+        return ""
+    obj: Any = val
+    if isinstance(val, str):
+        s = val.strip()
+        if not s or not s.startswith(("[", "{")):
+            return ""
+        try:
+            obj = json.loads(s)
+        except json.JSONDecodeError:
+            return ""
+    if isinstance(obj, list):
+        return merge_1688_sku_infos(obj)
+    if isinstance(obj, dict):
+        for key in (
+            "platformSpec",
+            "attrs",
+            "attributes",
+            "attribute",
+            "specs",
+            "skuAttrs",
+            "items",
+            "skuInfos",
+        ):
+            inner = obj.get(key)
+            if inner is not None:
+                sub = km_platform_spec_json_to_attrs(inner)
+                if sub:
+                    return sub
+        if any(
+            obj.get(k)
+            for k in ("name", "value", "attributeName", "attributeValue", "key")
+        ):
+            return merge_1688_sku_infos([obj])
+    return ""
+
+
+def _platform_spec_json_attrs_usable(text: str) -> bool:
+    """JSON 拼串是否含宽度等关键信息（skuPropertiesName 常被裁掉宽）。"""
+    t = _norm_spec_text(text)
+    if not t:
+        return False
+    if re.search(r"(?:宽度|宽)\s*[:：]", t, re.I):
+        return True
+    if re.search(r"(?:宽度|宽)\s*【", t, re.I):
+        return True
+    if re.search(r"[:：]\s*[^;；]*宽", t, re.I):
+        return True
+    return False
+
+
 def _dedupe_attr_segments(segments: list[str]) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
@@ -1557,7 +1614,7 @@ def _merge_spec_segments_from_text(chunks: list[str], seen: set[str], text: str)
 def km_collect_item_raw_attrs(it: dict) -> str:
     """
     收集快麦/平台买家属性全文（platformSpec 等），供生产解析。
-    多字段合并，不做「只抠片段」式精简，避免丢宽【15cm】等。
+    优先 platformSpec JSON（宽常在 JSON，skuPropertiesName 可能缺宽）；再合并其它字段，只增不减。
     """
     if not isinstance(it, dict):
         return ""
@@ -1565,10 +1622,23 @@ def km_collect_item_raw_attrs(it: dict) -> str:
     if ali:
         return _strip_attrs_pollution(ali)
 
+    ps_json = ""
+    for key in ("platformSpec", "platform_spec"):
+        part = km_platform_spec_json_to_attrs(it.get(key))
+        if part:
+            ps_json = part if not ps_json else f"{ps_json}；{part}"
+
     chunks: list[str] = []
     seen: set[str] = set()
-    for key in _KM_SPEC_SOURCE_KEYS:
-        _merge_spec_segments_from_text(chunks, seen, _norm_spec_text(it.get(key)))
+    if ps_json and _platform_spec_json_attrs_usable(ps_json):
+        _merge_spec_segments_from_text(chunks, seen, ps_json)
+        for key in _KM_SPEC_SOURCE_KEYS:
+            if key in ("platformSpec", "platform_spec"):
+                continue
+            _merge_spec_segments_from_text(chunks, seen, _norm_spec_text(it.get(key)))
+    else:
+        for key in _KM_SPEC_SOURCE_KEYS:
+            _merge_spec_segments_from_text(chunks, seen, _norm_spec_text(it.get(key)))
     for frag in _order_ext_spec_fragments(it.get("orderExt")):
         k = _norm_spec_seg_key(frag)
         if k not in seen:
