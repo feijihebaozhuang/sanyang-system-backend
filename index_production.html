@@ -5739,8 +5739,42 @@
     }
 }
 
-// ===== 工序超时设置弹窗 =====
+// ===== 工序超时设置弹窗（工序列表与生产线流程同步） =====
 let _processStepTimeouts = {};
+
+function _escTimeoutHtml(s) {
+    return String(s || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function collectProcessStepsForTimeout(processes) {
+    const sections = [];
+    if (!Array.isArray(processes) || !processes.length) return sections;
+    const isTree = processes[0] && typeof processes[0] === 'object' && processes[0].dept;
+    if (isTree) {
+        processes.forEach(function (p) {
+            const steps = (p.steps || [])
+                .map(function (s) {
+                    return typeof s === 'string' ? s : (s && s.name) || '';
+                })
+                .filter(Boolean);
+            if (steps.length) sections.push({ dept: p.dept || '未命名部门', steps: steps });
+        });
+    } else if (typeof processes[0] === 'string') {
+        sections.push({ dept: '', steps: processes.filter(Boolean) });
+    } else {
+        const steps = processes
+            .map(function (s) {
+                return typeof s === 'string' ? s : (s && s.name) || '';
+            })
+            .filter(Boolean);
+        if (steps.length) sections.push({ dept: '', steps: steps });
+    }
+    return sections;
+}
 
 async function openProcessSettings() {
     // 检查权限
@@ -5757,22 +5791,44 @@ async function openProcessSettings() {
         _processStepTimeouts = {};
     }
     
-    const defaultSteps = ['客服接单', '文员打单', '算料', '分纸', '找纸板', '找刀模', '啤货', '清废(外包)', '清废', '印刷(如有)', '开槽/打角', '粘胶/打钉', '粘胶', '打捆打包过膜', '打捆过膜', '打包', '打捆过膜打包', '发货(快递/物流)', '发货', '仓库找货', '多库存→仓库入库'];
-    
+    let processes = _permData && _permData.processes;
+    if (!processes) {
+        try {
+            const permRes = await fetch('/api/permissions/data');
+            const permData = await permRes.json();
+            _permData = permData;
+            processes = permData.processes;
+            if (Array.isArray(processes) && processes.length > 0 && typeof processes[0] === 'string') {
+                processes = [{ dept: '美丽湾工厂部', steps: processes.map(function (s, i) { return { id: i + 1, name: s }; }) }];
+            }
+        } catch (e) {
+            processes = [];
+        }
+    }
+
+    const sections = collectProcessStepsForTimeout(processes || []);
+    if (!sections.length) {
+        alert('请先在「权限管理 → 生产线流程」中配置工序，再设置超时。');
+        return;
+    }
+
     let rows = '';
-    defaultSteps.forEach(step => {
-        const val = _processStepTimeouts[step] || '';
-        rows += `
-        <div style="display:flex;align-items:center;padding:6px 0;border-bottom:1px solid #f0f0f0;">
-            <span style="flex:1;font-size:13px;">${step}</span>
-            <input type="number" id="timeout_${step.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_')}" value="${val}" min="0" placeholder="分钟" style="width:100px;padding:6px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px;text-align:center;">
-            <span style="width:40px;text-align:center;font-size:12px;color:#999;">分钟</span>
-        </div>`;
+    sections.forEach(function (sec, si) {
+        if (sec.dept) {
+            rows += '<div style="font-weight:600;font-size:13px;color:#1677ff;margin:' + (si > 0 ? '12px' : '0') + ' 0 6px;padding-top:' + (si > 0 ? '8px' : '0') + ';border-top:' + (si > 0 ? '1px solid #e8e8e8' : 'none') + ';">🏭 ' + _escTimeoutHtml(sec.dept) + '</motion.div>';
+        }
+        sec.steps.forEach(function (step) {
+            const val = _processStepTimeouts[step] || '';
+            rows += '<div class="timeout-step-row" style="display:flex;align-items:center;padding:6px 0;border-bottom:1px solid #f0f0f0;">' +
+                '<span style="flex:1;font-size:13px;">' + _escTimeoutHtml(step) + '</span>' +
+                '<input type="number" data-step="' + _escTimeoutHtml(step) + '" value="' + _escTimeoutHtml(String(val)) + '" min="0" placeholder="分钟" style="width:100px;padding:6px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px;text-align:center;">' +
+                '<span style="width:40px;text-align:center;font-size:12px;color:#999;">分钟</span></div>';
+        });
     });
-    
+
     const html = `
     <div style="padding:4px;">
-        <p style="font-size:12px;color:#888;margin-bottom:12px;">设置每个工序的目标完成时长，超时将自动标红提醒。留空表示不设超时限制。</p>
+        <p style="font-size:12px;color:#888;margin-bottom:12px;">工序列表与「生产线流程」同步，按部门展示。留空表示不设超时限制。</p>
         <div style="max-height:400px;overflow-y:auto;margin-bottom:12px;">
             ${rows}
         </div>
@@ -5797,47 +5853,29 @@ async function openProcessSettings() {
 
 async function saveProcessTimeouts() {
     const timeouts = {};
-    const inputs = document.querySelectorAll('#timeoutModalBody input[type="number"]');
-    inputs.forEach(inp => {
-        const id = inp.id;
-        const stepName = id.replace(/^timeout_/, '').replace(/_/g, '');
-        // 反向查找默认步骤名
+    document.querySelectorAll('#timeoutModalBody input[type="number"][data-step]').forEach(function (inp) {
+        const stepName = (inp.getAttribute('data-step') || '').trim();
         const val = inp.value.trim();
-        if (val && parseInt(val) > 0) {
-            timeouts[stepName] = parseInt(val);
+        if (stepName && val && parseInt(val, 10) > 0) {
+            timeouts[stepName] = parseInt(val, 10);
         }
     });
-    
-    // 用元素ID里的步骤名太粗糙，改用更精确的方式
-    // 重建：直接读取每行文本
-    const div = document.getElementById('timeoutModalBody');
-    const rows = div.querySelectorAll('div[style*="border-bottom"]');
-    rows.forEach(row => {
-        const span = row.querySelector('span');
-        const input = row.querySelector('input');
-        if (span && input) {
-            const stepName = span.textContent.trim();
-            const val = input.value.trim();
-            if (val && parseInt(val) > 0) {
-                timeouts[stepName] = parseInt(val);
-            }
-        }
-    });
-    
+
     try {
         const res = await fetch('/api/process_timeout', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({timeouts})
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ timeouts: timeouts }),
         });
         const data = await res.json();
         if (data.success) {
+            _processStepTimeouts = data.timeouts || timeouts;
             alert('✅ 工序超时设置已保存');
             closeModal('timeoutModal');
         } else {
             alert('❌ ' + (data.error || '保存失败'));
         }
-    } catch(e) {
+    } catch (e) {
         alert('❌ ' + e.message);
     }
 }

@@ -1415,6 +1415,41 @@ for key, default_val in _permission_data_init.items():
 # 再次同步权限
 _sync_all_employees_perms()
 
+@app.route("/api/process_timeout", methods=["GET", "POST"])
+def process_timeout_api():
+    """工序超时（分钟）：{ timeouts: { 工序名: 分钟 } }"""
+    global _permission_data
+    if request.method == "GET":
+        return jsonify(
+            {
+                "success": True,
+                "timeouts": _permission_data.get("process_timeouts") or {},
+            }
+        )
+    un = resolve_login_user()
+    role = USERS.get(un or "", {}).get("role", "")
+    if role not in ("超级管理员", "管理", "主管"):
+        return jsonify({"success": False, "error": "无权限"}), 403
+    body = request.get_json() or {}
+    timeouts = body.get("timeouts")
+    if not isinstance(timeouts, dict):
+        return jsonify({"success": False, "error": "timeouts 格式错误"}), 400
+    cleaned = {}
+    for k, v in timeouts.items():
+        name = str(k).strip()
+        if not name:
+            continue
+        try:
+            mins = int(v)
+        except (TypeError, ValueError):
+            continue
+        if mins > 0:
+            cleaned[name] = mins
+    _permission_data["process_timeouts"] = cleaned
+    persist()
+    return jsonify({"success": True, "timeouts": cleaned, "message": "已保存"})
+
+
 @app.route('/api/permissions/data')
 def get_permissions_data():
     # 每次返回都同步一次，保证永远不遗漏
