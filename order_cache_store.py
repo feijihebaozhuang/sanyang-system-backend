@@ -143,7 +143,32 @@ def order_count_mysql() -> int:
         return 0
 
 
+def _hydrate_order_items(o: dict) -> None:
+    """order_json 可能只有 items_json 字符串而无 items 数组（打单 full_items 依赖 items）。"""
+    if not isinstance(o, dict):
+        return
+    existing = o.get("items")
+    if isinstance(existing, list) and len(existing) > 0:
+        return
+    raw = o.get("items_json")
+    if raw is None or raw == "":
+        return
+    if isinstance(raw, list):
+        o["items"] = raw
+        return
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except (TypeError, json.JSONDecodeError):
+            return
+        if isinstance(parsed, list):
+            o["items"] = parsed
+        elif isinstance(parsed, dict):
+            o["items"] = [parsed]
+
+
 def _order_row_from_dict(o: dict, updated_at: float) -> tuple:
+    _hydrate_order_items(o)
     so_id = str(o.get("so_id") or "").strip()
     if not so_id:
         raise ValueError("missing so_id")
@@ -304,6 +329,7 @@ def read_orders_mysql(*, finalize: bool = True) -> list[dict]:
         except (TypeError, json.JSONDecodeError):
             continue
         if isinstance(o, dict):
+            _hydrate_order_items(o)
             orders.append(o)
     if finalize:
         try:
@@ -336,6 +362,7 @@ def find_order_mysql(query: str) -> dict | None:
                 o = json.loads(r["order_json"])
             except (TypeError, json.JSONDecodeError):
                 continue
+            _hydrate_order_items(o)
             so_id = str(o.get("so_id") or "")
             tid = str(o.get("tid") or o.get("platform_tid") or "")
             if q == so_id or q == tid or ql in so_id.lower() or (tid and ql in tid.lower()):
@@ -351,6 +378,7 @@ def find_order_mysql(query: str) -> dict | None:
         o = json.loads(row["order_json"])
     except (TypeError, json.JSONDecodeError):
         return None
+    _hydrate_order_items(o)
     try:
         import km_api as _km
 
@@ -582,8 +610,12 @@ def _column_names(cur, table: str) -> list[str]:
 def _orders_from_json_blob(raw: Any) -> list[dict]:
     if isinstance(raw, dict):
         if isinstance(raw.get("orders"), list):
-            return [o for o in raw["orders"] if isinstance(o, dict)]
+            out = [o for o in raw["orders"] if isinstance(o, dict)]
+            for o in out:
+                _hydrate_order_items(o)
+            return out
         if raw.get("so_id"):
+            _hydrate_order_items(raw)
             return [raw]
     if isinstance(raw, str) and raw.strip():
         try:

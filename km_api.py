@@ -442,6 +442,12 @@ def km_to_float(val: Any, default: float = 0.0) -> float:
 
 def finalize_cache_order(o: dict) -> dict:
     """写入 orders_cache 前统一 source / status / platform（页面与筛选依赖）。"""
+    try:
+        from order_cache_store import _hydrate_order_items
+
+        _hydrate_order_items(o)
+    except ImportError:
+        pass
     src = (o.get("source") or o.get("km_source") or "").strip()
     if not src:
         plat = (o.get("platform") or "").strip()
