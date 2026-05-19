@@ -142,8 +142,9 @@
         if (resetPage === true) window._prodPage = 1;
         var hadCache = prodApplyCachedDashboard();
         if (!hadCache) {
-            document.getElementById('prodTable').innerHTML =
-                '<tr><td colspan="11" style="text-align:center;padding:24px;color:#888;">正在后台加载…</td></tr>';
+            renderProdDashboard([]);
+            var stEl = document.getElementById('prodStats');
+            if (stEl) stEl.textContent = '—';
         }
         try {
             var res = await fetch('/api/production/dashboard?' + prodBuildDashboardQuery());

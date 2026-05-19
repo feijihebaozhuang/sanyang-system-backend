@@ -169,6 +169,74 @@ def sync_orders_to_cache(
         return report
 
 
+def read_realtime_cache_payload(
+    cache_file: str | Path,
+    shop_config: list | None = None,
+) -> dict[str, Any]:
+    """
+    毫秒级读 orders_cache.json，供 /api/realtime/orders 使用。
+    文件存在即返回（orders 可为空），不触发同步、不阻塞。
+    """
+    cache_path = Path(cache_file)
+    cfg = shop_config if shop_config is not None else []
+
+    if not cache_path.is_file():
+        return {
+            "success": True,
+            "total": 0,
+            "orders": [],
+            "platforms": [],
+            "shop_config": cfg,
+            "cache_status": "missing",
+            "report": {},
+            "updated_at": None,
+        }
+
+    try:
+        with cache_path.open("r", encoding="utf-8") as f:
+            cache = json.load(f)
+    except Exception as e:
+        print(f"[实时订单] 读缓存失败: {e}")
+        return {
+            "success": True,
+            "total": 0,
+            "orders": [],
+            "platforms": [],
+            "shop_config": cfg,
+            "cache_status": "error",
+            "report": {},
+            "updated_at": None,
+        }
+
+    cached_orders = list(cache.get("orders") or [])
+    report = cache.get("report") or {}
+    try:
+        import km_api as _km
+
+        for o in cached_orders:
+            o["shop_name"] = normalize_shop_display(o.get("shop_name", ""))
+            try:
+                _km.finalize_cache_order(o)
+            except Exception:
+                pass
+    except ImportError:
+        for o in cached_orders:
+            o["shop_name"] = normalize_shop_display(o.get("shop_name", ""))
+
+    cached_orders.sort(key=lambda x: x.get("created", ""), reverse=True)
+    status = "hit" if cached_orders else "empty"
+    return {
+        "success": True,
+        "total": len(cached_orders),
+        "orders": cached_orders,
+        "platforms": list({o.get("platform", "1688") for o in cached_orders}),
+        "shop_config": cfg,
+        "cache_status": status,
+        "report": report,
+        "updated_at": cache.get("updated_at"),
+    }
+
+
 def _parse_item_display(spec: str, name: str, qty: int) -> str:
     """列表展示用：仅 SKU 规格，无规格时不回退商品标题。"""
     del name, qty  # 保留参数兼容旧调用

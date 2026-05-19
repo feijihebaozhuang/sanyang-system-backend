@@ -5659,6 +5659,41 @@
     let _rtPageSize = 10;
     let _rtCurrentPage = 1;
     let _rtLoaded = false;
+    const RT_SESSION_KEY = 'sy_rt_orders_v2';
+
+    function rtApplySessionCache() {
+        try {
+            var raw = sessionStorage.getItem(RT_SESSION_KEY);
+            if (!raw) return false;
+            var data = JSON.parse(raw);
+            if (!data || !Array.isArray(data.orders)) return false;
+            _rtLoaded = true;
+            _rtAllOrders = data.orders;
+            _rtShopConfig = data.shop_config || _rtShopConfig || [];
+            _rtCacheStatus = data.cache_status || 'hit';
+            var unsentEl = document.getElementById('rtUnsentNum');
+            if (unsentEl) unsentEl.textContent = _rtAllOrders.length;
+            rtBuildShopFilter();
+            rtRenderOrders();
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function rtSaveSessionCache(data) {
+        try {
+            sessionStorage.setItem(
+                RT_SESSION_KEY,
+                JSON.stringify({
+                    orders: data.orders || [],
+                    shop_config: data.shop_config || [],
+                    cache_status: data.cache_status || 'hit',
+                    ts: Date.now(),
+                })
+            );
+        } catch (e) {}
+    }
     let _rtCacheStatus = '';
 
     function rtFmtMoney(v) {
@@ -5829,18 +5864,11 @@
 
         const countEl = document.getElementById('rtOrderCount');
 
-        if (!_rtLoaded) {
-            list.innerHTML = '<div style="text-align:center;padding:40px 0;color:#999;font-size:13px;">⏳ 加载中...</div>';
-            rtSetStatus('加载中…', 'load');
-            countEl.style.display = 'none';
-            return;
-        }
-
         if (filtered.length === 0) {
             if (_rtAllOrders.length === 0) {
                 let hint = '📭 暂无待发货订单';
                 if (_rtCacheStatus === 'empty' || _rtCacheStatus === 'missing') {
-                    hint = '📭 缓存暂无订单<br><span style="font-size:12px;color:#888;">请点击「同步订单」拉取</span>';
+                    hint = '📭 暂无订单<br><span style="font-size:12px;color:#888;">后台正在同步快麦订单，请稍候自动刷新</span>';
                 }
                 list.innerHTML = '<div style="text-align:center;padding:40px 0;color:#999;font-size:13px;">' + hint + '</div>';
                 rtSetStatus('已加载 0 条', 'ok');
@@ -5963,12 +5991,7 @@
     }
 
     async function rtLoadOrders(silent) {
-        if (!silent) {
-            _rtLoaded = false;
-            rtSetStatus('加载中…', 'load');
-            const list = document.getElementById('rtOrderList');
-            if (list) list.innerHTML = '<div style="text-align:center;padding:40px 0;color:#999;font-size:13px;">⏳ 加载中...</div>';
-        }
+        rtApplySessionCache();
         try {
             const resp = await SY_AUTH.apiFetch('/api/realtime/orders');
             const data = await resp.json();
@@ -5978,20 +6001,26 @@
                 _rtCacheStatus = data.cache_status || (data.orders && data.orders.length ? 'hit' : 'empty');
                 _rtAllOrders = data.orders || [];
                 _rtShopConfig = data.shop_config || [];
+                rtSaveSessionCache(data);
                 var unsentEl = document.getElementById('rtUnsentNum');
                 if (unsentEl) unsentEl.textContent = _rtAllOrders.length;
-                // 根据shop_config生成店铺按钮
                 rtBuildShopFilter();
                 rtRenderOrders();
             } else {
                 _rtLoaded = true;
                 rtSetStatus('加载失败', 'err');
-                if (list) list.innerHTML = '<div style="text-align:center;padding:40px 0;color:#e94560;font-size:13px;">❌ ' + (data.error || '获取失败') + '</div>';
+                var list = document.getElementById('rtOrderList');
+                if (list && !_rtAllOrders.length) {
+                    list.innerHTML = '<div style="text-align:center;padding:40px 0;color:#e94560;font-size:13px;">❌ ' + (data.error || '获取失败') + '</div>';
+                }
             }
-        } catch(e) {
+        } catch (e) {
             _rtLoaded = true;
             rtSetStatus('加载失败', 'err');
-            if (list) list.innerHTML = '<div style="text-align:center;padding:40px 0;color:#e94560;font-size:13px;">❌ ' + e.message + '</div>';
+            var listErr = document.getElementById('rtOrderList');
+            if (listErr && !_rtAllOrders.length) {
+                listErr.innerHTML = '<div style="text-align:center;padding:40px 0;color:#e94560;font-size:13px;">❌ ' + e.message + '</div>';
+            }
         }
     }
 
@@ -6135,11 +6164,12 @@
                 _rtCacheStatus = data.cache_status || '';
                 _rtAllOrders = data.orders || [];
                 _rtShopConfig = data.shop_config || [];
+                rtSaveSessionCache(data);
                 rtBuildShopFilter();
                 rtRenderOrders();
             }
-        } catch(e) {
-            // 静默失败，不显示错误
+        } catch (e) {
+            // 静默失败，保留当前列表
         }
         _rtRefreshing = false;
     }

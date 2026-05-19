@@ -3882,47 +3882,15 @@ def api_order_1688_memo():
 
 @app.route('/api/realtime/orders', methods=['GET'])
 def api_realtime_orders():
-    """获取所有实时订单（从本地缓存读取，毫秒级返回）"""
-    import time as _t
+    """实时订单：只读 orders_cache.json，毫秒级返回（后台静默同步）。"""
+    import order_sync as _osync
 
-    shop_config = load_shop_config()
-
-    # 先尝试读本地缓存
-    try:
-        if os.path.exists(ORDERS_CACHE_FILE):
-            with open(ORDERS_CACHE_FILE, 'r', encoding='utf-8') as f:
-                cache = json.load(f)
-                cached_orders = cache.get('orders', [])
-            if cached_orders:
-                try:
-                    import order_sync as _osync
-                    for o in cached_orders:
-                        o['shop_name'] = _osync.normalize_shop_display(o.get('shop_name', ''))
-                except ImportError:
-                    pass
-                cached_orders.sort(key=lambda x: x.get('created', ''), reverse=True)
-                print(f'[实时订单] 缓存命中: {len(cached_orders)} 条订单')
-                return jsonify({
-                    'success': True,
-                    'total': len(cached_orders),
-                    'orders': cached_orders,
-                    'platforms': list(set(o.get('platform', '1688') for o in cached_orders)),
-                    'shop_config': shop_config,
-                    'cache_status': 'hit'
-                })
-    except Exception as e:
-        print(f'[实时订单] 读缓存失败: {e}')
-
-    # 缓存不存在或为空，返回空，不等1688
-    print('[实时订单] 缓存未命中，返回空（后台正在同步）')
-    return jsonify({
-        'success': True,
-        'total': 0,
-        'orders': [],
-        'platforms': [],
-        'shop_config': shop_config,
-        'cache_status': 'empty'
-    })
+    payload = _osync.read_realtime_cache_payload(
+        ORDERS_CACHE_FILE, load_shop_config()
+    )
+    n = payload.get("total", 0)
+    print(f"[实时订单] 读缓存 {payload.get('cache_status')}: {n} 条")
+    return jsonify(payload)
 
 # ==================== 店铺客服配置 API ====================
 
@@ -3993,18 +3961,15 @@ def _km_sync_orders_to_cache(days_back=14):
         include_1688_direct=True,
     )
     _prod_dash_cache.invalidate_dashboard_cache()
-    return r.get('pending_count', 0)
+    return r
 
 
-def _sync_orders_task():
-    """后台线程：从快麦拉订单存到本地缓存"""
-    import time as _t
-    while True:
-        try:
-            _km_sync_orders_to_cache(days_back=14)
-        except Exception as ex:
-            print(f'[订单同步] 错误: {ex}')
-        _t.sleep(300)
+def _on_background_sync_done(_report):
+    _prod_dash_cache.invalidate_dashboard_cache()
+    try:
+        _prod_dash_cache.get_dashboard_cache(_rebuild_prod_dashboard_cache, force=True)
+    except Exception as e:
+        print(f"[打单缓存] 同步后重建失败: {e}")
 
 @app.route('/api/sync/force', methods=['POST'])
 def api_sync_force():
@@ -4051,10 +4016,6 @@ def api_km_probe():
 import threading as _th
 import production_dashboard_cache as _prod_dash_cache
 
-_sync_thread = _th.Thread(target=_sync_orders_task, daemon=True)
-_sync_thread.start()
-print('[订单同步] 快麦+1688 后台同步已启动（每5分钟）')
-
 
 def _rebuild_prod_dashboard_cache():
     try:
@@ -4092,6 +4053,18 @@ def _warm_prod_dashboard_cache():
 
 _dash_warm_thread = _th.Thread(target=_warm_prod_dashboard_cache, daemon=True)
 _dash_warm_thread.start()
+
+import order_sync_scheduler as _order_sched
+
+_order_sched.start_background_order_sync(
+    ORDERS_CACHE_FILE,
+    memo_getter=get_order_memo,
+    include_1688_direct=True,
+    full_days_back=30,
+    incremental_days_back=7,
+    interval_sec=180,
+    on_after_sync=_on_background_sync_done,
+)
 
 
 def _send_xlsx_template(headers: list, sample_rows: list, filename: str):

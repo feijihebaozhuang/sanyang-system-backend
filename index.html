@@ -5709,6 +5709,39 @@
     let _rtCurrentShop = '';
     let _rtPageSize = 10;
     let _rtCurrentPage = 1;
+    const RT_SESSION_KEY = 'sy_rt_orders_v2';
+
+    function rtApplySessionCache() {
+        try {
+            var raw = sessionStorage.getItem(RT_SESSION_KEY);
+            if (!raw) return false;
+            var data = JSON.parse(raw);
+            if (!data || !Array.isArray(data.orders)) return false;
+            _rtAllOrders = data.orders;
+            _rtShopConfig = data.shop_config || [];
+            var unsentEl = document.getElementById('rtUnsentNum');
+            if (unsentEl) unsentEl.textContent = _rtAllOrders.length;
+            rtBuildShopFilter();
+            rtRenderOrders();
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function rtSaveSessionCache(data) {
+        try {
+            sessionStorage.setItem(
+                RT_SESSION_KEY,
+                JSON.stringify({
+                    orders: data.orders || [],
+                    shop_config: data.shop_config || [],
+                    cache_status: data.cache_status || 'hit',
+                    ts: Date.now(),
+                })
+            );
+        } catch (e) {}
+    }
 
     function rtFmtMoney(v) {
         return (parseFloat(v) || 0).toFixed(2);
@@ -5888,6 +5921,7 @@
     }
 
     async function rtLoadOrders() {
+        rtApplySessionCache();
         try {
             const resp = await fetch('/api/realtime/orders');
             const data = await resp.json();
@@ -5895,19 +5929,20 @@
             if (data.success) {
                 _rtAllOrders = data.orders || [];
                 _rtShopConfig = data.shop_config || [];
-                // 更新待发货数量
+                rtSaveSessionCache(data);
                 var unsentEl = document.getElementById('rtUnsentNum');
                 if (unsentEl) unsentEl.textContent = _rtAllOrders.length;
-                // 根据shop_config生成店铺按钮
                 rtBuildShopFilter();
                 rtRenderOrders();
-            } else {
+            } else if (!_rtAllOrders.length) {
                 const list = document.getElementById('rtOrderList');
-                list.innerHTML = '<div style="text-align:center;padding:40px 0;color:#e94560;font-size:13px;">❌ ' + (data.error || '获取失败') + '</div>';
+                if (list) list.innerHTML = '<div style="text-align:center;padding:40px 0;color:#e94560;font-size:13px;">❌ ' + (data.error || '获取失败') + '</div>';
             }
-        } catch(e) {
-            const list = document.getElementById('rtOrderList');
-            list.innerHTML = '<div style="text-align:center;padding:40px 0;color:#e94560;font-size:13px;">❌ ' + e.message + '</div>';
+        } catch (e) {
+            if (!_rtAllOrders.length) {
+                const list = document.getElementById('rtOrderList');
+                if (list) list.innerHTML = '<div style="text-align:center;padding:40px 0;color:#e94560;font-size:13px;">❌ ' + e.message + '</div>';
+            }
         }
     }
 
@@ -5963,12 +5998,12 @@
             if (data.success) {
                 _rtAllOrders = data.orders || [];
                 _rtShopConfig = data.shop_config || [];
+                rtSaveSessionCache(data);
                 rtBuildShopFilter();
-                // 刷新时保持当前筛选状态
                 rtRenderOrders();
             }
-        } catch(e) {
-            // 静默失败，不显示错误
+        } catch (e) {
+            // 静默失败，保留当前列表
         }
         _rtRefreshing = false;
     }
