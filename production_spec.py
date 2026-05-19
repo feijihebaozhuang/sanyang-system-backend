@@ -61,6 +61,20 @@ _MATERIAL_FALLBACK_RE = re.compile(
     re.I,
 )
 
+# 飞机盒类目材料优先级（数字越小优先级越高，仅匹配 SKU 属性值）
+_AIRBOX_MATERIAL_PRIORITY: list[tuple[int, str, tuple[str, ...]]] = [
+    (1, "台湾", ("台湾", "进口")),
+    (2, "白色", ("白色", "双白", "白卡")),
+    (3, "黑色", ("黑色", "黑卡")),
+    (4, "红色", ("红色", "红卡")),
+    (5, "P6D", ("P6D",)),
+    (6, "特硬", ("D6D", "特硬")),
+    (7, "EB", ("五层EB", "EB")),  # 五层EB 先于单独「五层」
+    (8, "BC", ("五层BC", "BC")),
+    (9, "E坑", ("E坑", "E瓦", "三层", "五层")),
+]
+_AIRBOX_DEFAULT_MATERIAL = "特硬"
+
 _LABEL_TO_KEY = {
     "长度": "l",
     "长": "l",
@@ -202,8 +216,59 @@ def _parse_color(text: str, material: str = "") -> str:
     return ""
 
 
-def match_production_material(text: str, mapping: list[dict]) -> str:
-    """按关键词映射为生产用材料简称（如 特硬）。"""
+def is_airbox_product(attrs: str) -> bool:
+    """飞机盒类目（正方形/长方形/带扣/扣底/双插等），纸箱走独立逻辑。"""
+    t = sanitize_sku_attrs(attrs) or (attrs or "").strip()
+    if not t:
+        return True
+    if "纸箱" in t and "飞机盒" not in t:
+        return False
+    if any(k in t for k in ("扣底", "双插", "带扣", "飞机盒", "正方形", "长方形")):
+        return True
+    if re.search(r"3层|5层|五层", t) and "飞机盒" not in t:
+        if not any(k in t for k in ("扣底", "双插")):
+            return False
+    return True
+
+
+def _kw_in_attrs(kw: str, text: str) -> bool:
+    if not kw or not text:
+        return False
+    if kw.isascii():
+        return kw.upper() in text.upper()
+    return kw in text
+
+
+def match_airbox_material(text: str) -> str:
+    """飞机盒：按优先级取 SKU 属性中最高档材料；无匹配则特硬。"""
+    t = (text or "").strip()
+    if not t:
+        return _AIRBOX_DEFAULT_MATERIAL
+    raw: list[tuple[int, str, str]] = []
+    for rank, label, kws in _AIRBOX_MATERIAL_PRIORITY:
+        for kw in sorted(kws, key=len, reverse=True):
+            if _kw_in_attrs(kw, t):
+                raw.append((rank, label, kw))
+                break
+    if not raw:
+        return _AIRBOX_DEFAULT_MATERIAL
+    # 去掉被更长关键词覆盖的短词（如「五层」被「五层BC」覆盖）
+    kept: list[tuple[int, str, int]] = []
+    for rank, label, kw in raw:
+        if any(
+            len(kw2) > len(kw) and kw in kw2 and _kw_in_attrs(kw2, t)
+            for _, _, kw2 in raw
+        ):
+            continue
+        kept.append((rank, label, len(kw)))
+    if not kept:
+        return _AIRBOX_DEFAULT_MATERIAL
+    kept.sort(key=lambda x: (x[0], -x[2]))
+    return kept[0][1]
+
+
+def _match_carton_material(text: str, mapping: list[dict]) -> str:
+    """纸箱等：沿用后台关键词映射。"""
     low = (text or "").lower()
     best = ""
     best_len = 0
@@ -221,6 +286,24 @@ def match_production_material(text: str, mapping: list[dict]) -> str:
                 best = label
                 best_len = len(kw)
     return best
+
+
+def match_production_material(text: str, mapping: list[dict] | None = None) -> str:
+    """
+    从 SKU 属性值解析生产材料（不看商品标题）。
+    飞机盒类目按固定优先级；纸箱等走 mapping 配置。
+    """
+    t = sanitize_sku_attrs(text) or (text or "").strip()
+    if is_airbox_product(t):
+        return match_airbox_material(t)
+    material = _match_carton_material(t, mapping or [])
+    if not material:
+        hm = _MATERIAL_FALLBACK_RE.search(t)
+        if hm:
+            material = hm.group(1)
+            if material == "进口":
+                material = "特硬"
+    return material
 
 
 def build_production_spec(
@@ -250,13 +333,10 @@ def build_production_spec(
     else:
         real_qty = order_qty
 
+    airbox = is_airbox_product(text)
     material = match_production_material(text, material_mapping or [])
-    if not material:
-        hm = _MATERIAL_FALLBACK_RE.search(text)
-        if hm:
-            material = hm.group(1)
-            if material == "进口":
-                material = "特硬"
+    if airbox and not material:
+        material = _AIRBOX_DEFAULT_MATERIAL
     color = _parse_color(text, material)
 
     parts: list[str] = []
