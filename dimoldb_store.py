@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
-"""刀模库 MySQL 读写（客服端 / 生产端共用）。"""
+"""刀模库 MySQL 读写与匹配逻辑（客服端 / 生产端共用）。"""
 from __future__ import annotations
 
+import re
 from typing import Any, Callable
 
 _EXTRA_COLUMNS: tuple[tuple[str, str], ...] = (
@@ -137,6 +138,119 @@ def cell_str(row: tuple, idx: int | None) -> str:
     if idx is None or idx >= len(row) or row[idx] is None:
         return ""
     return str(row[idx]).strip()
+
+
+_INV_TYPE_MAP = {
+    "zhengsquare": "zhengsquare",
+    "juxing": "changfang",
+    "daikou": "changfang",
+    "koudi": "changfang",
+    "shuangcha": "changfang",
+    "qita": "changfang",
+}
+
+
+def _parse_dims_from_text(text: str) -> tuple[float | None, float | None, float | None]:
+    """从 production_spec / remark 中解析「52.5×39.5×8.5」类尺寸。"""
+    s = (text or "").strip()
+    if not s:
+        return None, None, None
+    m = re.search(
+        r"生产规格[\(（]?\s*([\d.]+)\s*[×xX\*\.]+\s*([\d.]+)\s*[×xX\*\.]+\s*([\d.]+)",
+        s,
+    )
+    if m:
+        return float(m.group(1)), float(m.group(2)), float(m.group(3))
+    nums = re.findall(r"\d+\.?\d*", s.replace("×", " ").replace("x", " ").replace("*", " "))
+    if len(nums) >= 3:
+        try:
+            return float(nums[0]), float(nums[1]), float(nums[2])
+        except ValueError:
+            pass
+    return None, None, None
+
+
+def effective_dims(dm: dict) -> tuple[float | None, float | None, float | None]:
+    """刀模用于库存匹配的有效长宽高（库字段优先，否则解析 production_spec / remark）。"""
+    try:
+        l = float(dm.get("length") or 0)
+        w = float(dm.get("width") or 0)
+        h = float(dm.get("height") or 0)
+        if l > 0 and w > 0 and h > 0:
+            return l, w, h
+    except (TypeError, ValueError):
+        pass
+    for field in ("production_spec", "remark"):
+        pl, pw, ph = _parse_dims_from_text(str(dm.get(field) or ""))
+        if pl and pw and ph:
+            return pl, pw, ph
+    return None, None, None
+
+
+def infer_inner_outer(dm: dict) -> str:
+    """
+    内外径推断：dim_type > production_spec/remark 内外径关键词 > name 中 (内)/(外)。
+    适配大虾导入：name 仅编号如 51398，内外径在 remark「内径-组合…」中。
+    """
+    dt = (dm.get("dim_type") or "").strip()
+    if dt in ("inner", "outer"):
+        return dt
+    blob = " ".join(
+        [
+            str(dm.get("production_spec") or ""),
+            str(dm.get("remark") or ""),
+            str(dm.get("name") or ""),
+        ]
+    )
+    if "内径" in blob or "(内)" in blob or "内" in (dm.get("name") or ""):
+        return "inner"
+    if "外径" in blob or "(外)" in blob:
+        return "outer"
+    return ""
+
+
+def dim_type_stock_compatible(dm: dict, dm_dt: str, iv_dt: str) -> bool:
+    """库存与刀模内外径是否可匹配（组合刀模、任一侧为空则放宽）。"""
+    rk = str(dm.get("remark") or "")
+    if "组合" in rk:
+        return True
+    if not dm_dt or not iv_dt:
+        return True
+    return dm_dt == iv_dt
+
+
+def calc_dimoldb_stock(dm: dict, inv_items: list[dict], *, tol: float = 0.15) -> int:
+    """按尺寸 + 内外径 + 产品类型汇总库存件数。"""
+    dm_l, dm_w, dm_h = effective_dims(dm)
+    if not (dm_l and dm_w and dm_h):
+        return 0
+    dm_dt = (dm.get("dim_type") or "").strip() or infer_inner_outer(dm)
+    dm_type = dm.get("product_type", "")
+    inv_type_map = _INV_TYPE_MAP.get(dm_type, dm_type)
+    total = 0
+    for iv in inv_items:
+        try:
+            iv_l = float(iv.get("length") or 0)
+            iv_w = float(iv.get("width") or 0)
+            iv_h = float(iv.get("height") or 0)
+        except (TypeError, ValueError):
+            continue
+        if not (iv_l and iv_w and iv_h):
+            continue
+        if abs(iv_l - float(dm_l)) >= tol:
+            continue
+        if abs(iv_w - float(dm_w)) >= tol:
+            continue
+        if abs(iv_h - float(dm_h)) >= tol:
+            continue
+        iv_dt = (iv.get("dim_type") or "").strip()
+        if not dim_type_stock_compatible(dm, dm_dt, iv_dt):
+            continue
+        iv_type = iv.get("product_type", "")
+        if iv_type and iv_type != inv_type_map:
+            continue
+        total += int(iv.get("qty") or iv.get("stock") or 0)
+    return total
 
 
 def cell_float(row: tuple, idx: int | None) -> float:

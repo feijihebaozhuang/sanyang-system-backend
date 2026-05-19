@@ -23,6 +23,7 @@ RUN pip install --upgrade pip \
 # 仅复制 Python 与脚本；JSON/HTML 由宿主机卷挂载（部署不覆盖 admin 配置）
 COPY *.py ./
 COPY scripts/ ./scripts/
+COPY static/ ./static/
 
 # 默认启动客服端；生产端在 compose 中覆盖 command
 EXPOSE 3001 3002

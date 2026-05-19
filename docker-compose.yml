@@ -27,6 +27,7 @@ services:
       - ./alibaba_shops.json:/app/alibaba_shops.json
       - ./orders_cache.json:/app/orders_cache.json:ro
       - ./index_cs.html:/app/index_cs.html
+      - ./static:/app/static:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3001/api/webhook/kuaimai')"]
       interval: 30s
@@ -54,6 +55,7 @@ services:
       - ./alibaba_shops.json:/app/alibaba_shops.json
       - ./orders_cache.json:/app/orders_cache.json:ro
       - ./index.html:/app/index.html
+      - ./static:/app/static:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3002/api/webhook/kuaimai')"]
       interval: 30s

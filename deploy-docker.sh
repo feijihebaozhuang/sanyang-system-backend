@@ -45,6 +45,8 @@ rsync -a \
   --include='deploy-docker.sh' \
   --include='scripts/' \
   --include='scripts/**' \
+  --include='static/' \
+  --include='static/**' \
   --exclude='*.json' \
   --exclude='.env' \
   --exclude='*.html' \

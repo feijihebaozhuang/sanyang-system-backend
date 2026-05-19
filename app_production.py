@@ -2204,19 +2204,7 @@ def _has_dimoldb_edit_perm():
 
 
 def _dimoldb_infer_inner_outer(dm):
-    """内外径：优先 dim_type；为空时用 name 中 (内)/内径/(外)/外径 及 remark 中的 内/外 字推断。返回 inner|outer|''。"""
-    dt = (dm.get('dim_type') or '').strip()
-    if dt == 'inner':
-        return 'inner'
-    if dt == 'outer':
-        return 'outer'
-    name = dm.get('name') or ''
-    rk = dm.get('remark') or ''
-    if '(内)' in name or '内径' in name or '内' in rk:
-        return 'inner'
-    if '(外)' in name or '外径' in name or '外' in rk:
-        return 'outer'
-    return ''
+    return _dimoldb_store.infer_inner_outer(dm)
 
 
 @app.route('/api/dimoldb', methods=['GET'])
@@ -2253,7 +2241,15 @@ def get_dimoldb():
             except:
                 pass
         else:
-            data = [d for d in data if search in d.get('name', '') or f"{d.get('length',0)}x{d.get('width',0)}x{d.get('height',0)}" in search or f"{d.get('length',0)}×{d.get('width',0)}×{d.get('height',0)}" in search]
+            data = [
+                d for d in data
+                if search in d.get('name', '')
+                or search in str(d.get('code') or '')
+                or search in str(d.get('production_spec') or '')
+                or search in str(d.get('km_mapping_code') or '')
+                or f"{d.get('length',0)}x{d.get('width',0)}x{d.get('height',0)}" in search
+                or f"{d.get('length',0)}×{d.get('width',0)}×{d.get('height',0)}" in search
+            ]
     # 分页
     try:
         page = int(request.args.get('page', 1))
@@ -2271,48 +2267,8 @@ def get_dimoldb():
     # 给每条刀模补充真实库存数（从inventory.json统计）
     inv_all = load_inventory()
     inv_items = inv_all.get('finished', inv_all if isinstance(inv_all, list) else [])
-    def calc_stock(dm):
-        """根据刀模的尺寸+dim_type统计库存总量"""
-        dm_l = dm.get('length')
-        dm_w = dm.get('width')
-        dm_h = dm.get('height')
-        dm_dt = (dm.get('dim_type') or '').strip()
-        # 刀模 dim_type 为空：name / remark 推断内外径（与客服端一致）
-        if not dm_dt:
-            dm_dt = _dimoldb_infer_inner_outer(dm)
-        dm_type = dm.get('product_type', '')
-        # 刀模类型→库存类型映射：库存只有 changfang 和 zhengsquare
-        _type_map = {
-            'zhengsquare': 'zhengsquare',
-            'juxing': 'changfang',
-            'daikou': 'changfang',
-            'koudi': 'changfang',
-            'shuangcha': 'changfang',
-            'qita': 'changfang',
-        }
-        inv_type_map = _type_map.get(dm_type, dm_type)
-        total = 0
-        for iv in inv_items:
-            iv_l = iv.get('length')
-            iv_w = iv.get('width')
-            iv_h = iv.get('height')
-            if not (iv_l and iv_w and iv_h and dm_l and dm_w and dm_h):
-                continue
-            if abs(float(iv_l) - float(dm_l)) >= 0.1: continue
-            if abs(float(iv_w) - float(dm_w)) >= 0.1: continue
-            if abs(float(iv_h) - float(dm_h)) >= 0.1: continue
-            # 匹配dim_type（内外径要分开）
-            iv_dt = iv.get('dim_type', '')
-            if dm_dt and iv_dt and dm_dt != iv_dt:
-                continue
-            # 匹配product_type：刀模类型→库存类型映射
-            iv_type = iv.get('product_type', '')
-            if iv_type and iv_type != inv_type_map:
-                continue
-            total += int(iv.get('qty') or iv.get('stock') or 0)
-        return total
     for d in page_data:
-        d['stock'] = calc_stock(d)
+        d['stock'] = _dimoldb_store.calc_dimoldb_stock(d, inv_items)
     return jsonify({
         "success": True,
         "data": page_data,

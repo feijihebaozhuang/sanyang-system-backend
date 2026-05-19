@@ -616,7 +616,21 @@
                     </div>
                     <div style="margin-bottom:8px;">
                         <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">刀模名称</label>
-                        <input type="text" id="dmfName" style="width:100%;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;" placeholder="例如：飞机盒20×15×10" onfocus="this.select()">
+                        <input type="text" id="dmfName" style="width:100%;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;" placeholder="编号或描述，如 51398" onfocus="this.select()">
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">
+                        <div>
+                            <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">编码</label>
+                            <input type="text" id="dmfCode" style="width:100%;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;" onfocus="this.select()">
+                        </div>
+                        <div>
+                            <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">快麦商品映射</label>
+                            <input type="text" id="dmfKmMapping" style="width:100%;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;" onfocus="this.select()">
+                        </div>
+                    </div>
+                    <div style="margin-bottom:8px;">
+                        <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">生产规格</label>
+                        <input type="text" id="dmfProductionSpec" style="width:100%;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;" placeholder="如 52.5×39.5×8.5" onfocus="this.select()">
                     </div>
                     <div style="margin-bottom:8px;">
                         <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">产品类型</label>
@@ -1361,7 +1375,7 @@
     </div>
 </div>
 
-<script src="/static/auth_session.js?v=20260518b"></script>
+<script src="/static/auth_session.js?v=20260520"></script>
 <script>
     // ===== 当前登录用户 =====
     let _currentUser = null;
@@ -4476,6 +4490,16 @@
         'qita': '其他'
     };
 
+    function _dmEsc(s) {
+        if (s == null || s === '') return '';
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    }
+    function _dmShort(s, n) {
+        if (!s) return '';
+        s = String(s);
+        return s.length > n ? s.slice(0, n) + '\u2026' : s;
+    }
+
     async function loadDimoldbList(page, resetPage) {
         const container = document.getElementById('dimoldbList');
         container.innerHTML = '<div class="loading"><div class="spinner"></div>加载中...</div>';
@@ -4506,8 +4530,8 @@
                 html += `
                 <div onclick="fillDimoldbQuick('${item.id}')" style="display:flex;align-items:center;padding:8px 10px;border-bottom:1px solid #f0f0f0;cursor:pointer;" title="点击填充查询">
                     <div style="flex:1;min-width:0;">
-                        <div style="font-weight:600;font-size:14px;">${item.name}</div>
-                        <div style="font-size:12px;color:#666;margin-top:2px;">
+                        <div style="font-weight:600;font-size:14px;">${item.code ? '<span style="color:#1677ff;margin-right:6px;">#' + _dmEsc(item.code) + '</span>' : ''}${_dmEsc(item.name)}</div>
+                        <div style="font-size:12px;color:#666;margin-top:2px;line-height:1.4;">
                             ${tlabel} ｜ ${item.length}×${item.width}×${item.height} cm
                             ${item.remark ? ' ｜ 📍' + item.remark : ''}
                             <span style="color:#52c41a;font-weight:600;"> ｜ 📦${item.stock ?? 0}个</span>
@@ -4558,6 +4582,9 @@
         document.getElementById('dmfL').value = '';
         document.getElementById('dmfW').value = '';
         document.getElementById('dmfH').value = '';
+        document.getElementById('dmfCode').value = '';
+        document.getElementById('dmfProductionSpec').value = '';
+        document.getElementById('dmfKmMapping').value = '';
         document.getElementById('dmfRemark').value = '';
         document.getElementById('dmfStock').value = '0';
         document.getElementById('dmfTypeClass').value = '固定';
@@ -4575,6 +4602,9 @@
         document.getElementById('dmfL').value = item.length || '';
         document.getElementById('dmfW').value = item.width || '';
         document.getElementById('dmfH').value = item.height || '';
+        document.getElementById('dmfCode').value = item.code || '';
+        document.getElementById('dmfProductionSpec').value = item.production_spec || '';
+        document.getElementById('dmfKmMapping').value = item.km_mapping_code || '';
         document.getElementById('dmfRemark').value = item.remark || '';
         document.getElementById('dmfStock').value = item.stock ?? '0';
         document.getElementById('dmfTypeClass').value = item.type_class || '固定';
@@ -4590,6 +4620,9 @@
         const l = parseFloat(document.getElementById('dmfL').value);
         const w = parseFloat(document.getElementById('dmfW').value);
         const h = parseFloat(document.getElementById('dmfH').value);
+        const code = document.getElementById('dmfCode').value.trim();
+        const production_spec = document.getElementById('dmfProductionSpec').value.trim();
+        const km_mapping_code = document.getElementById('dmfKmMapping').value.trim();
         const remark = document.getElementById('dmfRemark').value.trim();
         const type_class = document.getElementById('dmfTypeClass').value;
         const opens = parseInt(document.getElementById('dmfOpens').value) || 1;
@@ -4606,7 +4639,7 @@
         statusEl.style.color = '#666';
 
         try {
-            const body = { product_type: ptype, name, length: l, width: w, height: h, remark, stock, type_class, opens };
+            const body = { product_type: ptype, name, code, production_spec, km_mapping_code, length: l, width: w, height: h, remark, stock, type_class, opens };
                 url = '/api/dimoldb';
             let method = 'POST';
             if (_editingDimoldbId) {
@@ -5397,7 +5430,7 @@
                 html += `
                 <div onclick="fillRawQuick('${item.id}')" style="display:flex;align-items:center;padding:8px 10px;border-bottom:1px solid #f0f0f0;cursor:pointer;" title="点击填充查询">
                     <div style="flex:1;">
-                        <div style="font-weight:600;font-size:14px;">${item.name}</div>
+                        <div style="font-weight:600;font-size:14px;">${item.code ? '<span style="color:#1677ff;margin-right:6px;">#' + _dmEsc(item.code) + '</span>' : ''}${_dmEsc(item.name)}</div>
                         <div style="font-size:12px;color:#666;margin-top:2px;">
                             ${item.date ? '📅 ' + item.date : ''}
                             ${item.supplier ? ' 🏭 ' + item.supplier : ''}
