@@ -35,6 +35,10 @@ app.config['SESSION_COOKIE_SECURE'] = os.getenv('SESSION_COOKIE_SECURE', '').low
     '1', 'true', 'yes'
 )
 
+import webhook_routes as _webhook_routes
+
+_webhook_routes.register_webhook_routes(app)
+
 # 报价数据文件路径
 QUOTE_DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'quote_data.json')
 
@@ -3143,20 +3147,6 @@ def wechat_callback():
         return 'success', 200, {'Content-Type': 'text/plain; charset=utf-8'}
     return 'ok', 200
 
-# ==================== 静态文件 ====================
-@app.route('/')
-def index():
-    resp = make_response(send_from_directory('.', 'index_cs.html'))
-    resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
-    resp.headers['Pragma'] = 'no-cache'
-    resp.headers['Expires'] = '0'
-    return resp
-
-@app.route('/<path:path>')
-def static_files(path):
-    return send_from_directory('.', path)
-
-
 from io import BytesIO
 import qrcode
 import barcode
@@ -3335,20 +3325,6 @@ def api_realtime_orders():
     print(f"[实时订单] MySQL {payload.get('cache_status')}: {n} 条")
     return jsonify(payload)
 
-
-@app.route('/api/webhook/kuaimai', methods=['GET', 'POST'])
-def api_webhook_kuaimai():
-    """快麦订单状态变更 Webhook（需在开放平台配置回调 URL）。"""
-    if request.method == 'GET':
-        return jsonify({'success': True, 'msg': 'kuaimai webhook ok'})
-    import kuaimai_webhook as kwh
-
-    body = request.get_json(silent=True) or {}
-    if not body and request.form:
-        body = {k: request.form.get(k) for k in request.form.keys()}
-    report = kwh.apply_webhook_payload(body)
-    code = 200 if report.get('success', True) else 400
-    return jsonify(report), code
 
 # ==================== 店铺客服配置 API ====================
 
@@ -3849,6 +3825,25 @@ def api_barcode(order_id):
 def api_scan_report():
     """扫码报工确认"""
     return jsonify({"success": True})
+
+
+# ==================== 静态文件（必须放在所有 /api 路由之后）====================
+@app.route('/')
+def index():
+    resp = make_response(send_from_directory('.', 'index_cs.html'))
+    resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+    resp.headers['Pragma'] = 'no-cache'
+    resp.headers['Expires'] = '0'
+    return resp
+
+
+@app.route('/<path:path>')
+def static_files(path):
+    if path.startswith('api/') or path == 'api':
+        from werkzeug.exceptions import NotFound
+        raise NotFound()
+    return send_from_directory('.', path)
+
 
 if __name__ == '__main__':
     print("🏭 飞机盒智能生产管理系统启动中...")

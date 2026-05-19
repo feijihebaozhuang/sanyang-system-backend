@@ -5,10 +5,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import km_api
-import order_cache_store as ocs
-import order_sync as osync
-
 
 def _flatten_params(data: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {}
@@ -23,6 +19,8 @@ def _flatten_params(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def verify_kuaimai_sign(params: dict[str, Any]) -> bool:
+    import km_api
+
     sign = (params.get("sign") or "").strip()
     if not sign:
         return False
@@ -54,6 +52,10 @@ def _extract_trades(body: dict[str, Any]) -> list[dict]:
 
 def apply_webhook_payload(body: dict[str, Any]) -> dict[str, Any]:
     """处理快麦推送，更新 MySQL 缓存。返回处理报告。"""
+    import km_api
+    import order_cache_store as ocs
+    import order_sync as osync
+
     report: dict[str, Any] = {"upserted": 0, "removed": 0, "errors": []}
     if not body:
         return {**report, "msg": "empty body"}
@@ -100,6 +102,8 @@ def apply_webhook_payload(body: dict[str, Any]) -> dict[str, Any]:
 
 def subscribe_webhook(callback_url: str, *, event_types: str = "trade") -> dict[str, Any]:
     """调用快麦 erp.webhook.subscribe 注册回调（需平台侧开通）。"""
+    import km_api
+
     if not km_api.km_configured():
         return {"success": False, "msg": "快麦未配置"}
     km_api.km_ensure_session()

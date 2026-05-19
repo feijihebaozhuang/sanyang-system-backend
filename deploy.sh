@@ -53,13 +53,27 @@ git checkout "$BRANCH" 2>&1 || { err "checkout failed"; exit 1; }
 git pull $REMOTE "$BRANCH" 2>&1 || { err "pull failed"; exit 1; }
 COMMIT=$(git rev-parse --short HEAD)
 log "  Commit: $COMMIT ($BRANCH)"
-rsync -a --delete \
-  --exclude=venv/ --exclude=__pycache__/ --exclude='*.pyc' \
-  --exclude=orders_cache.json --exclude=data.json --exclude=dimoldb.json --exclude=inventory.json \
-  --exclude='*.log' --exclude=.git/ \
-  --exclude=.env --exclude=alibaba_shops.json --exclude=km_token.json \
+# 铁律：只同步 .py / 脚本，不覆盖服务器上 admin 维护的 JSON / .env / HTML
+rsync -a \
+  --include='*/' \
+  --include='*.py' \
+  --include='requirements.txt' \
+  --include='deploy.sh' \
+  --include='deploy-docker.sh' \
+  --include='Dockerfile' \
+  --include='docker-compose.yml' \
+  --include='.dockerignore' \
+  --include='scripts/' \
+  --include='scripts/**' \
+  --exclude='*.json' \
+  --exclude='.env' \
+  --exclude='*.html' \
+  --exclude='venv/' \
+  --exclude='__pycache__/' \
+  --exclude='.git/' \
+  --exclude='*' \
   "$REPO_DIR/" "$TARGET_DIR/"
-log "  Code synced"
+log "  Code synced (.py only; JSON 保留在 stable 目录)"
 
 log "[2/5] pip install..."
 VENV_DIR="$TARGET_DIR/venv"
@@ -77,6 +91,7 @@ fi
 log "[2c] Python compile check (all .py)..."
 python3 "$TARGET_DIR/scripts/compile_all_py.py" || { err "语法检查失败，中止部署"; exit 1; }
 python3 "$TARGET_DIR/scripts/check_truncation.py" || { err "截断模式检查失败，中止部署"; exit 1; }
+python3 "$TARGET_DIR/scripts/verify_webhook_route.py" || { err "Webhook 路由未注册，中止部署"; exit 1; }
 
 log "[3/5] Stop old processes..."
 for app in cs prod; do

@@ -1,0 +1,17 @@
+venv/
+__pycache__/
+*.pyc
+.git/
+backups/
+*.log
+.env
+*.json
+data.json
+quote_data.json
+shop_config.json
+km_token.json
+alibaba_shops.json
+orders_cache.json
+dimoldb.json
+inventory.json
+raw_data.json

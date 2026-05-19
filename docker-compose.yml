@@ -1,0 +1,58 @@
+# 三羊系统 Docker 部署
+# 用法见 deploy-docker.sh
+# 配置 JSON / .env / HTML 通过卷挂载，镜像重建不会覆盖 admin 改过的文件
+
+services:
+  cs:
+    build: .
+    image: sanyang-system:latest
+    container_name: sanyang-cs
+    restart: unless-stopped
+    working_dir: /app
+    command: ["python", "app_cs.py"]
+    ports:
+      - "3001:3001"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data:ro
+      - ./.env:/app/.env:ro
+      - ./data.json:/app/data.json
+      - ./quote_data.json:/app/quote_data.json
+      - ./shop_config.json:/app/shop_config.json
+      - ./km_token.json:/app/km_token.json
+      - ./alibaba_shops.json:/app/alibaba_shops.json
+      - ./index_cs.html:/app/index_cs.html
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3001/api/webhook/kuaimai')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  prod:
+    build: .
+    image: sanyang-system:latest
+    container_name: sanyang-prod
+    restart: unless-stopped
+    working_dir: /app
+    command: ["python", "app_production.py"]
+    ports:
+      - "3002:3002"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data:ro
+      - ./.env:/app/.env:ro
+      - ./data.json:/app/data.json
+      - ./quote_data.json:/app/quote_data.json
+      - ./shop_config.json:/app/shop_config.json
+      - ./km_token.json:/app/km_token.json
+      - ./alibaba_shops.json:/app/alibaba_shops.json
+      - ./index.html:/app/index.html
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3002/api/webhook/kuaimai')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

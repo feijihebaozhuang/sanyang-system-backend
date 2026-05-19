@@ -46,6 +46,10 @@ app.config['SESSION_COOKIE_SECURE'] = os.getenv('SESSION_COOKIE_SECURE', '').low
     '1', 'true', 'yes'
 )
 
+import webhook_routes as _webhook_routes
+
+_webhook_routes.register_webhook_routes(app)
+
 # ==================== 用户系统 ====================
 USERS = {
     "admin": {
@@ -256,9 +260,9 @@ _order_extra = persistent_data.get("order_extra", {})
 _permission_data = persistent_data.get("permission_data", {})
 _resigned_employees = persistent_data.get("resigned_employees", [])  # 离职员工列表[{name, position, group, dept, phone, resigned_time}]
 
-import hardcoded_config as _hardcoded_config
+import config_json as _cfg_json
 
-_hardcoded_config.apply_hardcoded_permission_data(_permission_data)
+_cfg_json.apply_permission_overlay(_permission_data)
 
 # 将员工状态变更为按日期存储格式（兼容旧格式）
 if isinstance(_employee_today_status, dict):
@@ -273,9 +277,8 @@ if isinstance(_employee_today_status, dict):
         _employee_today_status = {today: _employee_today_status}
 
 def persist():
-    """持久化当前数据到文件"""
+    """持久化当前数据到文件（data.json，不覆盖 admin 未改动的其它键）。"""
     global _employee_today_status, _permission_data, USERS, _resigned_employees
-    _hardcoded_config.apply_hardcoded_permission_data(_permission_data)
     # 把USERS的密码也存到文件（用户改密码后重启不丢）
     users_data = {}
     for uid, u in USERS.items():
@@ -1441,8 +1444,6 @@ def process_timeout_api():
 
 @app.route('/api/permissions/data')
 def get_permissions_data():
-    # 每次返回都同步一次，保证永远不遗漏
-    _hardcoded_config.apply_hardcoded_permission_data(_permission_data)
     _sync_all_employees_perms()
     return jsonify(_permission_data)
 
@@ -1451,9 +1452,15 @@ def save_permissions_data():
     global _permission_data
     data = request.get_json()
     if data:
-        # 更新结构数据
-        # processes / positions / employees 由 hardcoded_config 提供，不在此覆盖
-        # 合并权限：用新数据覆盖旧数据
+        for key in (
+            "processes",
+            "positions",
+            "employees",
+            "production_material_mapping",
+            "process_timeouts",
+        ):
+            if key in data:
+                _permission_data[key] = data[key]
         new_perms = data.get("permissions", {})
         if new_perms:
             old_perms = _permission_data.setdefault("permissions", {})
@@ -1461,21 +1468,17 @@ def save_permissions_data():
                 if name not in old_perms:
                     old_perms[name] = {}
                 old_perms[name].update(feats)
-        # 更新员工启用/禁用状态
         new_enabled = data.get("employee_enabled")
         if new_enabled is not None:
             _permission_data["employee_enabled"] = new_enabled
-        # 工序/材料映射/员工名单：硬编码，忽略 JSON 提交
-        _hardcoded_config.apply_hardcoded_permission_data(_permission_data)
-        # 同步全员工，保证每个人每个字段都不缺
         _sync_all_employees_perms()
         persist()
     return jsonify({"success": True, "message": "权限配置已保存"})
 
 
 def _production_material_mapping() -> list:
-    """生产材质映射：仅硬编码，不读 data.json。"""
-    return _hardcoded_config.carton_material_mapping_rows()
+    """生产材质映射：读 data.json（admin 页面维护）。"""
+    return list(_permission_data.get("production_material_mapping") or [])
 
 
 @app.route("/api/production/material-mapping", methods=["GET"])
@@ -1489,22 +1492,21 @@ def get_production_material_mapping():
 def save_production_material_mapping():
     if "username" not in session:
         return jsonify({"error": "未登录"}), 401
-    return jsonify(
-        {
-            "success": False,
-            "message": "材料映射已写死在代码中（hardcoded_config.py），请修改代码后部署，勿改 JSON",
-            "mapping": _production_material_mapping(),
-        }
-    ), 400
+    body = request.get_json() or {}
+    mapping = body.get("mapping")
+    if not isinstance(mapping, list):
+        return jsonify({"success": False, "message": "mapping 须为数组"}), 400
+    _permission_data["production_material_mapping"] = mapping
+    persist()
+    return jsonify({"success": True, "mapping": mapping, "message": "已保存到 data.json"})
 
 @app.route('/api/processes')
 def get_processes():
-    return jsonify({"processes": _hardcoded_config.DEFAULT_PROCESSES})
+    return jsonify({"processes": _permission_data.get("processes", [])})
 
 @app.route('/api/process_tree')
 def get_process_tree():
-    """返回树形工序结构（硬编码）"""
-    return jsonify({"tree": _hardcoded_config.DEFAULT_PROCESSES})
+    return jsonify({"tree": _permission_data.get("processes", [])})
 
 
 @app.route('/api/my_permissions')
@@ -3597,21 +3599,6 @@ def raw_scan_register():
     })
 
 
-# ==================== 静态文件 ====================
-@app.route('/')
-def index():
-    resp = make_response(send_from_directory('.', 'index.html'))
-    resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
-    resp.headers['Pragma'] = 'no-cache'
-    resp.headers['Expires'] = '0'
-    return resp
-
-@app.route('/<path:path>')
-def static_files(path):
-    return send_from_directory('.', path)
-
-
-
 from io import BytesIO
 import qrcode
 import barcode
@@ -3869,19 +3856,6 @@ def api_realtime_orders():
     return jsonify(payload)
 
 
-@app.route('/api/webhook/kuaimai', methods=['GET', 'POST'])
-def api_webhook_kuaimai():
-    if request.method == 'GET':
-        return jsonify({'success': True, 'msg': 'kuaimai webhook ok'})
-    import kuaimai_webhook as kwh
-
-    body = request.get_json(silent=True) or {}
-    if not body and request.form:
-        body = {k: request.form.get(k) for k in request.form.keys()}
-    report = kwh.apply_webhook_payload(body)
-    code = 200 if report.get('success', True) else 400
-    return jsonify(report), code
-
 # ==================== 店铺客服配置 API ====================
 
 SHOP_CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'shop_config.json')
@@ -3904,17 +3878,18 @@ DEFAULT_SHOP_CONFIG = [
 ]
 
 def load_shop_config():
+    """只读 shop_config.json；文件不存在时仅返回内存默认，不写盘。"""
     if not os.path.exists(SHOP_CONFIG_FILE):
-        save_shop_config(DEFAULT_SHOP_CONFIG)
         return list(DEFAULT_SHOP_CONFIG)
     try:
-        with open(SHOP_CONFIG_FILE, 'r') as f:
+        with open(SHOP_CONFIG_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
-    except:
+    except (OSError, json.JSONDecodeError):
         return list(DEFAULT_SHOP_CONFIG)
 
 def save_shop_config(config):
-    with open(SHOP_CONFIG_FILE, 'w') as f:
+    """Admin 保存店铺配置 → shop_config.json。"""
+    with open(SHOP_CONFIG_FILE, 'w', encoding='utf-8') as f:
         json.dump(config, f, ensure_ascii=False, indent=2)
 
 @app.route('/api/shop-config', methods=['GET'])
@@ -4552,6 +4527,24 @@ def production_flow_step():
         return jsonify({'success': True, 'current_step_index': idx, 'status': status, 'total_steps': total})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
+
+# ==================== 静态文件（必须放在所有 /api 路由之后）====================
+@app.route('/')
+def index():
+    resp = make_response(send_from_directory('.', 'index.html'))
+    resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+    resp.headers['Pragma'] = 'no-cache'
+    resp.headers['Expires'] = '0'
+    return resp
+
+
+@app.route('/<path:path>')
+def static_files(path):
+    if path.startswith('api/') or path == 'api':
+        from werkzeug.exceptions import NotFound
+        raise NotFound()
+    return send_from_directory('.', path)
+
 
 if __name__ == '__main__':
     print("🏭 飞机盒智能生产管理系统启动中...")
