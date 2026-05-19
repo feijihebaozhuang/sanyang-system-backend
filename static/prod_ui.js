@@ -81,7 +81,16 @@
                 p.classList.remove('active');
             });
             var pg = document.getElementById('page-wps-kdocs');
-            if (pg) pg.classList.add('active');
+            if (pg) {
+                pg.classList.add('active');
+                var iframe = document.getElementById('wpsKdocsFrame');
+                if (iframe) {
+                    var ds = iframe.getAttribute('data-src');
+                    if (ds && (!iframe.src || iframe.src === 'about:blank')) {
+                        iframe.src = ds;
+                    }
+                }
+            }
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
     };
