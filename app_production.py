@@ -3931,7 +3931,6 @@ def production_dashboard():
                 attrs,
                 qty,
                 material_mapping=prod_mat_map,
-                item_name=item.get('name', '') or '',
             )
             full_items.append({
                 'name': item.get('name', '') or '',

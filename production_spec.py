@@ -161,15 +161,12 @@ def build_production_spec(
     qty: int = 0,
     *,
     material_mapping: list[dict] | None = None,
-    item_name: str = "",
 ) -> dict[str, Any]:
     """
-    返回 production_spec 字段供打单管理展示。
+    返回 production_spec 字段供打单管理展示（仅解析买家下单 SKU 属性，不用商品标题）。
     line 示例: 外径 18x14x5   50个/捆   1   特硬
     """
     text = (attrs or "").strip()
-    name = (item_name or "").strip()
-    combined = f"{text} {name}".strip()
     diam_type = _parse_diameter_type(text)
 
     dims = _parse_dimensions(text)
@@ -180,7 +177,7 @@ def build_production_spec(
         size = f"{_fmt_num(dims['l'])}x{_fmt_num(dims['w'])}"
 
     bundle = _parse_bundle(text)
-    material = match_production_material(combined, material_mapping or [])
+    material = match_production_material(text, material_mapping or [])
     if not material:
         hm = re.search(
             r"(?:外径|内径)?\s*(特硬|优质|台湾|白色|黑色|三层|加硬|E瓦|瓦楞|进口)",

@@ -553,9 +553,10 @@ def _trim_digits(s):
         return s.group()
 
 def _parse_item_display(spec, name, qty=0):
-    """从1688订单item的spec字符串中解析材质+尺寸，返回格式化显示文本"""
+    """从买家下单 spec 解析展示；无规格时不回退商品标题。"""
+    del name, qty
     if not spec:
-        return name or ''
+        return ''
     
     # 从报价配置加载材质映射
     try:

@@ -221,11 +221,21 @@ def _flush_cache_snapshot(
         if "items" in o:
             for it in o["items"]:
                 if isinstance(it, dict) and not it.get("display"):
-                    it["display"] = _parse_item_display(
-                        it.get("spec", ""),
-                        it.get("name", ""),
-                        it.get("qty", 0),
-                    )
+                    try:
+                        from km_api import km_item_for_resolve, km_resolve_item_display
+
+                        d = km_resolve_item_display(km_item_for_resolve(it))
+                        if d:
+                            it["display"] = d
+                            it["platform_attrs"] = d
+                    except ImportError:
+                        pass
+                    if not it.get("display"):
+                        it["display"] = _parse_item_display(
+                            it.get("spec", ""),
+                            "",
+                            it.get("qty", 0),
+                        )
     report["pending_count"] = len(pending)
     payload = {
         "orders": pending,

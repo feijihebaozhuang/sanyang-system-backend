@@ -483,14 +483,15 @@ def finalize_cache_order(o: dict) -> dict:
             continue
         if it.get("price") is not None:
             it["price"] = km_to_float(it.get("price"))
+        merged = km_item_for_resolve(it)
         display = km_resolve_item_display(it)
         if display:
             it["spec"] = display
             it["display"] = display
             it["platform_attrs"] = display
-            it["is_customization"] = km_item_is_customization(it)
         elif not (it.get("display") or "").strip():
             it["display"] = (it.get("spec") or "").strip()
+        it["is_customization"] = km_item_is_customization(merged)
     km_normalize_so_id_fields(o)
     km_enrich_receiver_region(o)
     return o
@@ -1339,9 +1340,18 @@ def _customization_has_buyer_content(val: Any) -> bool:
     return False
 
 
-def _listing_is_custom_product(title: str) -> bool:
-    """仅商品标题含「定制链接」。"""
-    return bool(_CUSTOM_LINK_RE.search(_norm_spec_text(title)))
+def _attrs_indicate_custom_product(blob: str) -> bool:
+    """买家下单属性里标明定制类（不用商品标题）。"""
+    t = _norm_spec_text(blob)
+    if not t:
+        return False
+    if _CUSTOM_LINK_RE.search(t):
+        return True
+    if re.search(r"来图定制|需定制|支持定制|定制款", t, re.I):
+        return True
+    if re.search(r"(?:^|[;；\s])定制(?:$|[;；\s、，])", t):
+        return True
+    return False
 
 
 def _attrs_have_dimensions(text: str) -> bool:
@@ -1351,23 +1361,24 @@ def _attrs_have_dimensions(text: str) -> bool:
 
 def km_item_is_customization(it: dict, *, trade_custom: bool = True) -> bool:
     """
-    定制单判定：商品名含「定制链接」且买家属性里没有长宽高。
-    有 210*210*100、长x宽【】、高度【】等 → 不算定制占位。
+    定制单判定（仅买家下单属性 / customization，不读商品标题）：
+    属性含定制类选项或平台 isCustomization，且没有长宽高 → 显示「定制」。
     """
     del trade_custom
     if not isinstance(it, dict):
         return False
-    title = _norm_spec_text(
-        it.get("sysTitle") or it.get("title") or it.get("shortTitle") or it.get("name") or ""
-    )
-    if not _listing_is_custom_product(title):
-        return False
-    blob = km_collect_item_raw_attrs(it)
+    src = km_item_for_resolve(it)
+    blob = km_collect_item_raw_attrs(src)
     for field in ("sysSkuRemark", "sysItemRemark"):
-        blob = f"{blob} {_norm_spec_text(it.get(field))}".strip()
-    extra = _extract_customization_spec_text(it)
+        blob = f"{blob} {_norm_spec_text(src.get(field))}".strip()
+    extra = _extract_customization_spec_text(src)
     if extra:
         blob = f"{blob} {extra}".strip()
+    flagged = src.get("isCustomization") in (True, 1, "1", "true", "True") or src.get(
+        "isCustom"
+    ) in (True, 1, "1", "true", "True")
+    if not flagged and not _attrs_indicate_custom_product(blob) and not extra:
+        return False
     return not _attrs_have_dimensions(blob)
 
 
@@ -1506,22 +1517,6 @@ def km_resolve_item_display(it: dict) -> str:
             spec_part = _buyer_property_values_only(raw)
     if not spec_part:
         spec_part = _extract_customization_spec_text(src)
-    if not spec_part:
-        for field in ("sysSkuRemark", "sysItemRemark"):
-            dim = km_format_dimensions_from_text(
-                _norm_spec_text(src.get(field)),
-                int(src.get("qty") or src.get("num") or 0),
-            )
-            if dim:
-                spec_part = dim
-                break
-    if not spec_part:
-        dim = km_format_dimensions_from_text(
-            _norm_spec_text(src.get("sysTitle") or src.get("title") or src.get("name") or ""),
-            int(src.get("qty") or src.get("num") or 0),
-        )
-        if dim:
-            spec_part = dim
     if spec_part:
         return spec_part
     if km_item_is_customization(src):
@@ -1603,7 +1598,7 @@ def km_trade_to_cache_order(trade: dict, shops: dict[str, dict] | None = None) -
         qty = int(it.get("num") or it.get("quantity") or 0)
         snap = km_item_snapshot(it)
         item_name = (it.get("sysTitle") or it.get("title") or it.get("shortTitle") or "")
-        src = {**snap, "qty": qty, "name": item_name}
+        src = {**snap, "qty": qty}
         display = km_resolve_item_display(src)
         items.append(
             {

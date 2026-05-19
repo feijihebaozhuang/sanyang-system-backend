@@ -158,14 +158,36 @@ def load_cache_orders(cache_file: str, *, finalize: bool = True) -> list[dict]:
     return orders
 
 
+def item_buyer_attrs(it: dict) -> str:
+    """子单行买家下单 SKU 属性（展示用 display，不读商品标题 name）。"""
+    if not isinstance(it, dict):
+        return ""
+    d = (
+        it.get("display")
+        or it.get("platform_attrs")
+        or it.get("spec")
+        or ""
+    )
+    d = str(d).strip()
+    if d:
+        return d
+    try:
+        from km_api import km_collect_item_raw_attrs, km_item_for_resolve
+
+        return km_collect_item_raw_attrs(km_item_for_resolve(it))
+    except ImportError:
+        return ""
+
+
 def infer_order_type(o: dict) -> str:
-    """按订单内商品名 + 买家属性判断类型（飞机盒/纸箱等）。"""
+    """按订单内各子单买家属性判断类型（飞机盒/纸箱等），不用商品标题。"""
     parts: list[str] = []
     for it in o.get("items") or []:
         if not isinstance(it, dict):
             continue
-        parts.append(str(it.get("name") or ""))
-        parts.append(str(it.get("display") or it.get("spec") or ""))
+        attrs = item_buyer_attrs(it)
+        if attrs:
+            parts.append(attrs)
     blob = " ".join(parts)
     if "扣底盒" in blob or "双插盒" in blob:
         return "扣底盒"

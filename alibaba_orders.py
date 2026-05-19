@@ -100,7 +100,7 @@ def format_order(o: dict, memo_getter: Callable[[str], str] | None = None) -> di
         qty = int(item.get("quantity") or 0)
         item_name = item.get("name", "") or ""
         snap = km_item_snapshot(item)
-        src = {**snap, "qty": qty, "name": item_name}
+        src = {**snap, "qty": qty}
         display = km_resolve_item_display(src)
         product_list.append(
             {
