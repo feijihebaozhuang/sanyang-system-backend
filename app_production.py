@@ -2173,22 +2173,17 @@ def calculate_quote():
         return jsonify({"error": str(e), "success": False})
 
 # ==================== 固定刀模库 API ====================
-DIEMOLD_FILE = os.path.join(os.path.dirname(__file__), 'dimoldb.json')
+import dimoldb_store as _dimoldb_store
+
 
 def load_dimoldb():
-    """加载刀模库数据"""
-    if not os.path.exists(DIEMOLD_FILE):
-        return []
-    try:
-        with open(DIEMOLD_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except:
-        return []
+    """从 MySQL 加载刀模库（含 code / production_spec / km_mapping_code）。"""
+    return _dimoldb_store.load_dimoldb(get_db)
+
 
 def save_dimoldb(data):
-    """保存刀模库数据"""
-    with open(DIEMOLD_FILE, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    """保存刀模库到 MySQL。"""
+    return _dimoldb_store.save_dimoldb(get_db, data)
 
 def _has_dimoldb_edit_perm():
     """检查是否有刀模库编辑权限"""
@@ -2394,10 +2389,10 @@ def delete_dimoldb(dm_id):
 def template_dimoldb():
     """刀模导入空模板"""
     return _send_xlsx_template(
-        ["产品类型", "名称", "编码", "备注", "长(cm)", "宽(cm)", "高(cm)"],
+        ["产品类型", "名称", "编码", "生产规格", "快麦商品映射", "备注", "长(cm)", "宽(cm)", "高(cm)"],
         [
-            ["zhengsquare", "飞机盒18×14×5", "FH181405", "外径", 18, 14, 5],
-            ["juxing", "长方形20×15×10", "", "", 20, 15, 10],
+            ["zhengsquare", "飞机盒18×14×5", "FH181405", "18×14×5", "KM_SKU_001", "外径", 18, 14, 5],
+            ["juxing", "长方形20×15×10", "", "20×15×10", "", "", 20, 15, 10],
         ],
         "刀模库导入模板.xlsx",
     )
@@ -2413,7 +2408,7 @@ def export_dimoldb():
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = '刀模库'
-        headers = ['序号', '产品类型', '名称', '编码', '备注', '长(cm)', '宽(cm)', '高(cm)', '创建时间']
+        headers = ['序号', '产品类型', '名称', '编码', '生产规格', '快麦商品映射', '备注', '长(cm)', '宽(cm)', '高(cm)', '创建时间']
         thin = Border(
             left=Side(style='thin'), right=Side(style='thin'),
             top=Side(style='thin'), bottom=Side(style='thin'))
@@ -2429,6 +2424,8 @@ def export_dimoldb():
                 item.get('product_type', ''),
                 item.get('name', ''),
                 item.get('code', '') or '',
+                item.get('production_spec', '') or '',
+                item.get('km_mapping_code', '') or '',
                 item.get('remark', '') or '',
                 item.get('length', ''),
                 item.get('width', ''),
@@ -2486,22 +2483,7 @@ def import_dimoldb():
         if header_row is None:
             return jsonify({"success": False, "error": "未找到表头行（需包含'名称'列）"})
         headers = [str(v or '').strip() for v in next(ws.iter_rows(min_row=header_row, max_row=header_row, values_only=True))]
-        col_map = {}
-        for i, h in enumerate(headers):
-            if '名称' in h or h == 'name':
-                col_map['name'] = i
-            elif '类型' in h or '产品' in h or 'product' in h.lower():
-                col_map['product_type'] = i
-            elif '编码' in h or 'code' in h.lower():
-                col_map['code'] = i
-            elif '备注' in h or 'remark' in h.lower():
-                col_map['remark'] = i
-            elif '长' in h or 'length' in h.lower():
-                col_map['length'] = i
-            elif '宽' in h or 'width' in h.lower():
-                col_map['width'] = i
-            elif '高' in h or 'height' in h.lower():
-                col_map['height'] = i
+        col_map = _dimoldb_store.map_dimoldb_import_headers(headers)
         if 'name' not in col_map:
             return jsonify({"success": False, "error": f"未找到'名称'列，表头: {headers}"})
         mode = (request.form.get("import_mode") or request.form.get("mode") or "append").strip().lower()
@@ -2519,23 +2501,16 @@ def import_dimoldb():
             item = {
                 'id': f'dm_{int(time.time())}_{added}_{len(db)}',
                 'name': name,
-                'product_type': str(row[col_map['product_type']]).strip() if col_map.get('product_type') is not None and col_map['product_type'] < len(row) and row[col_map['product_type']] else 'zhengsquare',
-                'code': str(row[col_map['code']]).strip() if col_map.get('code') is not None and col_map['code'] < len(row) and row[col_map['code']] else '',
-                'remark': str(row[col_map['remark']]).strip() if col_map.get('remark') is not None and col_map['remark'] < len(row) and row[col_map['remark']] else '',
-                'length': float(row[col_map['length']]) if col_map.get('length') is not None and col_map['length'] < len(row) and row[col_map['length']] is not None else 0,
-                'width': float(row[col_map['width']]) if col_map.get('width') is not None and col_map['width'] < len(row) and row[col_map['width']] is not None else 0,
-                'height': float(row[col_map['height']]) if col_map.get('height') is not None and col_map['height'] < len(row) and row[col_map['height']] is not None else 0,
+                'product_type': _dimoldb_store.cell_str(row, col_map.get('product_type')) or 'zhengsquare',
+                'code': _dimoldb_store.cell_str(row, col_map.get('code')),
+                'production_spec': _dimoldb_store.cell_str(row, col_map.get('production_spec')),
+                'km_mapping_code': _dimoldb_store.cell_str(row, col_map.get('km_mapping_code')),
+                'remark': _dimoldb_store.cell_str(row, col_map.get('remark')),
+                'length': _dimoldb_store.cell_float(row, col_map.get('length')),
+                'width': _dimoldb_store.cell_float(row, col_map.get('width')),
+                'height': _dimoldb_store.cell_float(row, col_map.get('height')),
                 'created_at': now
             }
-            try:
-                item['length'] = float(item['length'])
-            except: item['length'] = 0
-            try:
-                item['width'] = float(item['width'])
-            except: item['width'] = 0
-            try:
-                item['height'] = float(item['height'])
-            except: item['height'] = 0
             key_code = (item.get("code") or "").strip()
             key_name = item.get("name") or ""
             if mode == "upsert":
@@ -2693,33 +2668,83 @@ def search_dimoldb():
         return jsonify({"success": False, "error": str(e)})
 
 # ==================== 库存 API ====================
-INVENTORY_FILE = os.path.join(os.path.dirname(__file__), 'inventory.json')
 
 def load_inventory():
-    if not os.path.exists(INVENTORY_FILE):
-        return {"finished": [], "raw": [], "returned": []}
+    """从 MySQL 加载库存数据（与 app_cs / app.py 一致）。"""
     try:
-        with open(INVENTORY_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        if isinstance(data, list):
-            return {"finished": data, "raw": [], "returned": []}
-        return data
-    except:
+        db = get_db()
+        cur = db.cursor()
+        cur.execute(
+            "SELECT id, name, spec, product_type, material, location, qty, "
+            "last_month_qty, length, width, height, dim_type, created_at, updated_at "
+            "FROM inventory ORDER BY created_at DESC"
+        )
+        rows = cur.fetchall()
+        finished = []
+        for r in rows:
+            finished.append({
+                'id': r['id'],
+                'name': r['name'] or '',
+                'spec': r['spec'] or '',
+                'product_type': r['product_type'] or '',
+                'material': r['material'] or '',
+                'location': r['location'] or '',
+                'qty': r['qty'] or 0,
+                'last_month_qty': r['last_month_qty'] or 0,
+                'length': float(r['length']) if r['length'] else 0,
+                'width': float(r['width']) if r['width'] else 0,
+                'height': float(r['height']) if r['height'] else 0,
+                'dim_type': r['dim_type'] or '',
+                'created_at': r['created_at'] or '',
+                'updated_at': r['updated_at'] or ''
+            })
+        cur.close()
+        db.close()
+        return {"finished": finished, "raw": [], "returned": []}
+    except Exception as e:
+        print(f'[MySQL load_inventory] 错误: {e}')
         return {"finished": [], "raw": [], "returned": []}
 
+
 def save_inventory(data):
-    # 如果是最顶层列表格式，保持原样
-    if isinstance(data, dict):
-        # 检查文件原始格式：如果原来存的是列表，提取finished
-        if os.path.exists(INVENTORY_FILE):
-            try:
-                orig = json.load(open(INVENTORY_FILE, 'r', encoding='utf-8'))
-                if isinstance(orig, list):
-                    data = data.get('finished', data.get('raw', []))
-            except:
-                pass
-    with open(INVENTORY_FILE, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    """保存库存到 MySQL（truncate + 批量 insert）。"""
+    try:
+        db = get_db()
+        cur = db.cursor()
+        cur.execute("TRUNCATE TABLE inventory")
+        items = []
+        if isinstance(data, dict):
+            items = data.get('finished', data.get('raw', data.get('returned', [])))
+        elif isinstance(data, list):
+            items = data
+        for item in items:
+            cur.execute(
+                "INSERT INTO inventory (id, name, spec, product_type, material, location, "
+                "qty, last_month_qty, length, width, height, dim_type, created_at, updated_at) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                (
+                    item.get('id', ''),
+                    item.get('name', ''),
+                    item.get('spec', ''),
+                    item.get('product_type', ''),
+                    item.get('material', ''),
+                    item.get('location', ''),
+                    item.get('qty', 0),
+                    item.get('last_month_qty', 0),
+                    item.get('length', 0),
+                    item.get('width', 0),
+                    item.get('height', 0),
+                    item.get('dim_type', ''),
+                    item.get('created_at', ''),
+                    item.get('updated_at', '')
+                )
+            )
+        cur.close()
+        db.close()
+        return True
+    except Exception as e:
+        print(f'[MySQL save_inventory] 错误: {e}')
+        return False
 
 def _has_inv_edit_perm():
     """库存修改权限：超级管理员/管理/有'库存'权限"""

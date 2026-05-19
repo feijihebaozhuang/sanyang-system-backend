@@ -12,6 +12,7 @@ from datetime import timedelta
 from pypinyin import lazy_pinyin
 import pymysql
 
+import dimoldb_store as _dimoldb_store
 from settings import (
     ALIBABA_CONFIG,
     ALIBABA_SHOPS,
@@ -1860,60 +1861,13 @@ def calculate_quote():
 # ==================== 固定刀模库 API ====================
 
 def load_dimoldb():
-    """从MySQL加载刀模库数据"""
-    try:
-        db = get_db()
-        cur = db.cursor()
-        cur.execute("SELECT id, product_type, name, length, width, height, remark, stock, created_at FROM dimoldb ORDER BY created_at DESC")
-        rows = cur.fetchall()
-        result = []
-        for r in rows:
-            result.append({
-                'id': r['id'],
-                'product_type': r['product_type'] or '',
-                'name': r['name'] or '',
-                'length': float(r['length']) if r['length'] else 0,
-                'width': float(r['width']) if r['width'] else 0,
-                'height': float(r['height']) if r['height'] else 0,
-                'remark': r['remark'] or '',
-                'stock': r['stock'] or 0,
-                'created_at': r['created_at'] or ''
-            })
-        cur.close()
-        db.close()
-        return result
-    except Exception as e:
-        print(f'[MySQL load_dimoldb] 错误: {e}')
-        return []
+    """从 MySQL 加载刀模库（含 code / production_spec / km_mapping_code）。"""
+    return _dimoldb_store.load_dimoldb(get_db)
+
 
 def save_dimoldb(data):
-    """保存刀模库数据到MySQL（truncate+批量insert）"""
-    try:
-        db = get_db()
-        cur = db.cursor()
-        cur.execute("TRUNCATE TABLE dimoldb")
-        if data:
-            for item in data:
-                cur.execute(
-                    "INSERT INTO dimoldb (id, product_type, name, length, width, height, remark, stock, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                    (
-                        item.get('id', ''),
-                        item.get('product_type', ''),
-                        item.get('name', ''),
-                        item.get('length', 0),
-                        item.get('width', 0),
-                        item.get('height', 0),
-                        item.get('remark', ''),
-                        item.get('stock', 0),
-                        item.get('created_at', '')
-                    )
-                )
-        cur.close()
-        db.close()
-        return True
-    except Exception as e:
-        print(f'[MySQL save_dimoldb] 错误: {e}')
-        return False
+    """保存刀模库到 MySQL（truncate + 批量 insert）。"""
+    return _dimoldb_store.save_dimoldb(get_db, data)
 
 def _has_dimoldb_edit_perm():
     """检查是否有刀模库编辑权限"""
@@ -2125,7 +2079,7 @@ def export_dimoldb():
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = '刀模库'
-        headers = ['序号', '产品类型', '名称', '编码', '备注', '长(cm)', '宽(cm)', '高(cm)', '创建时间']
+        headers = ['序号', '产品类型', '名称', '编码', '生产规格', '快麦商品映射', '备注', '长(cm)', '宽(cm)', '高(cm)', '创建时间']
         thin = Border(
             left=Side(style='thin'), right=Side(style='thin'),
             top=Side(style='thin'), bottom=Side(style='thin'))
@@ -2141,6 +2095,8 @@ def export_dimoldb():
                 item.get('product_type', ''),
                 item.get('name', ''),
                 item.get('code', '') or '',
+                item.get('production_spec', '') or '',
+                item.get('km_mapping_code', '') or '',
                 item.get('remark', '') or '',
                 item.get('length', ''),
                 item.get('width', ''),
@@ -2198,22 +2154,7 @@ def import_dimoldb():
         if header_row is None:
             return jsonify({"success": False, "error": "未找到表头行（需包含'名称'列）"})
         headers = [str(v or '').strip() for v in next(ws.iter_rows(min_row=header_row, max_row=header_row, values_only=True))]
-        col_map = {}
-        for i, h in enumerate(headers):
-            if '名称' in h or h == 'name':
-                col_map['name'] = i
-            elif '类型' in h or '产品' in h or 'product' in h.lower():
-                col_map['product_type'] = i
-            elif '编码' in h or 'code' in h.lower():
-                col_map['code'] = i
-            elif '备注' in h or 'remark' in h.lower():
-                col_map['remark'] = i
-            elif '长' in h or 'length' in h.lower():
-                col_map['length'] = i
-            elif '宽' in h or 'width' in h.lower():
-                col_map['width'] = i
-            elif '高' in h or 'height' in h.lower():
-                col_map['height'] = i
+        col_map = _dimoldb_store.map_dimoldb_import_headers(headers)
         if 'name' not in col_map:
             return jsonify({"success": False, "error": f"未找到'名称'列，表头: {headers}"})
         db = load_dimoldb()
@@ -2226,23 +2167,16 @@ def import_dimoldb():
             item = {
                 'id': f'dm_{int(time.time())}_{added}_{len(db)}',
                 'name': name,
-                'product_type': str(row[col_map['product_type']]).strip() if col_map.get('product_type') is not None and col_map['product_type'] < len(row) and row[col_map['product_type']] else 'zhengsquare',
-                'code': str(row[col_map['code']]).strip() if col_map.get('code') is not None and col_map['code'] < len(row) and row[col_map['code']] else '',
-                'remark': str(row[col_map['remark']]).strip() if col_map.get('remark') is not None and col_map['remark'] < len(row) and row[col_map['remark']] else '',
-                'length': float(row[col_map['length']]) if col_map.get('length') is not None and col_map['length'] < len(row) and row[col_map['length']] is not None else 0,
-                'width': float(row[col_map['width']]) if col_map.get('width') is not None and col_map['width'] < len(row) and row[col_map['width']] is not None else 0,
-                'height': float(row[col_map['height']]) if col_map.get('height') is not None and col_map['height'] < len(row) and row[col_map['height']] is not None else 0,
+                'product_type': _dimoldb_store.cell_str(row, col_map.get('product_type')) or 'zhengsquare',
+                'code': _dimoldb_store.cell_str(row, col_map.get('code')),
+                'production_spec': _dimoldb_store.cell_str(row, col_map.get('production_spec')),
+                'km_mapping_code': _dimoldb_store.cell_str(row, col_map.get('km_mapping_code')),
+                'remark': _dimoldb_store.cell_str(row, col_map.get('remark')),
+                'length': _dimoldb_store.cell_float(row, col_map.get('length')),
+                'width': _dimoldb_store.cell_float(row, col_map.get('width')),
+                'height': _dimoldb_store.cell_float(row, col_map.get('height')),
                 'created_at': now
             }
-            try:
-                item['length'] = float(item['length'])
-            except: item['length'] = 0
-            try:
-                item['width'] = float(item['width'])
-            except: item['width'] = 0
-            try:
-                item['height'] = float(item['height'])
-            except: item['height'] = 0
             db.append(item)
             added += 1
         save_dimoldb(db)
