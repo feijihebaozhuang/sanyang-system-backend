@@ -53,6 +53,7 @@ _BUNDLE_RE = re.compile(
     re.I,
 )
 _QTY_BRACKET_RE = re.compile(r"【\s*数量\s*(\d+)\s*个\s*】", re.I)
+_QTY_SIMPLE_BRACKET_RE = re.compile(r"【\s*(\d+)\s*个\s*】", re.I)
 _INNER_MARK_RE = re.compile(r"【\s*内\s*】|内径|内尺寸|\(内\)|（内）", re.I)
 _OUTER_MARK_RE = re.compile(r"【\s*外\s*】|外径|外尺寸|\(外\)|（外）", re.I)
 _COLOR_LABEL_RE = re.compile(r"颜色\s*[:：]\s*([^\s;；,，]+)", re.I)
@@ -97,6 +98,37 @@ def _val_to_cm(val: float, unit: str | None) -> float:
 
 def _fmt_dim_cm(n: float) -> str:
     return f"{_fmt_num(n)}cm"
+
+
+def _fmt_dim_cm_or_missing(key: str, dims: dict[str, float]) -> str:
+    if dims.get(key) is not None:
+        return _fmt_dim_cm(float(dims[key]))
+    return "缺" + {"l": "长", "w": "宽", "h": "高"}.get(key, key)
+
+
+def format_size_display_cm(dims: dict[str, float]) -> str:
+    """第二行尺寸：统一 cm；缺维度显示「缺长/缺宽/缺高」。"""
+    if not dims:
+        return ""
+    has_any = any(dims.get(k) is not None for k in ("l", "w", "h"))
+    if not has_any:
+        return ""
+    return "x".join(
+        [
+            _fmt_dim_cm_or_missing("l", dims),
+            _fmt_dim_cm_or_missing("w", dims),
+            _fmt_dim_cm_or_missing("h", dims),
+        ]
+    )
+
+
+def missing_dimension_labels(dims: dict[str, float]) -> list[str]:
+    labels = {"l": "长", "w": "宽", "h": "高"}
+    return [labels[k] for k in ("l", "w", "h") if dims.get(k) is None]
+
+
+def dimensions_ready_for_calc(dims: dict[str, float]) -> bool:
+    return all(dims.get(k) is not None for k in ("l", "w", "h"))
 
 
 def _normalize_parsed_dims_units(dims: dict[str, float], text: str) -> dict[str, float]:
@@ -333,6 +365,7 @@ def parse_quantity_info(text: str, platform_qty: int = 0) -> dict[str, Any]:
     """
     raw = text or ""
     m_qty = _QTY_BRACKET_RE.search(raw)
+    m_simple = _QTY_SIMPLE_BRACKET_RE.search(raw)
     if m_qty:
         n = int(m_qty.group(1))
         return {
@@ -341,6 +374,15 @@ def parse_quantity_info(text: str, platform_qty: int = 0) -> dict[str, Any]:
             "per_group_qty": 0,
             "qty_label": f"{n}个",
             "qty_source": "bracket",
+        }
+    if m_simple:
+        n = int(m_simple.group(1))
+        return {
+            "total_qty": n,
+            "order_qty": n,
+            "per_group_qty": 0,
+            "qty_label": f"{n}个",
+            "qty_source": "bracket_qty",
         }
 
     per_group, bundle_label = parse_group_info(raw)
@@ -426,33 +468,15 @@ def match_airbox_material(text: str) -> str:
     return kept[0][1]
 
 
-def _match_carton_material(text: str, mapping: list[dict]) -> str:
-    low = (text or "").lower()
-    best = ""
-    best_len = 0
-    for row in mapping or []:
-        label = (row.get("label") or row.get("production_label") or "").strip()
-        if not label:
-            continue
-        kws = [
-            k.strip().lower()
-            for k in (row.get("keywords") or "").split(",")
-            if k.strip()
-        ]
-        for kw in kws:
-            if kw and kw in low and len(kw) > best_len:
-                best = label
-                best_len = len(kw)
-    return best
-
-
 def match_production_material(text: str, mapping: list[dict] | None = None) -> str:
-    """仅从 SKU 属性解析材料；飞机盒走优先级表（无关键词默认特硬），纸箱走 mapping。"""
+    """仅从 SKU 属性解析材料；飞机盒走优先级表（无关键词默认特硬），纸箱走硬编码规则。"""
+    import hardcoded_config as hc
+
     raw = platform_spec_raw(text)
     parse_text = sanitize_sku_attrs(raw) or raw
     if is_airbox_product(raw):
         return match_airbox_material(parse_text) or "特硬"
-    return _match_carton_material(parse_text, mapping or [])
+    return hc.match_carton_material(parse_text)
 
 
 def _is_placeholder_spec(attrs: str) -> bool:
@@ -492,7 +516,7 @@ def build_production_spec(
     attrs: str,
     qty: int = 0,
     *,
-    material_mapping: list[dict] | None = None,
+    material_mapping: list[dict] | None = None,  # 已废弃，仅保留参数兼容
 ) -> dict[str, Any]:
     """
     四层展示（C）之解析数据：
@@ -501,17 +525,13 @@ def build_production_spec(
     """
     raw = platform_spec_raw(attrs)
     dims = _parse_dimensions(raw)
-    size = ""
-    if dims.get("l") and dims.get("w") and dims.get("h"):
-        size = (
-            f"{_fmt_dim_cm(dims['l'])}x{_fmt_dim_cm(dims['w'])}x{_fmt_dim_cm(dims['h'])}"
-        )
-    elif dims.get("l") and dims.get("w"):
-        size = f"{_fmt_dim_cm(dims['l'])}x{_fmt_dim_cm(dims['w'])}"
+    size = format_size_display_cm(dims)
+    dim_missing = missing_dimension_labels(dims)
+    dims_ok = dimensions_ready_for_calc(dims)
 
     qinfo = parse_quantity_info(raw, qty)
     diam = _parse_diameter_type(raw)
-    material = match_production_material(raw, material_mapping or [])
+    material = match_production_material(raw)
     color = _parse_color(raw, material)
 
     formatted = _build_formatted_line(
@@ -547,6 +567,8 @@ def build_production_spec(
         "length": dims.get("l"),
         "width": dims.get("w"),
         "height": dims.get("h"),
+        "dimensions_ok": dims_ok,
+        "dimensions_missing": dim_missing,
         "is_placeholder": _is_placeholder_spec(raw),
     }
 

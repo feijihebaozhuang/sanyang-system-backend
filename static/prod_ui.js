@@ -598,6 +598,20 @@
     window.renderMaterialCalcHtml = function (item) {
         var mc = item.material_calc || {};
         var st = mc.status || item.material_status || 'pending';
+        var psd = item.production_spec_detail || {};
+        if (st === 'pending' || st === 'error') {
+            var miss =
+                item.dimensions_missing ||
+                psd.dimensions_missing ||
+                [];
+            if (!psd.dimensions_ok && miss.length) {
+                return (
+                    '<div style="font-size:10px;color:#cf1322;font-weight:600;margin-top:2px;line-height:1.45;">⚠️ 规格缺少' +
+                    prodEscHtml(miss.join('、')) +
+                    '，无法算料（需长宽高齐全）</div>'
+                );
+            }
+        }
         if (st !== 'done' && st !== 'error' && st !== 'shortage') {
             return '';
         }

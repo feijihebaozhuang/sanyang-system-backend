@@ -256,6 +256,10 @@ _order_extra = persistent_data.get("order_extra", {})
 _permission_data = persistent_data.get("permission_data", {})
 _resigned_employees = persistent_data.get("resigned_employees", [])  # 离职员工列表[{name, position, group, dept, phone, resigned_time}]
 
+import hardcoded_config as _hardcoded_config
+
+_hardcoded_config.apply_hardcoded_permission_data(_permission_data)
+
 # 将员工状态变更为按日期存储格式（兼容旧格式）
 if isinstance(_employee_today_status, dict):
     # 检查是 "date -> name -> status" 还是老格式
@@ -271,6 +275,7 @@ if isinstance(_employee_today_status, dict):
 def persist():
     """持久化当前数据到文件"""
     global _employee_today_status, _permission_data, USERS, _resigned_employees
+    _hardcoded_config.apply_hardcoded_permission_data(_permission_data)
     # 把USERS的密码也存到文件（用户改密码后重启不丢）
     users_data = {}
     for uid, u in USERS.items():
@@ -1453,6 +1458,7 @@ def process_timeout_api():
 @app.route('/api/permissions/data')
 def get_permissions_data():
     # 每次返回都同步一次，保证永远不遗漏
+    _hardcoded_config.apply_hardcoded_permission_data(_permission_data)
     _sync_all_employees_perms()
     return jsonify(_permission_data)
 
@@ -1462,10 +1468,7 @@ def save_permissions_data():
     data = request.get_json()
     if data:
         # 更新结构数据
-        if "processes" in data:
-            _permission_data["processes"] = data["processes"]
-        if "positions" in data:
-            _permission_data["positions"] = data["positions"]
+        # processes / positions / employees 由 hardcoded_config 提供，不在此覆盖
         # 合并权限：用新数据覆盖旧数据
         new_perms = data.get("permissions", {})
         if new_perms:
@@ -1478,8 +1481,8 @@ def save_permissions_data():
         new_enabled = data.get("employee_enabled")
         if new_enabled is not None:
             _permission_data["employee_enabled"] = new_enabled
-        if "production_material_mapping" in data:
-            _permission_data["production_material_mapping"] = data["production_material_mapping"]
+        # 工序/材料映射/员工名单：硬编码，忽略 JSON 提交
+        _hardcoded_config.apply_hardcoded_permission_data(_permission_data)
         # 同步全员工，保证每个人每个字段都不缺
         _sync_all_employees_perms()
         persist()
@@ -1487,12 +1490,8 @@ def save_permissions_data():
 
 
 def _production_material_mapping() -> list:
-    m = _permission_data.get("production_material_mapping")
-    if isinstance(m, list) and len(m) > 0:
-        return m
-    default = list(DEFAULT_PRODUCTION_MATERIAL_MAPPING)
-    _permission_data["production_material_mapping"] = default
-    return default
+    """生产材质映射：仅硬编码，不读 data.json。"""
+    return _hardcoded_config.carton_material_mapping_rows()
 
 
 @app.route("/api/production/material-mapping", methods=["GET"])
@@ -1506,33 +1505,22 @@ def get_production_material_mapping():
 def save_production_material_mapping():
     if "username" not in session:
         return jsonify({"error": "未登录"}), 401
-    user = USERS.get(session["username"])
-    if not user or user.get("role") != "超级管理员":
-        return jsonify({"success": False, "message": "仅超级管理员可修改"}), 403
-    data = request.get_json() or {}
-    mapping = data.get("mapping")
-    if not isinstance(mapping, list):
-        return jsonify({"success": False, "message": "mapping 须为数组"}), 400
-    cleaned = []
-    for row in mapping:
-        if not isinstance(row, dict):
-            continue
-        label = (row.get("label") or "").strip()
-        keywords = (row.get("keywords") or "").strip()
-        if label or keywords:
-            cleaned.append({"label": label, "keywords": keywords})
-    _permission_data["production_material_mapping"] = cleaned
-    persist()
-    return jsonify({"success": True, "message": "生产材料映射已保存", "mapping": cleaned})
+    return jsonify(
+        {
+            "success": False,
+            "message": "材料映射已写死在代码中（hardcoded_config.py），请修改代码后部署，勿改 JSON",
+            "mapping": _production_material_mapping(),
+        }
+    ), 400
 
 @app.route('/api/processes')
 def get_processes():
-    return jsonify({"processes": _permission_data.get("processes", [])})
+    return jsonify({"processes": _hardcoded_config.DEFAULT_PROCESSES})
 
 @app.route('/api/process_tree')
 def get_process_tree():
-    """返回树形工序结构"""
-    return jsonify({"tree": _permission_data.get("processes", [])})
+    """返回树形工序结构（硬编码）"""
+    return jsonify({"tree": _hardcoded_config.DEFAULT_PROCESSES})
 
 
 @app.route('/api/my_permissions')

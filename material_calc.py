@@ -252,8 +252,12 @@ def match_dimoldb(
     height: float,
     dimoldb: list[dict],
     product_type: str = "",
-    tol: float = 0.6,
+    tol: float | None = None,
 ) -> dict[str, Any]:
+    import hardcoded_config as hc
+
+    if tol is None:
+        tol = hc.DIMOLD_MATCH_TOLERANCE_CM
     pt = (product_type or "").strip()
     if pt == "纸箱" or _is_carton_product(pt):
         return {
@@ -358,12 +362,9 @@ def _parse_lwh_from_attrs(attrs: str) -> tuple[float, float, float] | None:
     import production_spec as pspec
 
     dims = pspec.parse_dimensions_cm(attrs or "")
-    l, w, h = dims.get("l"), dims.get("w"), dims.get("h")
-    if l and w and h:
-        return float(l), float(w), float(h)
-    if l and w:
-        return float(l), float(w), float(h or 0)
-    return None
+    if not pspec.dimensions_ready_for_calc(dims):
+        return None
+    return float(dims["l"]), float(dims["w"]), float(dims["h"])
 
 
 def calc_material_line(
@@ -380,12 +381,20 @@ def calc_material_line(
 
     raw_attrs = (attrs or "").strip()
     clean_attrs = pspec.sanitize_sku_attrs(raw_attrs) or raw_attrs
-    lwh = _parse_lwh_from_attrs(raw_attrs)
-    if not lwh:
-        return {"status": "error", "error": "无法从规格解析长宽高", "attrs": attrs}
-    l, w, h = lwh
-    if h <= 0:
-        return {"status": "error", "error": "缺少高度尺寸", "attrs": attrs}
+    dims = pspec.parse_dimensions_cm(raw_attrs)
+    if not pspec.dimensions_ready_for_calc(dims):
+        missing = pspec.missing_dimension_labels(dims)
+        if missing:
+            err = f"规格缺少{'、'.join(missing)}，无法算料（需长宽高齐全，单位已统一为cm）"
+        else:
+            err = "无法从规格解析长宽高，无法算料"
+        return {
+            "status": "error",
+            "error": err,
+            "attrs": attrs,
+            "dimensions_missing": missing,
+        }
+    l, w, h = float(dims["l"]), float(dims["w"]), float(dims["h"])
     pt = infer_product_type_for_calc(order_type, clean_attrs or attrs)
     is_buckle = pt in ("带扣", "daikou")
     calc_pt = (

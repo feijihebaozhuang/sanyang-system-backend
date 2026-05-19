@@ -219,11 +219,7 @@ def rebuild_dashboard_cache(
                 or ""
             ).strip()
             order_qty = int(item.get("qty", 0) or 0)
-            ps = pspec.build_production_spec(
-                raw_attrs,
-                order_qty,
-                material_mapping=material_mapping or [],
-            )
+            ps = pspec.build_production_spec(raw_attrs, order_qty)
             real_qty = int(ps.get("qty") or order_qty)
             has_stock, stock_qty, stock_info = _match_inventory(raw_attrs, real_qty, inv_rows)
             dm_info = _match_dimoldb_for_line(ps, order_type, dimoldb_rows)
@@ -265,6 +261,8 @@ def rebuild_dashboard_cache(
                     "material_name": ps.get("material") or "—",
                     "material_status": mc_status,
                     "material_calc": cached_mc or {"status": mc_status},
+                    "dimensions_ok": bool(ps.get("dimensions_ok")),
+                    "dimensions_missing": ps.get("dimensions_missing") or [],
                     "line_index": line_idx,
                 }
             )
