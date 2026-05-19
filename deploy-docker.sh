@@ -85,7 +85,7 @@ else
   warn "  未找到 $CACHE_JSON，跳过部署期迁移（依赖启动时 bootstrap）"
 fi
 
-log "[6/6] Webhook 探活..."
+log "[6/7] Webhook + 静态资源探活..."
 FAIL=0
 for port in 3001 3002; do
   code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${port}/api/webhook/kuaimai" || echo "000")
@@ -95,7 +95,24 @@ for port in 3001 3002; do
     err "  FAIL webhook :$port -> $code"
     FAIL=1
   fi
+  static_code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${port}/static/auth_session.js" || echo "000")
+  if [ "$static_code" = "200" ]; then
+    log "  OK static/auth_session.js :$port -> $static_code"
+  else
+    err "  FAIL static/auth_session.js :$port -> $static_code (登录会报 SY_AUTH is not defined)"
+    FAIL=1
+  fi
 done
+
+log "[7/7] 前端挂载检查..."
+if [ -f "$STABLE_DIR/index.html" ] && ! grep -q 'auth_session.js' "$STABLE_DIR/index.html" 2>/dev/null; then
+  warn "  stable/index.html 未引用 auth_session.js，请执行:"
+  warn "    cp $REPO_DIR/index.html $STABLE_DIR/index.html && docker compose restart prod"
+fi
+if [ ! -f "$STABLE_DIR/static/auth_session.js" ]; then
+  err "  缺少 $STABLE_DIR/static/auth_session.js（deploy rsync 应已同步 static/）"
+  FAIL=1
+fi
 
 [ "$FAIL" -eq 0 ] && log "SUCCESS commit=$COMMIT" || err "FAILURE"
 exit "$FAIL"

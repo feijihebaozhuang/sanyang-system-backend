@@ -3735,6 +3735,12 @@ def index():
     return resp
 
 
+@app.route('/static/<path:filename>')
+def serve_static_assets(filename):
+    """显式提供 static/（避免反代或通配路由导致 auth_session.js 404）"""
+    return send_from_directory('static', filename)
+
+
 @app.route('/<path:path>')
 def static_files(path):
     if path.startswith('api/') or path == 'api':

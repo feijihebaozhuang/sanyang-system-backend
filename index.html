@@ -1398,6 +1398,9 @@
         errEl.style.display = 'none';
         
         try {
+            if (typeof globalThis.SY_AUTH === 'undefined') {
+                throw new Error('auth_session.js ??????? /static/auth_session.js ???? 200');
+            }
             const res = await SY_AUTH.apiFetch('/api/login', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},

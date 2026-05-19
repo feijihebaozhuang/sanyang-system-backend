@@ -26,6 +26,21 @@ docker compose -f /www/feijihe/stable/docker-compose.yml ps
 
 期望：根路径与 `auth_session.js` 均为 **200**。
 
+## 登录报「网络错误: SY_AUTH is not defined」
+
+1. 浏览器 F12 → Network，看 `/static/auth_session.js` 是否为 **200**（404/502 即未加载）。
+2. 服务器：
+   ```bash
+   curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3002/static/auth_session.js
+   ls -la /www/feijihe/stable/static/auth_session.js
+   ```
+3. **stable 的 `index.html` 很旧**（没有 `<script src="/static/auth_session.js">`）时，从 repo 覆盖并重启 prod：
+   ```bash
+   cp /www/feijihe/repo/index.html /www/feijihe/stable/index.html
+   docker compose -f /www/feijihe/stable/docker-compose.yml restart prod
+   ```
+4. Nginx 若单独 `location /static/` 用 `alias`，路径必须指向 **`/www/feijihe/stable/static/`**；否则删掉该 location，全部反代到 3002。
+
 ## 部署后同步前端
 
 `deploy-docker.sh` 默认**不覆盖** stable 上的 `index.html`。  
