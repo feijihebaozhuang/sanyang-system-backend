@@ -337,33 +337,26 @@ def load_raw_rows(load_raw_fn: Callable[[], list[dict]], *, max_age: int = 120) 
     return rows
 
 
-def _parse_lwh_from_attrs(attrs: str) -> tuple[float, float, float] | None:
-    text = attrs or ""
-    try:
-        import production_spec as pspec
+def _parse_lwh_from_attrs(
+    attrs: str,
+    *,
+    item_name: str = "",
+    seller_memo: str = "",
+    buyer_memo: str = "",
+) -> tuple[float, float, float] | None:
+    import production_spec as pspec
 
-        dims = pspec.parse_dimensions_cm(text)
-        l, w, h = dims.get("l"), dims.get("w"), dims.get("h")
-        if l and w and h:
-            return float(l), float(w), float(h)
-        if l and w:
-            return float(l), float(w), float(h or 0)
-    except Exception:
-        pass
-    m_l = re.search(r"【\s*长\s*】\s*(\d+(?:\.\d+)?)", text)
-    m_w = re.search(r"【\s*宽\s*】\s*(\d+(?:\.\d+)?)", text)
-    m_h = re.search(r"【\s*高\s*】\s*(\d+(?:\.\d+)?)", text)
-    if m_l and m_w:
-        l = float(m_l.group(1))
-        w = float(m_w.group(1))
-        h = float(m_h.group(1)) if m_h else 0.0
-        return l, w, h
-    m3 = re.search(
-        r"(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)",
-        text,
+    dims = pspec.parse_dimensions_with_fallback(
+        attrs or "",
+        item_name=item_name,
+        seller_memo=seller_memo,
+        buyer_memo=buyer_memo,
     )
-    if m3:
-        return float(m3.group(1)), float(m3.group(2)), float(m3.group(3))
+    l, w, h = dims.get("l"), dims.get("w"), dims.get("h")
+    if l and w and h:
+        return float(l), float(w), float(h)
+    if l and w:
+        return float(l), float(w), float(h or 0)
     return None
 
 
@@ -376,11 +369,19 @@ def calc_material_line(
     quote_data: dict,
     raw_rows: list[dict],
     dimoldb: list[dict],
+    item_name: str = "",
+    seller_memo: str = "",
+    buyer_memo: str = "",
 ) -> dict[str, Any]:
     import production_spec as pspec
 
     clean_attrs = pspec.sanitize_sku_attrs(attrs)
-    lwh = _parse_lwh_from_attrs(clean_attrs or attrs)
+    lwh = _parse_lwh_from_attrs(
+        clean_attrs or attrs,
+        item_name=item_name,
+        seller_memo=seller_memo,
+        buyer_memo=buyer_memo,
+    )
     if not lwh:
         return {"status": "error", "error": "无法从规格解析长宽高", "attrs": attrs}
     l, w, h = lwh
@@ -536,13 +537,20 @@ def calc_order_line(
     attrs = pspec.sanitize_sku_attrs(raw_attrs) or raw_attrs
     order_qty = int(it.get("qty") or 0)
     ps = pspec.build_production_spec(
-        attrs, order_qty, material_mapping=material_mapping or []
+        attrs,
+        order_qty,
+        material_mapping=material_mapping or [],
+        item_name=(it.get("name") or "").strip(),
+        seller_memo=(order.get("seller_memo") or "").strip(),
+        buyer_memo=(order.get("buyer_memo") or "").strip(),
     )
     qty = int(ps.get("qty") or order_qty)
     order_type = (
         infer_order_type_fn(order) if infer_order_type_fn else infer_product_type_for_calc("", attrs)
     )
-    material_text = pspec.match_production_material(attrs, material_mapping) or ""
+    material_text = ps.get("material") or pspec.match_production_material(
+        attrs, material_mapping
+    ) or ""
 
     result = calc_material_line(
         attrs=attrs,
@@ -552,6 +560,9 @@ def calc_order_line(
         quote_data=quote_data,
         raw_rows=raw_rows,
         dimoldb=dimoldb,
+        item_name=(it.get("name") or "").strip(),
+        seller_memo=(order.get("seller_memo") or "").strip(),
+        buyer_memo=(order.get("buyer_memo") or "").strip(),
     )
     so_id = str(order.get("so_id") or order.get("sid") or "")
     set_cached_line(so_id, line_index, result)

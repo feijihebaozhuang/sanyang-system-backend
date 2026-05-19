@@ -178,7 +178,12 @@ def rebuild_dashboard_cache(
             attrs = pspec.sanitize_sku_attrs(raw_attrs) or raw_attrs
             order_qty = int(item.get("qty", 0) or 0)
             ps = pspec.build_production_spec(
-                attrs, order_qty, material_mapping=material_mapping or []
+                attrs,
+                order_qty,
+                material_mapping=material_mapping or [],
+                item_name=(item.get("name") or "").strip(),
+                seller_memo=(o.get("seller_memo") or "").strip(),
+                buyer_memo=(o.get("buyer_memo") or "").strip(),
             )
             real_qty = int(ps.get("qty") or order_qty)
             has_stock, stock_qty, stock_info = _match_inventory(attrs, real_qty, inv_rows)
@@ -237,10 +242,15 @@ def rebuild_dashboard_cache(
                 "has_all_stock": all(x.get("has_stock") for x in full_items)
                 if full_items
                 else False,
+                "placeholder_spec": any(
+                    (x.get("production_spec_detail") or {}).get("is_placeholder")
+                    for x in full_items
+                ),
             }
         )
 
     result.sort(key=lambda x: x.get("created", ""), reverse=True)
+    result.sort(key=lambda x: x.get("placeholder_spec", False))
     return {
         "ts": time.time(),
         "orders": result,

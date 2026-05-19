@@ -257,20 +257,9 @@
             .raw-layout { grid-template-columns: 1fr !important; }
             /* 数据看板手机适配 */
             #page-databoard > div[style*="padding:20px 24px"] { padding: 10px !important; }
-            #page-databoard > div > div[style*="grid-template-columns:repeat(7,1fr)"],
-            #page-databoard > div > div[style*="grid-template-columns:repeat(3,1fr)"],
-            #page-databoard > div > div[style*="grid-template-columns:repeat(2,1fr)"] {
-                display: flex !important;
-                flex-wrap: nowrap !important;
-                overflow-x: auto !important;
-                -webkit-overflow-scrolling: touch;
-                gap: 8px !important;
-                padding-bottom: 8px;
-            }
-            #page-databoard > div > div[style*="grid-template-columns"] > * {
-                flex: 0 0 auto;
-                min-width: 140px;
-            }
+            #page-databoard > div > div[style*="grid-template-columns:repeat(7,1fr)"] { grid-template-columns: repeat(2,1fr) !important; }
+            #page-databoard > div > div[style*="grid-template-columns:repeat(3,1fr)"] { grid-template-columns: 1fr !important; }
+            #page-databoard > div > div[style*="grid-template-columns:repeat(2,1fr)"] { grid-template-columns: 1fr !important; }
             /* 扫码弹窗 */
             #scannerModal .modal { max-width: 95% !important; margin: 10px; }
             /* 订单详情弹窗 */
@@ -292,7 +281,8 @@
             #page-inventory > div[style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
             #page-inventory .inv-form-grid { grid-template-columns: 1fr 1fr !important; }
             #page-production .prod-table-desktop { display: none; }
-            #page-production .prod-cards-mobile { display: flex !important; }
+            #page-production .prod-cards-mobile { display: block !important; }
+            #page-production .prod-pager-wrap { display: block !important; margin: 8px 0; }
             .prod-pager { flex-wrap: wrap; justify-content: center; gap: 8px; font-size: 12px; }
             .wps-embed-wrap { height: calc(100vh - 120px); min-height: 400px; }
         }
@@ -301,20 +291,17 @@
         .prod-pager button:disabled { opacity: 0.4; cursor: not-allowed; }
         #page-production .prod-cards-mobile { display: none; }
         .prod-cards-mobile {
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
-            display: flex;
-            flex-wrap: nowrap;
-            gap: 10px;
-            padding: 8px 4px 12px;
+            display: none;
+            padding: 0 0 8px;
         }
         .prod-card {
-            flex: 0 0 280px;
+            width: 100%;
+            max-width: 100%;
             background: #fff;
             border: 1px solid #e8e8e8;
             border-radius: 8px;
             padding: 10px;
-            margin-bottom: 0;
+            margin-bottom: 10px;
             box-sizing: border-box;
         }
         .wps-embed-wrap { width: 100%; height: calc(100vh - 140px); background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
@@ -1056,9 +1043,9 @@
             </tr></thead>
             <tbody id="prodTable"></tbody>
         </table>
-        <div id="prodPagination" class="prod-pager-wrap"></div>
     </div>
     <div id="prodCardsMobile" class="prod-cards-mobile"></div>
+    <div id="prodPagination" class="prod-pager-wrap"></div>
 </div>
 
     

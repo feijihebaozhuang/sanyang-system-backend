@@ -145,6 +145,73 @@ def _parse_dimensions(text: str) -> dict[str, float]:
             dims["h"] = float(hm.group(1))
             break
 
+    if "h" not in dims:
+        # 高度32cm【五层纸箱】 / 高14cm【五层】
+        m = re.search(
+            r"(?:高度|高)\s*(\d+(?:\.\d+)?)\s*(?:-\s*\d+(?:\.\d+)?)?\s*(?:cm|CM|厘米|mm|MM|毫米)?\s*【",
+            text,
+            re.I,
+        )
+        if m:
+            dims["h"] = float(m.group(1))
+    if "h" not in dims:
+        # 高12-23cm / 高14cm / 37-49cm高50个
+        for pat in (
+            r"(?:高度|高)\s*(\d+(?:\.\d+)?)(?:\s*-\s*\d+(?:\.\d+)?)?\s*(?:cm|CM|厘米|mm|MM|毫米)(?!\s*个)",
+            r"(\d+(?:\.\d+)?)(?:\s*-\s*\d+(?:\.\d+)?)?\s*(?:cm|CM|厘米|mm|MM|毫米)\s*高(?!\s*个)",
+        ):
+            m = re.search(pat, text, re.I)
+            if m:
+                dims["h"] = float(m.group(1))
+                break
+    if "h" not in dims:
+        # 【9厘米高】【9cm高】【9厘米 高】
+        m = re.search(
+            r"【\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?\s*高\s*】",
+            text,
+            re.I,
+        )
+        if m:
+            dims["h"] = float(m.group(1))
+
+    # 宽34cm【纸箱】 / 宽度【28】
+    if "w" not in dims:
+        m = re.search(
+            r"(?:宽度|宽)\s*【?\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?\s*】?",
+            text,
+            re.I,
+        )
+        if m:
+            dims["w"] = float(m.group(1))
+    if "l" not in dims:
+        m = re.search(
+            r"(?:长度|长)\s*【?\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?\s*】?",
+            text,
+            re.I,
+        )
+        if m:
+            dims["l"] = float(m.group(1))
+
+    # 长宽【28*17】 / 420*150 / 51x34 cm / 200*180
+    if "l" not in dims or "w" not in dims:
+        m = re.search(
+            r"长\s*宽\s*【\s*(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)",
+            text,
+            re.I,
+        )
+        if m:
+            dims.setdefault("l", float(m.group(1)))
+            dims.setdefault("w", float(m.group(2)))
+    if "l" not in dims or "w" not in dims:
+        m = re.search(
+            r"(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?",
+            text,
+            re.I,
+        )
+        if m:
+            dims.setdefault("l", float(m.group(1)))
+            dims.setdefault("w", float(m.group(2)))
+
     if len(dims) < 3:
         m3 = _NUM3_RE.search(text)
         if m3:
@@ -159,6 +226,60 @@ def _parse_dimensions(text: str) -> dict[str, float]:
             dims.setdefault("w", float(m2.group(2)))
 
     return dims
+
+
+def _has_size_digits(text: str) -> bool:
+    t = text or ""
+    return bool(
+        re.search(
+            r"\d+(?:\.\d+)?\s*[*×xX]\s*\d+|\d+\s*(?:cm|CM|厘米)|【\s*\d|(?:长|宽|高|长度|宽度|高度)",
+            t,
+            re.I,
+        )
+    )
+
+
+def parse_dimensions_with_fallback(
+    attrs: str,
+    *,
+    item_name: str = "",
+    seller_memo: str = "",
+    buyer_memo: str = "",
+) -> dict[str, float]:
+    """先 SKU 属性，无尺寸时再从商品标题/备注补充（定制专拍链接）。"""
+    text = sanitize_sku_attrs(attrs) or (attrs or "").strip()
+    dims = _parse_dimensions(text)
+    if dims.get("l") and dims.get("w"):
+        return dims
+    for extra in (item_name, seller_memo, buyer_memo):
+        ex = (extra or "").strip()
+        if not ex or ex == text:
+            continue
+        d2 = _parse_dimensions(sanitize_sku_attrs(ex) or ex)
+        if d2.get("l") and d2.get("w"):
+            for k, v in d2.items():
+                dims.setdefault(k, v)
+            return dims
+    return dims
+
+
+def _is_placeholder_spec(attrs: str, item_name: str = "") -> bool:
+    """定制拍单/专拍链接等无有效规格。"""
+    raw = (attrs or "") + " " + (item_name or "")
+    if any(
+        k in raw
+        for k in (
+            "定制拍单",
+            "专拍",
+            "联系客服",
+            "1个起订",
+            "无需刀模",
+            "不接受退货",
+        )
+    ):
+        if not _has_size_digits(attrs or ""):
+            return True
+    return not _has_size_digits(attrs or "") and not _has_size_digits(item_name or "")
 
 
 def _parse_diameter_type(text: str) -> str:
@@ -306,15 +427,23 @@ def build_production_spec(
     qty: int = 0,
     *,
     material_mapping: list[dict] | None = None,
+    item_name: str = "",
+    seller_memo: str = "",
+    buyer_memo: str = "",
 ) -> dict[str, Any]:
     """
-    返回 production_spec 字段供打单管理展示（仅解析买家下单 SKU 属性，不用商品标题）。
-    line 示例: 外径 18x14x5   50个/捆   特硬   ×1（数量在材料/颜色后）
+    返回 production_spec 字段供打单管理展示。
+    尺寸优先 SKU 属性；无尺寸时尝试商品标题/备注。
     """
     text = sanitize_sku_attrs(attrs) or (attrs or "").strip()
     diam_type = _parse_diameter_type(text)
 
-    dims = _parse_dimensions(text)
+    dims = parse_dimensions_with_fallback(
+        attrs,
+        item_name=item_name,
+        seller_memo=seller_memo,
+        buyer_memo=buyer_memo,
+    )
     size = ""
     if dims.get("l") and dims.get("w") and dims.get("h"):
         size = f"{_fmt_num(dims['l'])}x{_fmt_num(dims['w'])}x{_fmt_num(dims['h'])}"
@@ -363,4 +492,10 @@ def build_production_spec(
         "length": dims.get("l"),
         "width": dims.get("w"),
         "height": dims.get("h"),
+        "dims_from_title": bool(
+            text
+            and not (_parse_dimensions(text).get("l") and _parse_dimensions(text).get("w"))
+            and dims.get("l")
+        ),
+        "is_placeholder": _is_placeholder_spec(attrs, item_name),
     }

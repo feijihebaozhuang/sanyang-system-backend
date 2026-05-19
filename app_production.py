@@ -1488,9 +1488,11 @@ def save_permissions_data():
 
 def _production_material_mapping() -> list:
     m = _permission_data.get("production_material_mapping")
-    if isinstance(m, list) and m:
+    if isinstance(m, list) and len(m) > 0:
         return m
-    return list(DEFAULT_PRODUCTION_MATERIAL_MAPPING)
+    default = list(DEFAULT_PRODUCTION_MATERIAL_MAPPING)
+    _permission_data["production_material_mapping"] = default
+    return default
 
 
 @app.route("/api/production/material-mapping", methods=["GET"])
@@ -3988,7 +3990,10 @@ def _run_auto_material_calc():
             f"失败 {rep.get('lines_failed', 0)} 行"
         )
     except Exception as e:
+        import traceback
+
         print(f"[自动算料] 失败: {e}")
+        traceback.print_exc()
     _prod_dash_cache.invalidate_dashboard_cache()
     try:
         _prod_dash_cache.get_dashboard_cache(_rebuild_prod_dashboard_cache, force=True)
@@ -4071,9 +4076,16 @@ def _rebuild_prod_dashboard_cache():
 
 
 def _warm_prod_dashboard_cache():
+    first = True
     while True:
         try:
-            _prod_dash_cache.get_dashboard_cache(_rebuild_prod_dashboard_cache, force=True)
+            _prod_dash_cache.get_dashboard_cache(
+                _rebuild_prod_dashboard_cache, force=first
+            )
+            if first:
+                first = False
+                print("[打单缓存] 首次构建完成，启动后台算料…")
+                _th.Thread(target=_run_auto_material_calc, daemon=True).start()
         except Exception as e:
             print(f"[打单缓存] 刷新失败: {e}")
         time.sleep(90)
