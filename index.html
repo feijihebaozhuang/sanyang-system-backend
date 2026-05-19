@@ -2380,7 +2380,7 @@
         if (d.color) {
             segs.push('<span style="color:#d4380d;font-weight:600;">' + _escProdHtml(d.color) + '</span>');
         }
-        var q = d.qty || (item && item.qty) || 0;
+        var q = (d.per_group_qty > 0 ? d.order_qty : d.qty) || (item && item.order_qty) || (item && item.qty) || 0;
         if (q) {
             segs.push('<span style="color:#262626;font-size:' + qtyFs + ';font-weight:800;line-height:1;">×' + _escProdHtml(String(q)) + '</span>');
         }
@@ -2440,7 +2440,7 @@
                     '<div style="flex:1;">' +
                     '<span style="font-size:12px;color:#888;">#'+(idx+1)+'</span> ' +
                     '<span style="font-size:12px;color:#333;line-height:1.5;white-space:normal;word-break:break-word;">'+escA(attrs || '—')+'</span> ' +
-                    '<span style="font-size:12px;color:#e94560;font-weight:bold;">×'+item.qty+'</span>' +
+                    '<span style="font-size:12px;color:#e94560;font-weight:bold;">×'+(item.per_group_qty > 0 ? (item.order_qty != null ? item.order_qty : item.qty) : item.qty)+'</span>' +
                     ' '+stockBadge +
                     prodSpecHtml +
                     '</div>' +

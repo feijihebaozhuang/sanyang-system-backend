@@ -534,7 +534,11 @@ def calc_order_line(
         it.get("display") or it.get("platform_attrs") or it.get("spec") or ""
     ).strip()
     attrs = pspec.sanitize_sku_attrs(raw_attrs) or raw_attrs
-    qty = int(it.get("qty") or 0)
+    order_qty = int(it.get("qty") or 0)
+    ps = pspec.build_production_spec(
+        attrs, order_qty, material_mapping=material_mapping or []
+    )
+    qty = int(ps.get("qty") or order_qty)
     order_type = (
         infer_order_type_fn(order) if infer_order_type_fn else infer_product_type_for_calc("", attrs)
     )

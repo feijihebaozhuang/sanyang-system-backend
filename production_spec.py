@@ -46,8 +46,9 @@ _NUM2_RE = re.compile(
     r"(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?",
     re.I,
 )
+# N个/捆、N个/组、N个一组、-/10个一组 等
 _BUNDLE_RE = re.compile(
-    r"【?\s*(\d+)\s*个\s*[/／]?\s*捆\s*】?|【?\s*(\d+)\s*个一捆\s*】?",
+    r"""[-/／\-]?\s*【?\s*(\d+)\s*个\s*[/／]?(?:一)?(捆|组|袋|包)\s*】?""",
     re.I,
 )
 # 仅明确写法，不用【内/【外（会误伤【高度】等）
@@ -166,14 +167,25 @@ def _parse_diameter_type(text: str) -> str:
     return ""
 
 
-def _parse_bundle(text: str) -> str:
+def parse_group_info(text: str) -> tuple[int, str]:
+    """解析每捆/组数量，返回 (每组个数, 展示文本) 如 (10, '10个/组')。"""
     if not text:
-        return ""
+        return 0, ""
     m = _BUNDLE_RE.search(text)
-    if not m:
-        return ""
-    n = m.group(1) or m.group(2)
-    return f"{n}个/捆" if n else ""
+    if m:
+        n = int(m.group(1))
+        unit = (m.group(2) or "组").strip()
+        return n, f"{n}个/{unit}"
+    m_legacy = re.search(r"【?\s*(\d+)\s*个一捆\s*】?", text, re.I)
+    if m_legacy:
+        n = int(m_legacy.group(1))
+        return n, f"{n}个/捆"
+    return 0, ""
+
+
+def _parse_bundle(text: str) -> str:
+    _, label = parse_group_info(text)
+    return label
 
 
 def _parse_color(text: str, material: str = "") -> str:
@@ -231,7 +243,13 @@ def build_production_spec(
     elif dims.get("l") and dims.get("w"):
         size = f"{_fmt_num(dims['l'])}x{_fmt_num(dims['w'])}"
 
-    bundle = _parse_bundle(text)
+    order_qty = int(qty or 0)
+    per_group, bundle = parse_group_info(text)
+    if per_group > 0 and order_qty > 0:
+        real_qty = order_qty * per_group
+    else:
+        real_qty = order_qty
+
     material = match_production_material(text, material_mapping or [])
     if not material:
         hm = _MATERIAL_FALLBACK_RE.search(text)
@@ -252,8 +270,8 @@ def build_production_spec(
         parts.append(material)
     if color:
         parts.append(color)
-    if qty:
-        parts.append(f"×{int(qty)}")
+    if order_qty:
+        parts.append(f"×{order_qty}")
 
     line = "   ".join(parts) if parts else (text if text and text != "—" else "")
 
@@ -261,7 +279,9 @@ def build_production_spec(
         "line": line,
         "size": size,
         "bundle": bundle,
-        "qty": int(qty or 0),
+        "qty": real_qty,
+        "order_qty": order_qty,
+        "per_group_qty": per_group,
         "material": material,
         "color": color,
         "diameter_type": diam_type,

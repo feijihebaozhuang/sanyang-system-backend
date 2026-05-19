@@ -305,7 +305,11 @@
                                     esc(attrs) +
                                     '</span> ' +
                                     '<strong style="color:#e94560;">×' +
-                                    (item.qty || 0) +
+                                    (item.per_group_qty > 0
+                                        ? item.order_qty != null
+                                            ? item.order_qty
+                                            : item.qty
+                                        : item.qty || 0) +
                                     '</strong> ' +
                                     '<span style="font-size:10px;' +
                                     (item.has_stock ? 'color:#52c41a;' : 'color:#e94560;') +
