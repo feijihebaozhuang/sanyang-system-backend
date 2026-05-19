@@ -1186,6 +1186,7 @@
                 <button onclick="loadPermissionTable()" style="padding:6px 16px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">🔐 功能权限管理</button>
                 <button onclick="loadResignedEmployees()" style="padding:6px 16px;background:#333;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">🗑️ 回收站</button>
                 <button onclick="loadQuoteConfigEditor()" style="padding:6px 16px;background:#fa8c16;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">📋 报价参数</button>
+                <button onclick="loadProductionMaterialMappingEditor()" style="padding:6px 16px;background:#13c2c2;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">🏭 生产材料映射</button>
                 <span id="permStat" style="font-size:12px;color:#888;"></span>
             </div>
             <div id="permMainContent" style="min-height:200px;">
@@ -2346,10 +2347,15 @@
                         var _escProd = function(s) {
                             return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
                         };
+                        var prodSpec = (item.production_spec || '').trim();
+                        var prodLine = prodSpec
+                            ? '<div style="font-size:10px;color:#1677ff;margin-top:3px;font-weight:600;">生产规格：' + _escProd(prodSpec) + '</div>'
+                            : '';
                         lines.push('<div style="font-size:11px;line-height:1.5;padding:2px 0;border-bottom:' + (idx < specs.length-1 ? '1px dashed #eee' : 'none') + ';white-space:normal;word-break:break-word;">' +
                             '<span style="color:#333;">' + _escProd(attrs || '—') + '</span> ' +
                             '<strong style="color:#e94560;">×' + (item.qty || 0) + '</strong> ' +
                             '<span style="font-size:10px;' + (item.has_stock ? 'color:#52c41a;' : 'color:#e94560;') + 'font-weight:500;">' + (item.has_stock ? '✅现货' : '📦需生产') + '</span>' +
+                            prodLine +
                             '</div>');
                     });
                     itemsHtml = lines.join('');
@@ -2437,6 +2443,10 @@
                 var escA = function(s) {
                     return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
                 };
+                var prodSpec = (item.production_spec || '').trim();
+                var prodSpecHtml = prodSpec
+                    ? '<div style="font-size:11px;color:#1677ff;font-weight:600;margin-top:4px;">生产规格：'+escA(prodSpec)+'</div>'
+                    : '';
                 var stockBadge = item.has_stock
                     ? '<span style="font-size:10px;color:#52c41a;font-weight:bold;">✅现货</span>'
                     : '<span style="font-size:10px;color:#e94560;font-weight:bold;">📦需生产 <span style="font-weight:400;color:#999;">(库存'+item.stock_qty+')</span></span>';
@@ -2447,6 +2457,7 @@
                     '<span style="font-size:12px;color:#333;line-height:1.5;white-space:normal;word-break:break-word;">'+escA(attrs || '—')+'</span> ' +
                     '<span style="font-size:12px;color:#e94560;font-weight:bold;">×'+item.qty+'</span>' +
                     ' '+stockBadge +
+                    prodSpecHtml +
                     '</div>' +
                     '<div style="display:flex;gap:4px;flex-shrink:0;">' +
                     '<button onclick="event.stopPropagation();printSingleItem(\'' + o.so_id + '\',\'' + (item.skuId||'') + '\')" style="padding:2px 8px;background:#52c41a;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:11px;">🖨️打印</button> ' +
@@ -3474,6 +3485,71 @@
         const data = await res.json();
         alert(data.message);
         if (data.success) loadResignedEmployees();
+    }
+
+    // ===== 生产材料映射（打单管理「生产规格」用）=====
+    async function loadProductionMaterialMappingEditor() {
+        const main = document.getElementById('permMainContent');
+        document.getElementById('permStat').textContent = '加载生产材料映射...';
+        if (!_currentUser || !hasPerm('权限管理')) {
+            alert('需要权限管理权限');
+            return;
+        }
+        const res = await fetch('/api/production/material-mapping');
+        const data = await res.json();
+        const mapping = data.mapping || [];
+        let rows = '';
+        mapping.forEach(function(m, idx) {
+            rows += '<tr data-idx="' + idx + '">' +
+                '<td style="padding:6px 8px;border:1px solid #e8e8e8;"><input type="text" class="prod-map-label" value="' + (m.label || '').replace(/"/g, '&quot;') + '" style="width:100px;padding:4px 6px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;" placeholder="如：特硬"></td>' +
+                '<td style="padding:6px 8px;border:1px solid #e8e8e8;"><input type="text" class="prod-map-keywords" value="' + (m.keywords || '').replace(/"/g, '&quot;') + '" style="width:100%;padding:4px 6px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;" placeholder="特硬,外径特硬,D6D"></td>' +
+                '<td style="padding:6px 8px;border:1px solid #e8e8e8;text-align:center;"><button type="button" onclick="this.closest(\'tr\').remove()" style="padding:2px 8px;background:#e94560;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:11px;">删除</button></td>' +
+                '</tr>';
+        });
+        main.innerHTML = '<div class="order-table-wrap">' +
+            '<div class="table-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">' +
+            '<span>🏭 生产材料映射 <span style="font-size:11px;color:#888;font-weight:400;">（关键词命中买家属性后，生产规格显示对应简称）</span></span>' +
+            '<div style="display:flex;gap:8px;">' +
+            '<button type="button" onclick="addProductionMaterialMappingRow()" style="padding:4px 12px;background:#52c41a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">+ 添加</button>' +
+            '<button type="button" onclick="saveProductionMaterialMapping()" style="padding:4px 12px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">💾 保存</button>' +
+            '</div></div>' +
+            '<div style="display:block;font-size:12px;color:#666;margin:8px 0;padding:8px;background:#f6ffed;border-radius:6px;">' +
+            '示例：买家属性含「外径特硬」→ 生产规格材料段显示「特硬」。格式：<code>18x14x5 &nbsp; 50个/捆 &nbsp; 1 &nbsp; 特硬</code></div>' +
+            '<div style="overflow-x:auto;padding:8px;"><table id="prodMaterialMapTable" style="min-width:520px;font-size:13px;width:100%;">' +
+            '<thead><tr><th style="width:120px;">生产简称</th><th>匹配关键词（逗号分隔）</th><th style="width:60px;">操作</th></tr></thead>' +
+            '<tbody>' + (rows || '<tr><td colspan="3" style="text-align:center;color:#999;padding:16px;">暂无规则</td></tr>') + '</tbody></table></div>';
+        document.getElementById('permStat').textContent = '共 ' + mapping.length + ' 条';
+    }
+
+    function addProductionMaterialMappingRow() {
+        const tbody = document.querySelector('#prodMaterialMapTable tbody');
+        if (!tbody) return;
+        if (tbody.querySelector('td[colspan]')) tbody.innerHTML = '';
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td style="padding:6px 8px;border:1px solid #e8e8e8;"><input type="text" class="prod-map-label" style="width:100px;padding:4px 6px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;" placeholder="如：特硬"></td>' +
+            '<td style="padding:6px 8px;border:1px solid #e8e8e8;"><input type="text" class="prod-map-keywords" style="width:100%;padding:4px 6px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;" placeholder="特硬,外径特硬"></td>' +
+            '<td style="padding:6px 8px;border:1px solid #e8e8e8;text-align:center;"><button type="button" onclick="this.closest(\'tr\').remove()" style="padding:2px 8px;background:#e94560;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:11px;">删除</button></td>';
+        tbody.appendChild(tr);
+    }
+
+    async function saveProductionMaterialMapping() {
+        const rows = document.querySelectorAll('#prodMaterialMapTable tbody tr');
+        const mapping = [];
+        rows.forEach(function(tr) {
+            const label = (tr.querySelector('.prod-map-label') || {}).value || '';
+            const keywords = (tr.querySelector('.prod-map-keywords') || {}).value || '';
+            if (label.trim() || keywords.trim()) {
+                mapping.push({ label: label.trim(), keywords: keywords.trim() });
+            }
+        });
+        const res = await fetch('/api/production/material-mapping', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mapping: mapping })
+        });
+        const data = await res.json();
+        alert(data.message || (data.success ? '已保存' : '保存失败'));
+        if (data.success) loadProductionMaterialMappingEditor();
     }
 
     // ===== 功能权限管理 =====

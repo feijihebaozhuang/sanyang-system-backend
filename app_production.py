@@ -1366,8 +1366,23 @@ def _sync_all_employees_perms():
 # 初始化时执行一次
 _sync_all_employees_perms()
 
+DEFAULT_PRODUCTION_MATERIAL_MAPPING = [
+    {"keywords": "特硬,外径特硬,内径特硬,D6D,国产,加硬", "label": "特硬"},
+    {"keywords": "优质,Q7Q,特价", "label": "优质"},
+    {"keywords": "台湾,进口,超硬", "label": "台湾"},
+    {"keywords": "白色,W7W,双白", "label": "白色"},
+    {"keywords": "黑色,黑卡", "label": "黑色"},
+    {"keywords": "红色", "label": "红色"},
+    {"keywords": "P6D", "label": "P6D"},
+    {"keywords": "B坑,K7K,三层", "label": "B坑"},
+    {"keywords": "EB坑,K636K,五层EB", "label": "EB坑"},
+    {"keywords": "BC坑,K737K,五层BC", "label": "BC坑"},
+    {"keywords": "E瓦,瓦楞", "label": "E瓦"},
+]
+
 _permission_data_init = {
     "processes": ["客服接单", "黄厂打印", "审单分单", "算料", "分纸", "啤机(自动平压平)", "啤机(机械手)", "手啤", "印刷", "开槽/打角", "清废", "打包发货"],
+    "production_material_mapping": list(DEFAULT_PRODUCTION_MATERIAL_MAPPING),
     "positions": ["超级管理员", "主管", "客服", "员工", "财务", "业务员"],
     "employees": [
         {"name": "戴雅利", "position": "超级管理员"},
@@ -1428,10 +1443,50 @@ def save_permissions_data():
         new_enabled = data.get("employee_enabled")
         if new_enabled is not None:
             _permission_data["employee_enabled"] = new_enabled
+        if "production_material_mapping" in data:
+            _permission_data["production_material_mapping"] = data["production_material_mapping"]
         # 同步全员工，保证每个人每个字段都不缺
         _sync_all_employees_perms()
         persist()
     return jsonify({"success": True, "message": "权限配置已保存"})
+
+
+def _production_material_mapping() -> list:
+    m = _permission_data.get("production_material_mapping")
+    if isinstance(m, list) and m:
+        return m
+    return list(DEFAULT_PRODUCTION_MATERIAL_MAPPING)
+
+
+@app.route("/api/production/material-mapping", methods=["GET"])
+def get_production_material_mapping():
+    if "username" not in session:
+        return jsonify({"error": "未登录"}), 401
+    return jsonify({"success": True, "mapping": _production_material_mapping()})
+
+
+@app.route("/api/production/material-mapping", methods=["POST"])
+def save_production_material_mapping():
+    if "username" not in session:
+        return jsonify({"error": "未登录"}), 401
+    user = USERS.get(session["username"])
+    if not user or user.get("role") != "超级管理员":
+        return jsonify({"success": False, "message": "仅超级管理员可修改"}), 403
+    data = request.get_json() or {}
+    mapping = data.get("mapping")
+    if not isinstance(mapping, list):
+        return jsonify({"success": False, "message": "mapping 须为数组"}), 400
+    cleaned = []
+    for row in mapping:
+        if not isinstance(row, dict):
+            continue
+        label = (row.get("label") or "").strip()
+        keywords = (row.get("keywords") or "").strip()
+        if label or keywords:
+            cleaned.append({"label": label, "keywords": keywords})
+    _permission_data["production_material_mapping"] = cleaned
+    persist()
+    return jsonify({"success": True, "message": "生产材料映射已保存", "mapping": cleaned})
 
 @app.route('/api/processes')
 def get_processes():
@@ -3791,19 +3846,9 @@ def production_dashboard():
             return best_qty >= need_qty, best_qty, f'{best_name} 库存{best_qty}'
         return False, 0, '无匹配库存'
     
-    # 加载材料映射
-    qd = load_quote_data()
-    material_mapping = qd.get('material_mapping', []) if qd else []
-    
-    def match_material(name_str):
-        """根据商品名匹配材料名"""
-        name_low = (name_str or '').lower()
-        for m in material_mapping:
-            kw_list = [k.strip().lower() for k in (m.get('keywords', '') or '').split(',') if k.strip()]
-            for kw in kw_list:
-                if kw and kw in name_low:
-                    return m.get('material_name', kw)
-        return '—'
+    import production_spec as pspec
+
+    prod_mat_map = _production_material_mapping()
     
     # 读取订单缓存
     all_orders = []
@@ -3885,18 +3930,26 @@ def production_dashboard():
             specs.append({'spec': attrs, 'qty': qty})
             # 库存判定（用下单属性解析尺寸，不用商品标题）
             has_stock, stock_qty, stock_info = match_inventory(attrs, '', qty)
+            ps = pspec.build_production_spec(
+                attrs,
+                qty,
+                material_mapping=prod_mat_map,
+                item_name=item.get('name', '') or '',
+            )
             full_items.append({
                 'name': item.get('name', '') or '',
                 'spec': attrs,
                 'display': attrs,
                 'platform_attrs': attrs,
+                'production_spec': ps.get('line', '') or '',
+                'production_spec_detail': ps,
                 'qty': qty,
                 'sku': sku,
                 'skuId': item.get('skuId', '') or '',
                 'has_stock': has_stock,
                 'stock_qty': stock_qty,
                 'stock_info': stock_info,
-                'material_name': match_material(attrs or item.get('name', ''))
+                'material_name': ps.get('material') or '—',
             })
         
         is_printed = so_id in printed_ids
@@ -3939,7 +3992,8 @@ def production_dashboard():
             "shops": sorted(shops),
             "types": sorted(product_types)
         },
-        "material_mapping": load_quote_data().get('material_mapping', []) if load_quote_data() else []
+        "material_mapping": load_quote_data().get('material_mapping', []) if load_quote_data() else [],
+        "production_material_mapping": prod_mat_map,
     })
 
 @app.route('/api/production/print_log', methods=['POST'])
