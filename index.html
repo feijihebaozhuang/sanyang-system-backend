@@ -257,9 +257,20 @@
             .raw-layout { grid-template-columns: 1fr !important; }
             /* 数据看板手机适配 */
             #page-databoard > div[style*="padding:20px 24px"] { padding: 10px !important; }
-            #page-databoard > div > div[style*="grid-template-columns:repeat(7,1fr)"] { grid-template-columns: repeat(2,1fr) !important; }
-            #page-databoard > div > div[style*="grid-template-columns:repeat(3,1fr)"] { grid-template-columns: 1fr !important; }
-            #page-databoard > div > div[style*="grid-template-columns:repeat(2,1fr)"] { grid-template-columns: 1fr !important; }
+            #page-databoard > div > div[style*="grid-template-columns:repeat(7,1fr)"],
+            #page-databoard > div > div[style*="grid-template-columns:repeat(3,1fr)"],
+            #page-databoard > div > div[style*="grid-template-columns:repeat(2,1fr)"] {
+                display: flex !important;
+                flex-wrap: nowrap !important;
+                overflow-x: auto !important;
+                -webkit-overflow-scrolling: touch;
+                gap: 8px !important;
+                padding-bottom: 8px;
+            }
+            #page-databoard > div > div[style*="grid-template-columns"] > * {
+                flex: 0 0 auto;
+                min-width: 140px;
+            }
             /* 扫码弹窗 */
             #scannerModal .modal { max-width: 95% !important; margin: 10px; }
             /* 订单详情弹窗 */
@@ -275,14 +286,13 @@
             #page-dimoldb .search-bar input { width: 100% !important; font-size: 16px !important; }
             /* 报价 */
             #page-quote .quote-layout { grid-template-columns: 1fr !important; }
-            .footer-bar { grid-template-columns: repeat(2, 1fr) !important; gap: 8px; }
             .overview-header > div[style*="display:flex"] { display: grid !important; grid-template-columns: 1fr 1fr; gap: 6px; width: 100%; }
             .overview-header > div[style*="display:flex"] button { width: 100%; }
             #page-dimoldb > div[style*="grid-template-columns:1fr 1fr"] { grid-template-columns: 1fr !important; }
             #page-inventory > div[style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
             #page-inventory .inv-form-grid { grid-template-columns: 1fr 1fr !important; }
             #page-production .prod-table-desktop { display: none; }
-            #page-production .prod-cards-mobile { display: block !important; }
+            #page-production .prod-cards-mobile { display: flex !important; }
             .prod-pager { flex-wrap: wrap; justify-content: center; gap: 8px; font-size: 12px; }
             .wps-embed-wrap { height: calc(100vh - 120px); min-height: 400px; }
         }
@@ -290,7 +300,23 @@
         .prod-pager button { padding: 6px 12px; border: 1px solid #d9d9d9; background: #fff; border-radius: 4px; cursor: pointer; }
         .prod-pager button:disabled { opacity: 0.4; cursor: not-allowed; }
         #page-production .prod-cards-mobile { display: none; }
-        .prod-card { background: #fff; border: 1px solid #e8e8e8; border-radius: 8px; padding: 10px; margin-bottom: 8px; }
+        .prod-cards-mobile {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            display: flex;
+            flex-wrap: nowrap;
+            gap: 10px;
+            padding: 8px 4px 12px;
+        }
+        .prod-card {
+            flex: 0 0 280px;
+            background: #fff;
+            border: 1px solid #e8e8e8;
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 0;
+            box-sizing: border-box;
+        }
         .wps-embed-wrap { width: 100%; height: calc(100vh - 140px); background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
         .wps-embed-wrap iframe { width: 100%; height: 100%; border: none; }
         .grid-2-mobile { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -1022,18 +1048,17 @@
             <span id="prodStats">加载中...</span>
         </div>
     </div>
-    <div class="order-table-wrap">
+    <div class="order-table-wrap prod-table-desktop">
         <table>
             <thead><tr>
                 <th style="width:36px;"><input type="checkbox" onchange="toggleAllProdCheckbox(this)"></th>
                 <th>状态</th><th>内部单号</th><th>店铺</th><th>产品</th><th>规格</th><th>数量</th><th>当前工序</th><th>进度</th><th>日期</th><th>操作</th>
             </tr></thead>
-           
-    <div id="prodPagination" class="prod-pager-wrap"></div>
-    <div id="prodCardsMobile" class="prod-cards-mobile"></div>
- <tbody id="prodTable"></tbody>
+            <tbody id="prodTable"></tbody>
         </table>
+        <div id="prodPagination" class="prod-pager-wrap"></div>
     </div>
+    <div id="prodCardsMobile" class="prod-cards-mobile"></div>
 </div>
 
     
@@ -2319,9 +2344,7 @@
 
     // ===== 加载生产进度页 =====
     let allProdOrders = [];
-    // ===== 打单管理（从/api/production/dashboard读取）=====
-    let _prodDashboardOrders = [];
-    let _prodDashboardIdxMap = {}; // so_id -> index in raw array
+    // ===== 打单管理（列表/分页见 static/prod_ui.js）=====
     let _prodMappingData = []; // 材料关键词映射
 
     function _escProdHtml(s) {
@@ -2366,149 +2389,8 @@
             '<span style="color:#888;font-weight:500;">生产规格：</span>' + segs.join(gap) + '</div>';
     }
     
-    async function loadProdDashboard() {
-        const shop = document.getElementById('prodFilterShop').value;
-        const type = document.getElementById('prodFilterType').value;
-        const printStatus = document.getElementById('prodFilterPrint').value;
-        const dateFrom = document.getElementById('prodFilterDateFrom').value;
-        const dateTo = document.getElementById('prodFilterDateTo').value;
-        const search = document.getElementById('prodFilterSearch').value.trim().toLowerCase();
-        
-        try {
-            const res = await fetch('/api/production/dashboard');
-            const data = await res.json();
-            if (!data.success) throw new Error(data.error);
-            
-            // 保存材料映射
-            _prodMappingData = data.material_mapping || [];
-            
-            // 填充店铺筛选
-            const shopSel = document.getElementById('prodFilterShop');
-            if (shopSel.options.length <= 1) {
-                (data.filters.shops || []).forEach(s => {
-                    const opt = document.createElement('option');
-                    opt.value = s; opt.textContent = s;
-                    shopSel.appendChild(opt);
-                });
-            }
-            
-            _prodDashboardOrders = data.orders || [];
-            
-            // 前端筛选
-            let filtered = _prodDashboardOrders;
-            if (shop) filtered = filtered.filter(o => o.shop === shop);
-            if (type) filtered = filtered.filter(o => o.product_type === type);
-            if (printStatus === 'printed') filtered = filtered.filter(o => o.printed);
-            if (printStatus === 'unprinted') filtered = filtered.filter(o => !o.printed);
-            if (dateFrom) filtered = filtered.filter(o => o.created >= dateFrom);
-            if (dateTo) filtered = filtered.filter(o => o.created <= dateTo);
-            if (search) filtered = filtered.filter(o =>
-                o.so_id.toLowerCase().includes(search) ||
-                o.product_name.toLowerCase().includes(search) ||
-                o.shop.toLowerCase().includes(search)
-            );
-            
-            // 重建索引映射
-            _prodDashboardIdxMap = {};
-            _prodDashboardOrders.forEach((o, i) => { _prodDashboardIdxMap[o.so_id] = i; });
-            
-            renderProdDashboard(filtered);
-        } catch(e) {
-            document.getElementById('prodTable').innerHTML = '<tr><td colspan="11" style="color:#e94560;text-align:center;padding:30px;">❌ 加载失败: ' + e.message + '</td></tr>';
-        }
-    }
-    
-    function renderProdDashboard(orders) {
-        const total = _prodDashboardOrders.length;
-        const printed = _prodDashboardOrders.filter(o => o.printed).length;
-        const unprinted = total - printed;
-        document.getElementById('prodStats').textContent = `共 ${total} 单 ｜ 已打印 ${printed} 单 ｜ 未打印 ${unprinted} 单`;
-        
-        if (!orders.length) {
-            document.getElementById('prodTable').innerHTML = '<tr><td colspan="11" style="text-align:center;padding:30px;color:#999;">暂无匹配的订单</td></tr>';
-            return;
-        }
-        
-        try {
-            const html = orders.map(function(o, idx) {
-                var printBadge = o.printed
-                    ? '<span style="color:#52c41a;font-weight:bold;">✅ 已打印</span>'
-                    : '<span style="color:#e94560;font-weight:bold;">⭕ 未打印</span>';
-                
-                // 构建规格展示 —— 每个规格一行，显示完整属性
-                var itemsHtml = '';
-                var specs = o.full_items || [];
-                if (!specs.length) {
-                    itemsHtml = '<span style="color:#999;font-size:11px;">—</span>';
-                } else {
-                    var lines = [];
-                    specs.forEach(function(item, idx) {
-                        var attrs = (item.display || item.platform_attrs || item.spec || '').trim();
-                        var _escProd = function(s) {
-                            return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-                        };
-                        var prodLine = renderProductionSpecHtml(item, true);
-                        var mcHtml = typeof renderMaterialCalcHtml === 'function' ? renderMaterialCalcHtml(item) : '';
-                        var calcBtn = '<button type="button" onclick="calcMaterialLine(\'' + o.so_id + '\',' + idx + ',event)" style="margin-left:4px;padding:1px 6px;font-size:10px;background:#722ed1;color:#fff;border:none;border-radius:3px;cursor:pointer;">算料</button>';
-                        lines.push('<div style="font-size:11px;line-height:1.5;padding:2px 0;border-bottom:' + (idx < specs.length-1 ? '1px dashed #eee' : 'none') + ';white-space:normal;word-break:break-word;">' +
-                            '<span style="color:#333;">' + _escProd(attrs || '—') + '</span> ' +
-                            '<strong style="color:#e94560;">×' + (item.qty || 0) + '</strong> ' +
-                            '<span style="font-size:10px;' + (item.has_stock ? 'color:#52c41a;' : 'color:#e94560;') + 'font-weight:500;">' + (item.has_stock ? '✅现货' : '📦需生产') + '</span>' +
-                            calcBtn + prodLine + mcHtml +
-                            '</div>');
-                    });
-                    itemsHtml = lines.join('');
-                }
-                
-                var typeClass = 'tag-default';
-                if (o.product_type === '纸箱') typeClass = 'tag-warning';
-                else if (o.product_type === '扣底盒') typeClass = 'tag-info';
-                else if (o.product_type === '现货') typeClass = 'tag-success';
-                
-                // 当前工序
-                var currentStep = '—';
-                var pct = o.progress || 0;
-                if (o.steps && o.steps.length) {
-                    var activeStep = o.steps.find(function(s) { return s.active; });
-                    var doneAll = o.steps.every(function(s) { return s.done; });
-                    currentStep = doneAll ? '✅ 已完成' : (activeStep ? activeStep.name : '—');
-                }
-                
-                // 进度条HTML
-                var barColor = (pct >= 100) ? '#52c41a' : '#1677ff';
-                var progressHtml = '<div style="display:flex;align-items:center;gap:4px;min-width:80px;">' +
-                    '<div style="flex:1;height:5px;background:#f0f0f0;border-radius:3px;overflow:hidden;">' +
-                    '<div style="height:100%;width:' + pct + '%;background:' + barColor + ';border-radius:3px;"></div>' +
-                    '</div><span style="font-size:10px;color:#888;white-space:nowrap;">' + pct + '%</span></div>';
-                
-                return '<tr onclick="showProdDetailBySoId(\'' + o.so_id + '\')" style="cursor:pointer;">' +
-                    '<td style="width:36px;" onclick="event.stopPropagation()">' +
-                    '<input type="checkbox" class="prod-checkbox" value="' + o.so_id + '" onchange="updateBatchPrintBtn()">' +
-                    '</td>' +
-                    '<td style="font-size:11px;">' + printBadge + '</td>' +
-                    '<td style="font-family:monospace;font-size:12px;color:#1677ff;font-weight:600;">' + (o.so_id || '') + '</td>' +
-                    '<td style="font-size:12px;">' + (o.shop || '') + '</td>' +
-                    '<td><span class="tag ' + typeClass + '">' + (o.product_type || '') + '</span></td>' +
-                    '<td style="font-size:12px;max-width:200px;overflow-wrap:break-word;word-break:break-word;">' + itemsHtml + '</td>' +
-                    '<td><strong>' + (o.qty || 0) + '</strong></td>' +
-                    '<td style="font-size:11px;color:#1677ff;">' + currentStep + '</td>' +
-                    '<td style="min-width:80px;">' + progressHtml + '</td>' +
-                    '<td style="font-size:11px;color:#666;">' + (o.created || '') + '</td>' +
-                    '<td style="font-size:11px;">' +
-                    '<button onclick="event.stopPropagation();printSingleProd(\'' + o.so_id + '\')" style="padding:2px 8px;background:#52c41a;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:11px;">🖨️</button> ' +
-                    '<button onclick="event.stopPropagation();initSingleFlow(\'' + o.so_id + '\')" style="padding:2px 8px;background:#1677ff;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:11px;">📋</button>' +
-                    '</td></tr>';
-            }).join('');
-            
-            document.getElementById('prodTable').innerHTML = html;
-        } catch(e) {
-            document.getElementById('prodTable').innerHTML = '<tr><td colspan="10" style="color:#e94560;">渲染错误: ' + e.message + '</td></tr>';
-        }
-        updateBatchPrintBtn();
-    }
-    
     async function showProdDetailBySoId(soId) {
-        let o = (_prodOrderDetail && _prodOrderDetail[soId]) || _prodDashboardOrders.find(item => item.so_id === soId);
+        let o = (_prodOrderDetail && _prodOrderDetail[soId]) || (window._prodDashboardOrders || []).find(item => item.so_id === soId);
         if (!o) {
             try {
                 const res = await fetch('/api/production/dashboard/order/' + encodeURIComponent(soId));
@@ -2545,7 +2427,7 @@
         if (fullItems.length) {
             var itemRows = [];
             fullItems.forEach(function(item, idx) {
-                var attrs = (item.display || item.platform_attrs || item.spec || '').trim();
+                var attrs = (typeof prodDisplayAttrs === 'function' ? prodDisplayAttrs(item) : (item.display || item.platform_attrs || item.spec || '')).trim();
                 var escA = function(s) {
                     return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
                 };
@@ -6263,7 +6145,7 @@ function toggleAllProdCheckbox(el) {
 async function printSingleProd(orderId) {
     // 记录打印日志
     try {
-        const o = _prodDashboardOrders.find(item => item.so_id === orderId);
+        const o = (window._prodDashboardOrders || []).find(item => item.so_id === orderId);
         await fetch('/api/production/print_log', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -6336,7 +6218,7 @@ async function batchPrintProdOrders() {
     const currentUser = _currentUser?.employee_name || _currentUser?.username || 'admin';
     for (const id of ids) {
         try {
-            const o = _prodDashboardOrders.find(item => item.so_id === id);
+            const o = (window._prodDashboardOrders || []).find(item => item.so_id === id);
             await fetch('/api/production/print_log', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -6359,14 +6241,14 @@ async function batchPrintProdOrders() {
 }
 
 async function printAllUnprinted() {
-    const unprinted = _prodDashboardOrders.filter(o => !o.printed);
+    const unprinted = (window._prodDashboardOrders || []).filter(o => !o.printed);
     if (!unprinted.length) { alert('没有未打印的订单'); return; }
     const ids = unprinted.map(o => o.so_id);
     if (!confirm(`一键打印全部 ${ids.length} 单未打订单？`)) return;
     const currentUser = _currentUser?.employee_name || _currentUser?.username || 'admin';
     for (const id of ids) {
         try {
-            const o = _prodDashboardOrders.find(item => item.so_id === id);
+            const o = (window._prodDashboardOrders || []).find(item => item.so_id === id);
             await fetch('/api/production/print_log', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -6412,7 +6294,7 @@ async function batchInitFlows() {
 async function printSingleItem(orderId, skuId) {
     // 记录打印日志
     try {
-        const o = _prodDashboardOrders.find(item => item.so_id === orderId);
+        const o = (window._prodDashboardOrders || []).find(item => item.so_id === orderId);
         await fetch('/api/production/print_log', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},

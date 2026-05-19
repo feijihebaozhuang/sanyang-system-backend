@@ -30,6 +30,17 @@ CARTON_ROW_RULES: list[tuple[tuple[str, ...], tuple[str, ...]]] = [
 
 E_PIT_SUPPLIERS = ("同舟", "锦丰", "龙成")
 CARTON_SUPPLIERS = ("新浦",)
+# 纸箱原材料扫描时排除 E 坑平盒类库存（仅保留新浦 B/EB/BC 坑纸）
+_CARTON_EXCLUDE_ROW_MARKERS = (
+    "同舟",
+    "龙成",
+    "锦丰",
+    "E坑",
+    "E瓦",
+    "P6D",
+    "D6D",
+    "特硬",
+)
 
 MAX_REMAINDER_INCH = 1.0
 
@@ -84,6 +95,11 @@ def _material_rules(product_type: str, attrs: str) -> list[tuple[tuple[str, ...]
     if _is_carton_product(product_type, attrs):
         return CARTON_ROW_RULES
     return E_PIT_ROW_RULES
+
+
+def _row_excluded_for_carton(blob: str) -> bool:
+    """纸箱订单跳过 E 坑/同舟/龙成等平盒纸板行。"""
+    return any(m in blob for m in _CARTON_EXCLUDE_ROW_MARKERS)
 
 
 def _supplier_allowed(blob: str, product_type: str, attrs: str) -> bool:
@@ -149,6 +165,9 @@ def match_paper(
     def _scan(rows: list[dict]) -> list[dict]:
         out: list[dict] = []
         for row in rows:
+            blob = _row_blob(row)
+            if _is_carton_product(product_type, attrs) and _row_excluded_for_carton(blob):
+                continue
             if not row_matches_material(
                 row, material_text, product_type=product_type, attrs=attrs
             ):
@@ -221,11 +240,12 @@ def match_dimoldb(
     product_type: str = "",
     tol: float = 0.6,
 ) -> dict[str, Any]:
-    if _is_carton_product(product_type):
+    pt = (product_type or "").strip()
+    if pt == "纸箱" or _is_carton_product(pt):
         return {
             "success": False,
             "skip": True,
-            "error": "纸箱无刀模",
+            "error": "纸箱无需刀模",
             "dimoldb_id": "",
             "code": "",
             "name": "",
@@ -318,20 +338,29 @@ def load_raw_rows(load_raw_fn: Callable[[], list[dict]], *, max_age: int = 120) 
 
 
 def _parse_lwh_from_attrs(attrs: str) -> tuple[float, float, float] | None:
+    text = attrs or ""
     try:
         import production_spec as pspec
 
-        dims = pspec.parse_dimensions_cm(attrs or "")
+        dims = pspec.parse_dimensions_cm(text)
         l, w, h = dims.get("l"), dims.get("w"), dims.get("h")
         if l and w and h:
             return float(l), float(w), float(h)
         if l and w:
-            return float(l), float(w), float(h or 0)
+            return float(l), float(w), float(h or 0))
     except Exception:
         pass
+    m_l = re.search(r"【\s*长\s*】\s*(\d+(?:\.\d+)?)", text)
+    m_w = re.search(r"【\s*宽\s*】\s*(\d+(?:\.\d+)?)", text)
+    m_h = re.search(r"【\s*高\s*】\s*(\d+(?:\.\d+)?)", text)
+    if m_l and m_w:
+        l = float(m_l.group(1))
+        w = float(m_w.group(1))
+        h = float(m_h.group(1)) if m_h else 0.0
+        return l, w, h
     m3 = re.search(
         r"(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)",
-        attrs or "",
+        text,
     )
     if m3:
         return float(m3.group(1)), float(m3.group(2)), float(m3.group(3))

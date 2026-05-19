@@ -119,6 +119,26 @@
         }
     };
 
+    window.sanitizeSkuAttrs = function (text) {
+        if (!text) return '';
+        return String(text)
+            .replace(
+                /(?:规格|尺寸|材质硬度等级|颜色分类|材质|颜色|硬度等级|硬度)[:：]\s*/gi,
+                ''
+            )
+            .replace(/[;；]+\s*/g, ' ')
+            .replace(/\s{2,}/g, ' ')
+            .trim();
+    };
+
+    window.prodDisplayAttrs = function (item) {
+        if (!item) return '—';
+        var plain = (item.production_spec || '').trim();
+        if (plain) return plain;
+        var raw = (item.display || item.platform_attrs || item.spec || '').trim();
+        return window.sanitizeSkuAttrs(raw) || raw || '—';
+    };
+
     window.prodBuildDashboardQuery = function () {
         var q = new URLSearchParams();
         q.set('page', String(window._prodPage));
@@ -232,13 +252,164 @@
         box.innerHTML = html.replace(/motion\.div/g, 'div');
     };
 
-    if (typeof window.renderProdDashboard === 'function') {
-        var _origRenderProd = window.renderProdDashboard;
-        window.renderProdDashboard = function (orders) {
-            _origRenderProd(orders);
-            prodRenderMobileCards(orders);
+    window.renderProdDashboard = function (orders) {
+        orders = orders || [];
+        var tbl = document.getElementById('prodTable');
+        if (!tbl) return;
+        if (!orders.length) {
+            tbl.innerHTML =
+                '<tr><td colspan="11" style="text-align:center;padding:30px;color:#999;">暂无匹配的订单</td></tr>';
+            prodRenderMobileCards([]);
+            if (typeof updateBatchPrintBtn === 'function') updateBatchPrintBtn();
+            return;
+        }
+        var esc = function (s) {
+            return String(s || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
         };
-    }
+        try {
+            var html = orders
+                .map(function (o) {
+                    var printBadge = o.printed
+                        ? '<span style="color:#52c41a;font-weight:bold;">✅ 已打印</span>'
+                        : '<span style="color:#e94560;font-weight:bold;">⭕ 未打印</span>';
+                    var itemsHtml = '';
+                    var specs = o.full_items || [];
+                    if (!specs.length) {
+                        itemsHtml = '<span style="color:#999;font-size:11px;">—</span>';
+                    } else {
+                        var lines = [];
+                        specs.forEach(function (item, idx) {
+                            var attrs = window.prodDisplayAttrs(item);
+                            var prodLine =
+                                typeof renderProductionSpecHtml === 'function'
+                                    ? renderProductionSpecHtml(item, true)
+                                    : '';
+                            var mcHtml =
+                                typeof renderMaterialCalcHtml === 'function'
+                                    ? renderMaterialCalcHtml(item)
+                                    : '';
+                            var calcBtn =
+                                '<button type="button" onclick="calcMaterialLine(\'' +
+                                o.so_id +
+                                '\',' +
+                                idx +
+                                ',event)" style="margin-left:4px;padding:1px 6px;font-size:10px;background:#722ed1;color:#fff;border:none;border-radius:3px;cursor:pointer;">算料</button>';
+                            lines.push(
+                                '<div style="font-size:11px;line-height:1.5;padding:2px 0;border-bottom:' +
+                                    (idx < specs.length - 1 ? '1px dashed #eee' : 'none') +
+                                    ';white-space:normal;word-break:break-word;">' +
+                                    '<span style="color:#333;">' +
+                                    esc(attrs) +
+                                    '</span> ' +
+                                    '<strong style="color:#e94560;">×' +
+                                    (item.qty || 0) +
+                                    '</strong> ' +
+                                    '<span style="font-size:10px;' +
+                                    (item.has_stock ? 'color:#52c41a;' : 'color:#e94560;') +
+                                    'font-weight:500;">' +
+                                    (item.has_stock ? '✅现货' : '📦需生产') +
+                                    '</span>' +
+                                    calcBtn +
+                                    prodLine +
+                                    mcHtml +
+                                    '</div>'
+                            );
+                        });
+                        itemsHtml = lines.join('');
+                    }
+                    var typeClass = 'tag-default';
+                    if (o.product_type === '纸箱') typeClass = 'tag-warning';
+                    else if (o.product_type === '扣底盒') typeClass = 'tag-info';
+                    else if (o.product_type === '现货') typeClass = 'tag-success';
+                    var currentStep = '—';
+                    var pct = o.progress || 0;
+                    if (o.steps && o.steps.length) {
+                        var activeStep = o.steps.find(function (s) {
+                            return s.active;
+                        });
+                        var doneAll = o.steps.every(function (s) {
+                            return s.done;
+                        });
+                        currentStep = doneAll
+                            ? '✅ 已完成'
+                            : activeStep
+                              ? activeStep.name
+                              : '—';
+                    }
+                    var barColor = pct >= 100 ? '#52c41a' : '#1677ff';
+                    var progressHtml =
+                        '<div style="display:flex;align-items:center;gap:4px;min-width:80px;">' +
+                        '<div style="flex:1;height:5px;background:#f0f0f0;border-radius:3px;overflow:hidden;">' +
+                        '<div style="height:100%;width:' +
+                        pct +
+                        '%;background:' +
+                        barColor +
+                        ';border-radius:3px;"></div>' +
+                        '</div><span style="font-size:10px;color:#888;white-space:nowrap;">' +
+                        pct +
+                        '%</span></div>';
+                    return (
+                        '<tr onclick="showProdDetailBySoId(\'' +
+                        o.so_id +
+                        '\')" style="cursor:pointer;">' +
+                        '<td style="width:36px;" onclick="event.stopPropagation()">' +
+                        '<input type="checkbox" class="prod-checkbox" value="' +
+                        o.so_id +
+                        '" onchange="updateBatchPrintBtn()">' +
+                        '</td>' +
+                        '<td style="font-size:11px;">' +
+                        printBadge +
+                        '</td>' +
+                        '<td style="font-family:monospace;font-size:12px;color:#1677ff;font-weight:600;">' +
+                        esc(o.so_id || '') +
+                        '</td>' +
+                        '<td style="font-size:12px;">' +
+                        esc(o.shop || '') +
+                        '</td>' +
+                        '<td><span class="tag ' +
+                        typeClass +
+                        '">' +
+                        esc(o.product_type || '') +
+                        '</span></td>' +
+                        '<td style="font-size:12px;max-width:200px;overflow-wrap:break-word;word-break:break-word;">' +
+                        itemsHtml +
+                        '</td>' +
+                        '<td><strong>' +
+                        (o.qty || 0) +
+                        '</strong></td>' +
+                        '<td style="font-size:11px;color:#1677ff;">' +
+                        currentStep +
+                        '</td>' +
+                        '<td style="min-width:80px;">' +
+                        progressHtml +
+                        '</td>' +
+                        '<td style="font-size:11px;color:#666;">' +
+                        esc(o.created || '') +
+                        '</td>' +
+                        '<td style="font-size:11px;">' +
+                        '<button onclick="event.stopPropagation();printSingleProd(\'' +
+                        o.so_id +
+                        '\')" style="padding:2px 8px;background:#52c41a;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:11px;">🖨️</button> ' +
+                        '<button onclick="event.stopPropagation();initSingleFlow(\'' +
+                        o.so_id +
+                        '\')" style="padding:2px 8px;background:#1677ff;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:11px;">📋</button>' +
+                        '</td></tr>'
+                    );
+                })
+                .join('');
+            tbl.innerHTML = html.replace(/motion\.div/g, 'div');
+        } catch (e) {
+            tbl.innerHTML =
+                '<tr><td colspan="11" style="color:#e94560;">渲染错误: ' +
+                esc(e.message) +
+                '</td></tr>';
+        }
+        prodRenderMobileCards(orders);
+        if (typeof updateBatchPrintBtn === 'function') updateBatchPrintBtn();
+    };
 
     window.openDataImportModal = function (kind) {
         window._importKind = kind || 'inventory';
