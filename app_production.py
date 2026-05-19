@@ -3853,7 +3853,7 @@ def api_order_1688_memo():
 
 @app.route('/api/realtime/orders', methods=['GET'])
 def api_realtime_orders():
-    """实时订单：只读 orders_cache.json，毫秒级返回（后台静默同步）。"""
+    """实时订单：优先 MySQL 缓存，毫秒级返回（后台静默同步）。"""
     import order_sync as _osync
 
     payload = _osync.read_realtime_cache_payload(

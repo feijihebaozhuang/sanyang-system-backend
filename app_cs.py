@@ -751,7 +751,7 @@ def dashboard():
     """今日订单 - 从 orders_cache（快麦+1688）读取"""
     date = request.args.get('date', datetime.date.today().strftime('%Y-%m-%d'))
     
-    # 读取订单缓存（优先 MySQL）
+    # 读取订单缓存（优先 MySQL，JSON fallback）
     orders = []
     total_sales = 0.0
     try:
@@ -1058,13 +1058,14 @@ def _find_cached_order(query):
     import order_cache_store as ocs
 
     o = ocs.find_order(query, _orders_cache_path())
-    if o:
-        try:
-            import km_api as _km
+    if not o:
+        return None
+    try:
+        import km_api as _km
 
-            _km.finalize_cache_order(o)
-        except ImportError:
-            pass
+        _km.finalize_cache_order(o)
+    except ImportError:
+        pass
     return o
 
 

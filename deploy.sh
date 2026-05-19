@@ -74,6 +74,9 @@ if [ -f "$CACHE_JSON" ] && [ -f "$TARGET_DIR/scripts/migrate_orders_cache_to_mys
     || warn "  迁移跳过或失败，可稍后手动执行 migrate_orders_cache_to_mysql.py"
 fi
 
+log "[2c] Syntax check (km_api / app_cs / app_production)..."
+python3 "$TARGET_DIR/scripts/check_truncation.py" || { err "语法检查失败，中止部署"; exit 1; }
+
 log "[3/5] Stop old processes..."
 for app in cs prod; do
     entry=$(get_port_entry "$app")
