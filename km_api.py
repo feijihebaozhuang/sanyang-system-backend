@@ -1755,8 +1755,10 @@ def km_trade_to_cache_order(trade: dict, shops: dict[str, dict] | None = None) -
         trade.get("_km_userId") or trade.get("userId") or trade.get("shopId") or ""
     )
     shop = shops.get(uid, {})
-    src = km_resolve_raw_source(trade, shop)
-    platform = km_platform_from_source(src) if src else shop.get("platform", "other")
+    order_source = km_resolve_raw_source(trade, shop)
+    platform = (
+        km_platform_from_source(order_source) if order_source else shop.get("platform", "other")
+    )
     shop_name = km_normalize_shop_name(
         shop.get("shop_name")
         or trade.get("shopName")
@@ -1773,8 +1775,8 @@ def km_trade_to_cache_order(trade: dict, shops: dict[str, dict] | None = None) -
         qty = int(it.get("num") or it.get("quantity") or 0)
         snap = km_item_snapshot(it)
         item_name = (it.get("sysTitle") or it.get("title") or it.get("shortTitle") or "")
-        src = {**snap, "qty": qty}
-        display = km_resolve_item_display(src)
+        line_ctx = {**snap, "qty": qty}
+        display = km_resolve_item_display(line_ctx)
         items.append(
             {
                 "name": item_name,
@@ -1785,7 +1787,7 @@ def km_trade_to_cache_order(trade: dict, shops: dict[str, dict] | None = None) -
                 "display": display,
                 "platform_attrs": display,
                 "platform_spec_raw": display,
-                "is_customization": km_item_is_customization(src),
+                "is_customization": km_item_is_customization(line_ctx),
                 "_km": snap,
             }
         )
@@ -1819,7 +1821,7 @@ def km_trade_to_cache_order(trade: dict, shops: dict[str, dict] | None = None) -
         "platform_tid": platform_tid,
         "platform": platform,
         "platform_label": platform.upper() if platform == "1688" else platform,
-        "source": src,
+        "source": order_source,
         "order_status": sys_status,
         "status_label": KM_SYS_STATUS_LABEL.get(sys_status, sys_status) or sys_status,
         "created": _ms_to_date_str(created_ms),
@@ -1837,7 +1839,7 @@ def km_trade_to_cache_order(trade: dict, shops: dict[str, dict] | None = None) -
         "items": items,
         "buyer_memo": trade.get("buyerMessage") or trade.get("buyerMemo") or "",
         "seller_memo": trade.get("sellerMemo") or trade.get("sellerMessage") or "",
-        "km_source": src,
+        "km_source": order_source,
         "km_user_id": uid,
     }
     order["status"] = order["status_label"] or "待处理"
