@@ -140,6 +140,16 @@ def internal_order_id(o: dict) -> str:
 
 
 def load_cache_orders(cache_file: str, *, finalize: bool = True) -> list[dict]:
+    try:
+        import order_cache_store as ocs
+
+        orders, _status, _meta = ocs.load_orders_for_api(
+            cache_file, finalize=finalize
+        )
+        if orders:
+            return orders
+    except Exception as e:
+        print(f"[load_cache_orders] MySQL 读取失败，尝试 JSON: {e}")
     if not os.path.exists(cache_file):
         return []
     try:

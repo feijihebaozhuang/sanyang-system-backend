@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import km_api
+import order_cache_store as ocs
 
 _sync_lock = threading.Lock()
 
@@ -89,7 +90,7 @@ def sync_orders_to_cache(
     include_1688_direct: bool = True,
 ) -> dict[str, Any]:
     """
-    写入 orders_cache.json。
+    写入 MySQL order_cache（优先）+ orders_cache.json fallback。
     - 快麦 erp.trade.outstock.simple.query（全平台，source_filter=None）
     - 可选：1688 开放平台直连补充（有 alibaba_shops.json 时）
     """
@@ -174,66 +175,38 @@ def read_realtime_cache_payload(
     shop_config: list | None = None,
 ) -> dict[str, Any]:
     """
-    毫秒级读 orders_cache.json，供 /api/realtime/orders 使用。
-    文件存在即返回（orders 可为空），不触发同步、不阻塞。
+    毫秒级读订单缓存（优先 MySQL，JSON fallback），供 /api/realtime/orders 使用。
+    不触发同步、不阻塞。MySQL 空表时返回 waiting_sync，由后台线程填充。
     """
     cache_path = Path(cache_file)
     cfg = shop_config if shop_config is not None else []
 
-    if not cache_path.is_file():
-        return {
-            "success": True,
-            "total": 0,
-            "orders": [],
-            "platforms": [],
-            "shop_config": cfg,
-            "cache_status": "missing",
-            "report": {},
-            "updated_at": None,
-        }
+    cached_orders, status, meta = ocs.load_orders_for_api(cache_path, finalize=True)
+    report = meta.get("report") or {}
 
-    try:
-        with cache_path.open("r", encoding="utf-8") as f:
-            cache = json.load(f)
-    except Exception as e:
-        print(f"[实时订单] 读缓存失败: {e}")
-        return {
-            "success": True,
-            "total": 0,
-            "orders": [],
-            "platforms": [],
-            "shop_config": cfg,
-            "cache_status": "error",
-            "report": {},
-            "updated_at": None,
-        }
-
-    cached_orders = list(cache.get("orders") or [])
-    report = cache.get("report") or {}
-    try:
-        import km_api as _km
-
-        for o in cached_orders:
-            o["shop_name"] = normalize_shop_display(o.get("shop_name", ""))
-            try:
-                _km.finalize_cache_order(o)
-            except Exception:
-                pass
-    except ImportError:
-        for o in cached_orders:
-            o["shop_name"] = normalize_shop_display(o.get("shop_name", ""))
+    for o in cached_orders:
+        o["shop_name"] = normalize_shop_display(o.get("shop_name", ""))
 
     cached_orders.sort(key=lambda x: x.get("created", ""), reverse=True)
-    status = "hit" if cached_orders else "empty"
+    if status == "missing" and not cached_orders:
+        cache_status = "missing"
+    elif status == "waiting_sync":
+        cache_status = "waiting_sync"
+    elif status == "json_fallback":
+        cache_status = "hit"
+    else:
+        cache_status = "hit" if cached_orders else "empty"
+
     return {
         "success": True,
         "total": len(cached_orders),
         "orders": cached_orders,
         "platforms": list({o.get("platform", "1688") for o in cached_orders}),
         "shop_config": cfg,
-        "cache_status": status,
+        "cache_status": cache_status,
         "report": report,
-        "updated_at": cache.get("updated_at"),
+        "updated_at": meta.get("updated_at"),
+        "storage": "mysql" if status == "hit" else ("json" if status == "json_fallback" else status),
     }
 
 
@@ -305,18 +278,29 @@ def _flush_cache_snapshot(
                             it.get("qty", 0),
                         )
     report["pending_count"] = len(pending)
+    updated_at = time.time()
     payload = {
         "orders": pending,
-        "updated_at": time.time(),
+        "updated_at": updated_at,
         "source": "kuaimai+1688",
         "shop_count": len(shops),
         "report": dict(report),
         "partial": partial,
     }
-    cache_path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2, default=str),
-        encoding="utf-8",
-    )
+    ocs.write_json_fallback(cache_path, payload)
+    if ocs.mysql_cache_available():
+        try:
+            ocs.write_orders_snapshot(
+                pending,
+                report=dict(report),
+                shops_count=len(shops),
+                source="kuaimai+1688",
+                partial=partial,
+            )
+            stats = ocs.compute_dashboard_stats(pending)
+            ocs.write_stats_cache("dashboard_summary", stats)
+        except Exception as ex:
+            print(f"[订单同步] MySQL 写入失败，已保留 JSON: {ex}")
     return len(pending)
 
 

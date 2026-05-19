@@ -751,15 +751,14 @@ def dashboard():
     """今日订单 - 从 orders_cache（快麦+1688）读取"""
     date = request.args.get('date', datetime.date.today().strftime('%Y-%m-%d'))
     
-    # 读取订单缓存
+    # 读取订单缓存（优先 MySQL）
     orders = []
     total_sales = 0.0
     try:
-        cache_path = _orders_cache_path()
-        if os.path.exists(cache_path):
-            with open(cache_path, 'r', encoding='utf-8') as f:
-                cache = json.load(f)
-            raw_orders = cache.get('orders', [])
+        import production_helpers as _ph
+
+        raw_orders = _ph.load_cache_orders(_orders_cache_path())
+        if raw_orders:
             try:
                 import km_api as _km
                 for o in raw_orders:
@@ -1056,30 +1055,17 @@ def _orders_cache_path():
 
 
 def _find_cached_order(query):
-    query = (query or "").strip()
-    if not query:
-        return None
-    path = _orders_cache_path()
-    if not os.path.exists(path):
-        return None
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            cache = json.load(f)
-    except Exception:
-        return None
-    q = query.lower()
-    for o in cache.get("orders", []):
-        so_id = str(o.get("so_id") or o.get("km_sid", "") or "")
-        tid = str(o.get("tid", "") or o.get("platform_tid", "") or "")
-        if query == so_id or query == tid or q in so_id.lower() or (tid and q in tid.lower()):
-            try:
-                import km_api as _km
+    import order_cache_store as ocs
 
-                _km.finalize_cache_order(o)
-            except ImportError:
-                pass
-            return o
-    return None
+    o = ocs.find_order(query, _orders_cache_path())
+    if o:
+        try:
+            import km_api as _km
+
+            _km.finalize_cache_order(o)
+        except ImportError:
+            pass
+    return o
 
 
 def _production_status_from_flow(flow):

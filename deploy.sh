@@ -67,6 +67,13 @@ VENV_DIR="$TARGET_DIR/venv"
 source "$VENV_DIR/bin/activate"
 [ -f "$TARGET_DIR/requirements.txt" ] && pip install -r "$TARGET_DIR/requirements.txt" -q
 
+CACHE_JSON="$TARGET_DIR/orders_cache.json"
+if [ -f "$CACHE_JSON" ] && [ -f "$TARGET_DIR/scripts/migrate_orders_cache_to_mysql.py" ]; then
+  log "[2b] orders_cache.json → MySQL（表空时自动导入）..."
+  python3 "$TARGET_DIR/scripts/migrate_orders_cache_to_mysql.py" --cache "$CACHE_JSON" \
+    || warn "  迁移跳过或失败，可稍后手动执行 migrate_orders_cache_to_mysql.py"
+fi
+
 log "[3/5] Stop old processes..."
 for app in cs prod; do
     entry=$(get_port_entry "$app")

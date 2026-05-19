@@ -436,14 +436,10 @@ def dashboard():
     date = request.args.get('date', datetime.date.today().strftime('%Y-%m-%d'))
     shop_config = load_shop_config()
 
-    # 从1688订单缓存读取真实数据
+    # 订单缓存：优先 MySQL，JSON fallback
     real_orders = []
     try:
-        cache_path = _orders_cache_path()
-        if os.path.exists(cache_path):
-            with open(cache_path, 'r', encoding='utf-8') as f:
-                cache = json.load(f)
-            real_orders = cache.get('orders', [])
+        real_orders = ph.load_cache_orders(_orders_cache_path())
     except Exception as e:
         print(f'[Dashboard] 读缓存失败: {e}')
         real_orders = []
@@ -598,24 +594,9 @@ def _orders_cache_path():
 
 
 def _find_cached_order(query):
-    query = (query or "").strip()
-    if not query:
-        return None
-    path = _orders_cache_path()
-    if not os.path.exists(path):
-        return None
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            cache = json.load(f)
-    except Exception:
-        return None
-    q = query.lower()
-    for o in cache.get("orders", []):
-        so_id = str(o.get("so_id", "") or "")
-        tid = str(o.get("tid", "") or o.get("platform_tid", "") or "")
-        if query == so_id or query == tid or q in so_id.lower() or (tid and q in tid.lower()):
-            return o
-    return None
+    import order_cache_store as ocs
+
+    return ocs.find_order(query, _orders_cache_path())
 
 
 def _order_detail_from_cache(o):

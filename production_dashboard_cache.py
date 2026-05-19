@@ -154,16 +154,19 @@ def rebuild_dashboard_cache(
 
     all_orders: list[dict] = []
     try:
+        all_orders = load_cache_orders_fn() or []
+    except Exception:
         cache_file = orders_cache_file
         if not os.path.isabs(cache_file):
             cache_file = os.path.join(
                 os.path.dirname(os.path.abspath(__file__)), cache_file
             )
-        if os.path.exists(cache_file):
-            with open(cache_file, "r", encoding="utf-8") as f:
-                all_orders = json.load(f).get("orders", [])
-    except Exception:
-        all_orders = load_cache_orders_fn() or []
+        try:
+            if os.path.exists(cache_file):
+                with open(cache_file, "r", encoding="utf-8") as f:
+                    all_orders = json.load(f).get("orders", [])
+        except Exception:
+            all_orders = []
 
     process_tree = permission_data.get("processes", [])
     shops: set[str] = set()
