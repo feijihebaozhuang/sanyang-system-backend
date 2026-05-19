@@ -34,6 +34,8 @@ _BUNDLE_RE = re.compile(
     r"【?\s*(\d+)\s*个\s*[/／]?\s*捆\s*】?|【?\s*(\d+)\s*个一捆\s*】?",
     re.I,
 )
+_OUTER_DIAM_RE = re.compile(r"外径|外尺寸|【外|（外）|\(外\)", re.I)
+_INNER_DIAM_RE = re.compile(r"内径|内尺寸|【内|（内）|\(内\)", re.I)
 
 _LABEL_TO_KEY = {
     "长度": "l",
@@ -91,6 +93,26 @@ def _parse_dimensions(text: str) -> dict[str, float]:
     return dims
 
 
+def _parse_diameter_type(text: str) -> str:
+    """解析外径 / 内径（买家属性里常见，生产不能丢）。"""
+    t = text or ""
+    if not t:
+        return ""
+    has_outer = bool(_OUTER_DIAM_RE.search(t))
+    has_inner = bool(_INNER_DIAM_RE.search(t))
+    if has_outer and not has_inner:
+        return "外径"
+    if has_inner and not has_outer:
+        return "内径"
+    if has_outer and has_inner:
+        om = _OUTER_DIAM_RE.search(t)
+        im = _INNER_DIAM_RE.search(t)
+        if om and (not im or om.start() <= im.start()):
+            return "外径"
+        return "内径"
+    return ""
+
+
 def _parse_bundle(text: str) -> str:
     if not text:
         return ""
@@ -131,19 +153,24 @@ def build_production_spec(
 ) -> dict[str, Any]:
     """
     返回 production_spec 字段供打单管理展示。
-    line 示例: 18x14x5   50个/捆   1   特硬
+    line 示例: 外径 18x14x5   50个/捆   1   特硬
     """
     text = (attrs or "").strip()
     name = (item_name or "").strip()
     combined = f"{text} {name}".strip()
+    diam_type = _parse_diameter_type(combined)
 
     if text == "定制" or (text.startswith("定制") and "；" not in text[len("定制") :]):
+        line = "定制"
+        if diam_type:
+            line = f"{diam_type} {line}"
         return {
-            "line": "定制",
+            "line": line,
             "size": "",
             "bundle": "",
             "qty": int(qty or 0),
             "material": "",
+            "diameter_type": diam_type,
             "length": None,
             "width": None,
             "height": None,
@@ -164,6 +191,8 @@ def build_production_spec(
             material = hm.group(1)
 
     parts: list[str] = []
+    if diam_type:
+        parts.append(diam_type)
     if size:
         parts.append(size)
     if bundle:
@@ -181,6 +210,7 @@ def build_production_spec(
         "bundle": bundle,
         "qty": int(qty or 0),
         "material": material,
+        "diameter_type": diam_type,
         "length": dims.get("l"),
         "width": dims.get("w"),
         "height": dims.get("h"),
