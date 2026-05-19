@@ -2374,6 +2374,19 @@ def delete_dimoldb(dm_id):
     save_dimoldb(new_data)
     return jsonify({"success": True, "message": "刀模已删除"})
 
+@app.route('/api/dimoldb/template', methods=['GET'])
+def template_dimoldb():
+    """刀模导入空模板"""
+    return _send_xlsx_template(
+        ["产品类型", "名称", "编码", "备注", "长(cm)", "宽(cm)", "高(cm)"],
+        [
+            ["zhengsquare", "飞机盒18×14×5", "FH181405", "外径", 18, 14, 5],
+            ["juxing", "长方形20×15×10", "", "", 20, 15, 10],
+        ],
+        "刀模库导入模板.xlsx",
+    )
+
+
 @app.route('/api/dimoldb/export', methods=['GET'])
 def export_dimoldb():
     """导出所有刀模为Excel"""
@@ -2475,8 +2488,13 @@ def import_dimoldb():
                 col_map['height'] = i
         if 'name' not in col_map:
             return jsonify({"success": False, "error": f"未找到'名称'列，表头: {headers}"})
+        mode = (request.form.get("import_mode") or request.form.get("mode") or "append").strip().lower()
         db = load_dimoldb()
-        added = 0
+        if mode == "overwrite":
+            db = []
+        by_code = {str(d.get("code") or "").strip(): i for i, d in enumerate(db) if d.get("code")}
+        by_name = {str(d.get("name") or "").strip(): i for i, d in enumerate(db)}
+        added = updated = 0
         now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
         for row in ws.iter_rows(min_row=header_row + 1, values_only=True):
             name = str(row[col_map['name']]).strip() if col_map['name'] < len(row) and row[col_map['name']] else ''
@@ -2502,16 +2520,57 @@ def import_dimoldb():
             try:
                 item['height'] = float(item['height'])
             except: item['height'] = 0
+            key_code = (item.get("code") or "").strip()
+            key_name = item.get("name") or ""
+            if mode == "upsert":
+                idx = by_code.get(key_code) if key_code else None
+                if idx is None and key_name:
+                    idx = by_name.get(key_name)
+                if idx is not None:
+                    old = db[idx]
+                    item["id"] = old.get("id") or item["id"]
+                    item["created_at"] = old.get("created_at") or now
+                    db[idx] = {**old, **item}
+                    if key_code:
+                        by_code[key_code] = idx
+                    by_name[key_name] = idx
+                    updated += 1
+                    continue
             db.append(item)
+            if key_code:
+                by_code[key_code] = len(db) - 1
+            by_name[key_name] = len(db) - 1
             added += 1
         save_dimoldb(db)
         import os
         try: os.unlink(tmp.name)
         except: pass
-        return jsonify({"success": True, "message": f"导入完成，新增 {added} 条刀模记录", "added": added})
+        _prod_dash_cache.invalidate_dashboard_cache()
+        return jsonify({
+            "success": True,
+            "message": f"导入完成：新增 {added} 条，更新 {updated} 条（模式 {mode}）",
+            "added": added,
+            "updated": updated,
+            "mode": mode,
+        })
     except Exception as e:
         import traceback
         return jsonify({"success": False, "error": str(e), "traceback": traceback.format_exc()})
+
+@app.route('/api/inventory/template', methods=['GET'])
+def template_inventory():
+    """成品库存导入模板（与导出列一致）"""
+    tab = request.args.get("tab", "finished")
+    label = "成品库存" if tab == "finished" else "退货库存"
+    return _send_xlsx_template(
+        ["名称", "产品类型", "内/外径", "材质", "库存", "长(cm)", "宽(cm)", "高(cm)", "货位", "备注"],
+        [
+            ["10.5×7.5×4.5 特硬", "zhengsquare", "外径", "特硬", 100, 10.5, 7.5, 4.5, "A-01", ""],
+            ["20×15×10", "juxing", "外径", "", 50, 20, 15, 10, "", ""],
+        ],
+        f"{label}导入模板.xlsx",
+    )
+
 
 # -------------------- 库存导出 --------------------
 @app.route('/api/inventory/export', methods=['GET'])
@@ -3004,9 +3063,12 @@ def import_inventory_excel():
         else:
             ws = wb.active
         
+        mode = (request.form.get("import_mode") or request.form.get("mode") or "append").strip().lower()
         inv_data = load_inventory()
-        tab = 'finished'
-        added = 0
+        tab = "finished"
+        if mode == "overwrite":
+            inv_data[tab] = []
+        added = updated = 0
         
         # 自动探测表头行（找包含"外尺寸"的行）
         header_row = None
@@ -3103,35 +3165,49 @@ def import_inventory_excel():
                 name_parts.append(material)
             name = ' '.join(name_parts)
             
-            # 去重：同名+同产品类型 不重复导入
-            exists = False
-            for d in inv_data[tab]:
-                if d.get('name') == name and d.get('product_type') == product_type:
-                    exists = True
+            item_id = f"inv_{int(time.time())}_{added}_{len(inv_data[tab])}"
+            item = {
+                "id": item_id,
+                "name": name,
+                "spec": spec,
+                "product_type": product_type,
+                "material": material,
+                "location": location,
+                "qty": stock_qty,
+                "stock": stock_qty,
+                "last_month_qty": last_month,
+                "length": length,
+                "width": width,
+                "height": height,
+                "created_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "updated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+            }
+            idx = None
+            for i, d in enumerate(inv_data[tab]):
+                if d.get("name") == name and d.get("product_type") == product_type:
+                    idx = i
                     break
-            
-            if not exists:
-                item_id = f"inv_{int(time.time())}_{added}_{len(inv_data[tab])}"
-                item = {
-                    'id': item_id,
-                    'name': name,
-                    'spec': spec,
-                    'product_type': product_type,
-                    'material': material,
-                    'location': location,
-                    'qty': stock_qty,
-                    'last_month_qty': last_month,
-                    'length': length,
-                    'width': width,
-                    'height': height,
-                    'created_at': datetime.datetime.now().strftime('%Y-%m-%d %H:%M'),
-                    'updated_at': datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
-                }
+            if mode == "append" and idx is not None:
+                continue
+            if idx is not None and mode == "upsert":
+                old = inv_data[tab][idx]
+                item["id"] = old.get("id") or item_id
+                item["created_at"] = old.get("created_at") or item["created_at"]
+                inv_data[tab][idx] = {**old, **item}
+                updated += 1
+            else:
                 inv_data[tab].append(item)
                 added += 1
         
         save_inventory(inv_data)
-        return jsonify({"success": True, "message": f"导入完成，新增 {added} 条记录", "added": added})
+        _prod_dash_cache.invalidate_dashboard_cache()
+        return jsonify({
+            "success": True,
+            "message": f"导入完成：新增 {added} 条，更新 {updated} 条（模式 {mode}）",
+            "added": added,
+            "updated": updated,
+            "mode": mode,
+        })
     except Exception as e:
         import traceback
         return jsonify({"success": False, "error": str(e), "traceback": traceback.format_exc()})
@@ -3169,6 +3245,109 @@ def load_raw_data():
 def save_raw_data(data):
     with open(RAW_DATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
+@app.route('/api/raw/template', methods=['GET'])
+def template_raw():
+    return _send_xlsx_template(
+        ["日期", "材料名称", "供应商", "门幅(cm)", "长度(m)", "数量", "备注"],
+        [["2026-05-19", "三层牛卡", "XX纸业", 159, 2000, 5, ""]],
+        "原材料导入模板.xlsx",
+    )
+
+
+@app.route('/api/raw/import', methods=['POST'])
+def import_raw():
+    if "file" not in request.files:
+        return jsonify({"success": False, "error": "请上传 Excel 文件"})
+    f = request.files["file"]
+    if not f.filename:
+        return jsonify({"success": False, "error": "未选择文件"})
+    try:
+        import openpyxl
+        import tempfile
+
+        mode = (request.form.get("import_mode") or "append").strip().lower()
+        tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
+        f.save(tmp.name)
+        tmp.close()
+        wb = openpyxl.load_workbook(tmp.name, data_only=True)
+        ws = wb.active
+        header_row = 1
+        headers = [
+            str(v or "").strip()
+            for v in next(ws.iter_rows(min_row=1, max_row=1, values_only=True))
+        ]
+        col = {}
+        for i, h in enumerate(headers):
+            if "日期" in h:
+                col["date"] = i
+            elif "材料" in h or "名称" in h:
+                col["name"] = i
+            elif "供应商" in h:
+                col["supplier"] = i
+            elif "门幅" in h or "宽" in h:
+                col["paper_width"] = i
+            elif "长度" in h or "长" in h:
+                col["paper_length"] = i
+            elif "数量" in h:
+                col["qty"] = i
+            elif "备注" in h:
+                col["remark"] = i
+        if "name" not in col:
+            return jsonify({"success": False, "error": "表头需包含「材料名称」列"})
+        data = load_raw_data()
+        if mode == "overwrite":
+            data = []
+        by_id_name = {d.get("name", ""): i for i, d in enumerate(data)}
+        added = updated = 0
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+        def cell(row, key):
+            i = col.get(key)
+            if i is None or i >= len(row):
+                return ""
+            return row[i]
+
+        for row in ws.iter_rows(min_row=header_row + 1, values_only=True):
+            name = str(cell(row, "name") or "").strip()
+            if not name:
+                continue
+            entry = {
+                "date": str(cell(row, "date") or "").strip(),
+                "name": name,
+                "supplier": str(cell(row, "supplier") or "").strip(),
+                "paper_width": cell(row, "paper_width"),
+                "paper_length": cell(row, "paper_length"),
+                "qty": int(cell(row, "qty") or 0),
+                "remark": str(cell(row, "remark") or "").strip(),
+                "updated_at": now,
+            }
+            if mode == "upsert" and name in by_id_name:
+                i = by_id_name[name]
+                old = data[i]
+                entry["id"] = old.get("id")
+                entry["created_at"] = old.get("created_at") or now
+                data[i] = {**old, **entry}
+                updated += 1
+            elif mode == "append" and name in by_id_name:
+                continue
+            else:
+                entry["id"] = str(int(time.time() * 1000)) + str(len(data))
+                entry["created_at"] = now
+                data.append(entry)
+                by_id_name[name] = len(data) - 1
+                added += 1
+        save_raw_data(data)
+        os.unlink(tmp.name)
+        return jsonify({
+            "success": True,
+            "message": f"原材料导入：新增 {added}，更新 {updated}（{mode}）",
+            "added": added,
+            "updated": updated,
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
 
 @app.route('/api/raw', methods=['GET'])
 def get_raw():
@@ -3722,6 +3901,7 @@ def _km_sync_orders_to_cache(days_back=14):
         memo_getter=get_order_memo,
         include_1688_direct=True,
     )
+    _prod_dash_cache.invalidate_dashboard_cache()
     return r.get('pending_count', 0)
 
 
@@ -3778,219 +3958,171 @@ def api_km_probe():
 
 
 import threading as _th
+import production_dashboard_cache as _prod_dash_cache
+
 _sync_thread = _th.Thread(target=_sync_orders_task, daemon=True)
 _sync_thread.start()
 print('[订单同步] 快麦+1688 后台同步已启动（每5分钟）')
+
+
+def _rebuild_prod_dashboard_cache():
+    try:
+        import order_sync as _osync
+
+        norm_shop = _osync.normalize_shop_display
+    except ImportError:
+
+        def norm_shop(s):
+            return (s or "").strip() or "未知店铺"
+
+    return _prod_dash_cache.rebuild_dashboard_cache(
+        orders_cache_file=ORDERS_CACHE_FILE,
+        permission_data=_permission_data,
+        material_mapping=_production_material_mapping(),
+        load_inventory_fn=load_inventory,
+        load_cache_orders_fn=lambda: ph.load_cache_orders(_orders_cache_path()),
+        get_db_fn=get_db,
+        infer_order_type_fn=ph.infer_order_type,
+        internal_order_id_fn=ph.internal_order_id,
+        parse_flow_steps_fn=ph.parse_flow_steps,
+        template_steps_fn=ph.template_steps_for_order,
+        normalize_shop_fn=norm_shop,
+    )
+
+
+def _warm_prod_dashboard_cache():
+    while True:
+        try:
+            _prod_dash_cache.get_dashboard_cache(_rebuild_prod_dashboard_cache, force=True)
+        except Exception as e:
+            print(f"[打单缓存] 刷新失败: {e}")
+        time.sleep(90)
+
+
+_dash_warm_thread = _th.Thread(target=_warm_prod_dashboard_cache, daemon=True)
+_dash_warm_thread.start()
+
+
+def _send_xlsx_template(headers: list, sample_rows: list, filename: str):
+    import openpyxl
+    from openpyxl.styles import Font
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "数据"
+    for ci, h in enumerate(headers, 1):
+        c = ws.cell(row=1, column=ci, value=h)
+        c.font = Font(bold=True)
+    for ri, row in enumerate(sample_rows, 2):
+        for ci, v in enumerate(row, 1):
+            ws.cell(row=ri, column=ci, value=v)
+    import tempfile
+    import flask
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
+    wb.save(tmp.name)
+    tmp.close()
+    return flask.send_file(
+        tmp.name,
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
 
 # ==================== 打单管理 API ====================
 
 @app.route('/api/production/dashboard')
 def production_dashboard():
-    """打单管理：订单列表+打印状态+筛选"""
-    # 读取打印日志
-    printed_set = set()
+    """打单管理：缓存 + 分页（page/page_size + 筛选）"""
+    force = request.args.get("refresh") == "1"
+    cache = _prod_dash_cache.get_dashboard_cache(
+        _rebuild_prod_dashboard_cache, force=force
+    )
+    orders = list(cache.get("orders") or [])
+
+    shop = (request.args.get("shop") or "").strip()
+    ptype = (request.args.get("type") or "").strip()
+    print_status = (request.args.get("print") or "").strip()
+    date_from = (request.args.get("date_from") or "").strip()
+    date_to = (request.args.get("date_to") or "").strip()
+    search = (request.args.get("search") or "").strip().lower()
+
+    if shop:
+        orders = [o for o in orders if o.get("shop") == shop]
+    if ptype:
+        orders = [o for o in orders if o.get("product_type") == ptype]
+    if print_status == "printed":
+        orders = [o for o in orders if o.get("printed")]
+    elif print_status == "unprinted":
+        orders = [o for o in orders if not o.get("printed")]
+    if date_from:
+        orders = [o for o in orders if (o.get("created") or "") >= date_from]
+    if date_to:
+        orders = [o for o in orders if (o.get("created") or "") <= date_to]
+    if search:
+        orders = [
+            o
+            for o in orders
+            if search in (o.get("so_id") or "").lower()
+            or search in (o.get("product_name") or "").lower()
+            or search in (o.get("shop") or "").lower()
+        ]
+
+    total = len(orders)
+    printed_n = sum(1 for o in orders if o.get("printed"))
     try:
-        db = get_db()
-        cur = db.cursor()
-        cur.execute("SELECT order_id, created_at, printed_by FROM print_logs WHERE status='printed'")
-        for r in cur.fetchall():
-            printed_set.add((r['order_id'], r['created_at'], r['printed_by'] or ''))
-        cur.close()
-        db.close()
-    except:
-        pass
-    printed_ids = {p[0] for p in printed_set}
-    printed_info = {p[0]: {'time': p[1], 'by': p[2]} for p in printed_set}
-    
-    # 读取工单
-    flow_map = {}
+        page = max(1, int(request.args.get("page", 1)))
+    except ValueError:
+        page = 1
     try:
-        db = get_db()
-        cur = db.cursor()
-        cur.execute("SELECT * FROM production_flows")
-        for r in cur.fetchall():
-            flow_map[r['order_id']] = r
-        cur.close()
-        db.close()
-    except:
-        pass
-    
-    # 加载全部库存用于现货判定
-    inventory_data = load_inventory()
-    inventory_list = inventory_data.get('finished', [])
-    
-    def match_inventory(spec_str, spec_name, need_qty):
-        """根据规格参数匹配库存"""
-        spec = spec_str or ''
-        dim_m = re.search(r'(\d+[\.\d]*)\s*[*×xX]\s*(\d+[\.\d]*)', spec)
-        if not dim_m:
-            return False, 0, '无法解析尺寸'
-        l, w = float(dim_m.group(1)), float(dim_m.group(2))
-        h_m = re.search(r'(?:高|高度)[【】]?(\d+[\.\d]*)', spec)
-        if not h_m:
-            h_m = re.search(r'(\d+[\.\d]*)cm高', spec)
-        h = float(h_m.group(1)) if h_m else 0
-        best_qty = 0
-        best_name = ''
-        for inv in inventory_list:
-            inv_l = float(inv.get('length', 0) or 0)
-            inv_w = float(inv.get('width', 0) or 0)
-            inv_h = float(inv.get('height', 0) or 0)
-            inv_qty = int(inv.get('qty', 0) or 0)
-            if abs(inv_l - l) <= 0.5 and abs(inv_w - w) <= 0.5:
-                if h == 0 or abs(inv_h - h) <= 0.5:
-                    if inv_qty > best_qty:
-                        best_qty = inv_qty
-                        best_name = inv.get('name', '')
-        if best_qty > 0:
-            return best_qty >= need_qty, best_qty, f'{best_name} 库存{best_qty}'
-        return False, 0, '无匹配库存'
-    
-    import production_spec as pspec
+        page_size = int(request.args.get("page_size", 15))
+    except ValueError:
+        page_size = 15
+    page_size = max(5, min(50, page_size))
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    if page > total_pages:
+        page = total_pages
+    start = (page - 1) * page_size
+    page_orders = orders[start : start + page_size]
 
     prod_mat_map = _production_material_mapping()
-    
-    # 读取订单缓存
-    all_orders = []
-    try:
-        cache_file = ORDERS_CACHE_FILE
-        if not os.path.isabs(cache_file):
-            cache_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), cache_file)
-        if os.path.exists(cache_file):
-            with open(cache_file, 'r', encoding='utf-8') as f:
-                cache = json.load(f)
-            all_orders = cache.get('orders', [])
-    except:
-        pass
-    
-    shops = set()
-    product_types = set()
-    
-    result = []
-    for o in all_orders:
-        so_id = ph.internal_order_id(o)
-        first_item = (o.get('items') or [{}])[0]
-        prod_name = first_item.get('name', '')
-        order_type = ph.infer_order_type(o)
-        
-        try:
-            import order_sync as _osync
-            shop = _osync.normalize_shop_display(o.get('shop_name', '') or '')
-        except ImportError:
-            shop = (o.get('shop_name') or '').strip() or '未知店铺'
-        created_date = (o.get('created') or '')[:10]
-        
-        shops.add(shop)
-        product_types.add(order_type)
-        
-        flow = flow_map.get(so_id)
-        has_flow = flow is not None
-        
-        progress = 0
-        steps = []
-        process_tree = _permission_data.get("processes", [])
-        if flow:
-            parsed = ph.parse_flow_steps(flow.get('steps_json'))
-            total_s = flow.get('total_steps', 0) or len(parsed)
-            done_n = sum(1 for s in parsed if s.get('done'))
-            progress = round(done_n / total_s * 100) if total_s > 0 else 0
-            for i, s in enumerate(parsed):
-                steps.append({
-                    "name": s.get('step') or s.get('name'),
-                    "done": bool(s.get('done')),
-                    "active": (not s.get('done')) and i == done_n,
-                })
-        else:
-            template = ph.template_steps_for_order(process_tree, order_type)
-            for i, s in enumerate(template):
-                nm = s.get("step") or ""
-                steps.append({
-                    "name": nm,
-                    "done": False,
-                    "active": i == 0,
-                })
-        
-        total_qty = sum(i.get('qty', 0) for i in (o.get('items') or []))
-        addr = o.get('receiver_address', '')
-        addr_parts = addr.split() if addr else []
-        province = addr_parts[0] if len(addr_parts) > 0 else ''
-        
-        specs = []
-        full_items = []
-        for item in (o.get('items') or []):
-            attrs = (
-                (item.get('display') or item.get('platform_attrs') or item.get('spec') or '')
-                .strip()
-            )
-            qty = item.get('qty', 0) or 0
-            sku = item.get('sku', '') or ''
-            specs.append({'spec': attrs, 'qty': qty})
-            # 库存判定（用下单属性解析尺寸，不用商品标题）
-            has_stock, stock_qty, stock_info = match_inventory(attrs, '', qty)
-            ps = pspec.build_production_spec(
-                attrs,
-                qty,
-                material_mapping=prod_mat_map,
-            )
-            full_items.append({
-                'name': item.get('name', '') or '',
-                'spec': attrs,
-                'display': attrs,
-                'platform_attrs': attrs,
-                'production_spec': ps.get('line', '') or '',
-                'production_spec_detail': ps,
-                'qty': qty,
-                'sku': sku,
-                'skuId': item.get('skuId', '') or '',
-                'has_stock': has_stock,
-                'stock_qty': stock_qty,
-                'stock_info': stock_info,
-                'material_name': ps.get('material') or '—',
-            })
-        
-        is_printed = so_id in printed_ids
-        pi = printed_info.get(so_id, {})
-        
-        # 整单级库存判定：全部有货还是部分有货
-        has_all_stock = all(item.get('has_stock', False) for item in full_items)
-        
-        result.append({
-            "so_id": so_id,
-            "shop": shop,
-            "province": province,
-            "created": created_date,
-            "product_name": prod_name,
-            "product_type": order_type,
-            "specs": specs,
-            "full_items": full_items,
-            "qty": total_qty,
-            "seller_memo": o.get('seller_memo', '') or '',
-            "buyer_memo": o.get('buyer_memo', '') or '',
-            "printed": is_printed,
-            "printed_at": pi.get('time', ''),
-            "printed_by": pi.get('by', ''),
-            "has_flow": has_flow,
-            "flow_status": flow.get('status', '') if flow else '',
-            "receiver": o.get('receiver_name', ''),
-            "address": o.get('receiver_address', ''),
-            "phone": o.get('receiver_phone', '') or o.get('receiver_mobile', ''),
-            "progress": progress,
-            "steps": steps,
-            "has_all_stock": has_all_stock,
-        })
-    
-    result.sort(key=lambda x: x['created'], reverse=True)
-    
-    return jsonify({
-        "success": True,
-        "orders": result,
-        "filters": {
-            "shops": sorted(shops),
-            "types": sorted(product_types)
-        },
-        "material_mapping": load_quote_data().get('material_mapping', []) if load_quote_data() else [],
-        "production_material_mapping": prod_mat_map,
-    })
+    return jsonify(
+        {
+            "success": True,
+            "orders": page_orders,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "stats": {
+                "total": total,
+                "printed": printed_n,
+                "unprinted": total - printed_n,
+            },
+            "cached_at": cache.get("ts"),
+            "filters": {
+                "shops": cache.get("shops") or [],
+                "types": cache.get("types") or [],
+            },
+            "material_mapping": load_quote_data().get("material_mapping", [])
+            if load_quote_data()
+            else [],
+            "production_material_mapping": prod_mat_map,
+        }
+    )
+
+
+@app.route('/api/production/dashboard/order/<order_id>')
+def production_dashboard_order(order_id):
+    """单条订单详情（从缓存取，供分页列表点详情）"""
+    o = _prod_dash_cache.find_order_in_cache(order_id)
+    if not o:
+        _prod_dash_cache.get_dashboard_cache(_rebuild_prod_dashboard_cache, force=True)
+        o = _prod_dash_cache.find_order_in_cache(order_id)
+    if not o:
+        return jsonify({"success": False, "error": "未找到订单"})
+    return jsonify({"success": True, "order": o})
 
 @app.route('/api/production/print_log', methods=['POST'])
 def production_print_log():

@@ -275,7 +275,25 @@
             #page-dimoldb .search-bar input { width: 100% !important; font-size: 16px !important; }
             /* 报价 */
             #page-quote .quote-layout { grid-template-columns: 1fr !important; }
+            .footer-bar { grid-template-columns: repeat(2, 1fr) !important; gap: 8px; }
+            .overview-header > div[style*="display:flex"] { display: grid !important; grid-template-columns: 1fr 1fr; gap: 6px; width: 100%; }
+            .overview-header > div[style*="display:flex"] button { width: 100%; }
+            #page-dimoldb > div[style*="grid-template-columns:1fr 1fr"] { grid-template-columns: 1fr !important; }
+            #page-inventory > div[style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
+            #page-inventory .inv-form-grid { grid-template-columns: 1fr 1fr !important; }
+            #page-production .prod-table-desktop { display: none; }
+            #page-production .prod-cards-mobile { display: block !important; }
+            .prod-pager { flex-wrap: wrap; justify-content: center; gap: 8px; font-size: 12px; }
+            .wps-embed-wrap { height: calc(100vh - 120px); min-height: 400px; }
         }
+        .prod-pager { display: flex; align-items: center; gap: 10px; padding: 10px 0; flex-wrap: wrap; }
+        .prod-pager button { padding: 6px 12px; border: 1px solid #d9d9d9; background: #fff; border-radius: 4px; cursor: pointer; }
+        .prod-pager button:disabled { opacity: 0.4; cursor: not-allowed; }
+        #page-production .prod-cards-mobile { display: none; }
+        .prod-card { background: #fff; border: 1px solid #e8e8e8; border-radius: 8px; padding: 10px; margin-bottom: 8px; }
+        .wps-embed-wrap { width: 100%; height: calc(100vh - 140px); background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+        .wps-embed-wrap iframe { width: 100%; height: 100%; border: none; }
+        .grid-2-mobile { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
         /* 更小屏幕 */
         @media (max-width: 480px) {
@@ -479,7 +497,10 @@
         <div class="overview-header">
             <h3>🔩 固定刀模库</h3>
             <div style="display:flex;gap:8px;align-items:center;">
-                <span style="font-size:12px;color:#888;">管理所有固定刀模尺寸</span>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                <button type="button" onclick="downloadDataTemplate('dimoldb')" style="padding:4px 10px;font-size:12px;border:1px solid #52c41a;color:#52c41a;background:#fff;border-radius:4px;cursor:pointer;">下载模板</button>
+                <button type="button" onclick="openDataImportModal('dimoldb')" style="padding:4px 10px;font-size:12px;border:1px solid #1677ff;color:#1677ff;background:#fff;border-radius:4px;cursor:pointer;">上传导入</button>
+            </div>
             </div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
@@ -614,8 +635,8 @@
                             <button onclick="switchInvTab('finished')" id="invTabFinished" style="padding:4px 14px;border:none;border-radius:4px;cursor:pointer;font-size:12px;background:#1677ff;color:#fff;font-weight:600;">成品</button>
                             <button onclick="switchInvTab('returned')" id="invTabReturned" style="padding:4px 14px;border:none;border-radius:4px;cursor:pointer;font-size:12px;background:transparent;color:#666;">退货</button>
                         </div>
-                        <button onclick="showImportExcelDialog()" style="padding:4px 14px;border:1px solid #1677ff;border-radius:6px;cursor:pointer;font-size:12px;background:transparent;color:#1677ff;">📥 导入Excel</button>
-                        <button onclick="downloadInvTemplate()" style="padding:4px 14px;border:1px solid #52c41a;border-radius:6px;cursor:pointer;font-size:12px;background:transparent;color:#52c41a;">📄 下载模板</button>
+                        <button type="button" onclick="openDataImportModal('inventory')" style="padding:4px 14px;border:1px solid #1677ff;border-radius:6px;cursor:pointer;font-size:12px;background:transparent;color:#1677ff;">📥 上传导入</button>
+                        <button type="button" onclick="downloadDataTemplate('inventory')" style="padding:4px 14px;border:1px solid #52c41a;border-radius:6px;cursor:pointer;font-size:12px;background:transparent;color:#52c41a;">📄 下载模板</button>
                     </div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
@@ -777,6 +798,8 @@
                 <button onclick="openRawScanner()" style="padding:6px 12px;background:#52c41a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;" title="摄像头扫码入库">📷 扫码入库</button>
                 <button onclick="rawSearch()" style="padding:6px 16px;background:#1a1a2e;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">🔍 查询</button>
                 <button onclick="rawAdd()" style="padding:6px 16px;background:#1677ff;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">➕ 来料登记</button>
+                <button type="button" onclick="downloadDataTemplate('raw')" style="padding:6px 12px;border:1px solid #52c41a;color:#52c41a;background:#fff;border-radius:6px;cursor:pointer;font-size:12px;">📄 模板</button>
+                <button type="button" onclick="openDataImportModal('raw')" style="padding:6px 12px;border:1px solid #1677ff;color:#1677ff;background:#fff;border-radius:6px;cursor:pointer;font-size:12px;">📥 导入</button>
             </div>
         </div>
         <div class="raw-layout" style="display:grid;grid-template-columns:280px 1fr;gap:14px;">
@@ -958,22 +981,22 @@
             <span style="font-size:12px;color:#888;">文员打单 → 自动创建工单 → 流转生产</span>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <select id="prodFilterShop" onchange="loadProdDashboard()" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;">
+            <select id="prodFilterShop" onchange="loadProdDashboard(true)" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;">
                 <option value="">全部店铺</option>
             </select>
-            <select id="prodFilterType" onchange="loadProdDashboard()" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;">
+            <select id="prodFilterType" onchange="loadProdDashboard(true)" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;">
                 <option value="">全部类型</option>
                 <option value="飞机盒">飞机盒</option>
                 <option value="纸箱">纸箱</option>
                 <option value="扣底盒">扣底盒/双插盒</option>
                 <option value="现货">现货</option>
             </select>
-            <select id="prodFilterPrint" onchange="loadProdDashboard()" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;">
+            <select id="prodFilterPrint" onchange="loadProdDashboard(true)" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;">
                 <option value="">全部打印状态</option>
                 <option value="printed">已打印</option>
                 <option value="unprinted">未打印</option>
             </select>
-            <input type="date" id="prodFilterDateFrom" onchange="loadProdDashboard()" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;">
+            <input type="date" id="prodFilterDateFrom" onchange="loadProdDashboard(true)" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;">
             <input type="date" id="prodFilterDateTo" onchange="loadProdDashboard()" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;">
             <input type="text" id="prodFilterSearch" placeholder="搜单号/产品..." onkeydown="if(event.key==='Enter') loadProdDashboard()" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;width:140px;">
             <button onclick="loadProdDashboard()" style="padding:4px 12px;background:#1a1a2e;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">🔍 搜索</button>
@@ -991,10 +1014,29 @@
                 <th style="width:36px;"><input type="checkbox" onchange="toggleAllProdCheckbox(this)"></th>
                 <th>状态</th><th>内部单号</th><th>店铺</th><th>产品</th><th>规格</th><th>数量</th><th>当前工序</th><th>进度</th><th>日期</th><th>操作</th>
             </tr></thead>
-            <tbody id="prodTable"></tbody>
+           
+    <div id="prodPagination" class="prod-pager-wrap"></div>
+    <div id="prodCardsMobile" class="prod-cards-mobile"></div>
+ <tbody id="prodTable"></tbody>
         </table>
     </div>
 </div>
+
+    
+    <div id="page-wps-kdocs" class="page-section">
+        <div class="overview-header">
+            <h3>📎 WPS 刀模表</h3>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <a href="https://www.kdocs.cn/l/cdIlitRGKpMw" target="_blank" rel="noopener" style="padding:6px 14px;background:#1677ff;color:#fff;border-radius:6px;text-decoration:none;font-size:13px;">新窗口打开</a>
+                <button type="button" onclick="switchTopPage('dimoldb', document.querySelector('#topNav a[onclick*=dimoldb]'))" style="padding:6px 14px;background:#f5f5f5;border:1px solid #ddd;border-radius:6px;cursor:pointer;font-size:13px;">本地刀模库</button>
+            </div>
+        </div>
+        <div class="wps-embed-wrap">
+            <iframe id="wpsKdocsFrame" title="WPS刀模" src="https://www.kdocs.cn/l/cdIlitRGKpMw"></iframe>
+        </div>
+        <p style="font-size:12px;color:#888;margin-top:8px;">若无法内嵌显示，请点「新窗口打开」。</p>
+    </div>
+
 
     <!-- ===== 扫码报工页 ===== -->
     <div id="page-scan" class="page-section">
@@ -1210,7 +1252,7 @@
 
 <!-- ===== 底部功能栏 ===== -->
 <div class="footer-bar">
-    <div class="footer-card" onclick="switchSubPage('dimoldb', null)" data-perm="刀模库">
+    <div class="footer-card" onclick="openWpsKdocsEmbed()" data-perm="刀模库">
         <div class="icon">🔩</div>
         <div class="f-title">WPS刀模嵌入</div>
         <div class="f-desc">查看和管理固定刀模</div>
@@ -1444,6 +1486,7 @@
             'main': '首页',
             'diemold': '刀模',
             'dimoldb': '刀模库',
+            'wps-kdocs': '刀模库',
             'inventory': '库存',
             'raw': '库存',
             'erp': '快麦ERP',
@@ -2447,8 +2490,15 @@
         updateBatchPrintBtn();
     }
     
-    function showProdDetailBySoId(soId) {
-        const o = _prodDashboardOrders.find(item => item.so_id === soId);
+    async function showProdDetailBySoId(soId) {
+        let o = (_prodOrderDetail && _prodOrderDetail[soId]) || _prodDashboardOrders.find(item => item.so_id === soId);
+        if (!o) {
+            try {
+                const res = await fetch('/api/production/dashboard/order/' + encodeURIComponent(soId));
+                const data = await res.json();
+                if (data.success && data.order) { o = data.order; if (!_prodOrderDetail) _prodOrderDetail = {}; _prodOrderDetail[soId] = o; }
+            } catch (e) {}
+        }
         if (!o) return;
         
         // 工序进度条
@@ -5633,10 +5683,7 @@
 
     // ===== 下载Excel导入模板 =====
     function downloadInvTemplate() {
-        const a = document.createElement('a');
-        a.href = '/static/成品库存导入模板.xlsx';
-        a.download = '成品库存导入模板.xlsx';
-        a.click();
+        downloadDataTemplate('inventory');
     }
 
     // ===== 实时订单（多平台聚合） =====
@@ -6288,6 +6335,32 @@ async function filterProdOrders(keyword) {
 }
 </script>
 
+
+<div class="password-modal" id="dataImportModal">
+    <div class="pwd-box" style="max-width:420px;">
+        <h3 id="dataImportTitle">📥 导入数据</h3>
+        <div class="pwd-group">
+            <label>导入模式</label>
+            <select id="dataImportMode" style="width:100%;padding:8px;border:1px solid #d9d9d9;border-radius:6px;">
+                <option value="append">新增（跳过已存在）</option>
+                <option value="upsert">更新或新增（按名称/编码匹配）</option>
+                <option value="overwrite">覆盖（清空后导入）</option>
+            </select>
+        </div>
+        <div class="pwd-group">
+            <label>Excel 文件</label>
+            <input type="file" id="dataImportFile" accept=".xlsx,.xls" style="width:100%;">
+        </div>
+        <div id="dataImportStatus" class="pwd-msg"></div>
+        <div style="display:flex;gap:8px;margin-top:12px;">
+            <button type="button" onclick="downloadDataTemplate(window._importKind)" style="flex:1;padding:8px;border:1px solid #52c41a;background:#fff;color:#52c41a;border-radius:6px;cursor:pointer;">下载模板</button>
+            <button type="button" onclick="submitDataImport()" style="flex:1;padding:8px;background:#1677ff;color:#fff;border:none;border-radius:6px;cursor:pointer;">上传</button>
+            <button type="button" onclick="closeDataImportModal()" style="padding:8px 12px;border:1px solid #ddd;background:#f5f5f5;border-radius:6px;cursor:pointer;">关闭</button>
+        </div>
+    </div>
+</div>
+
+<script src="/static/prod_ui.js"></script>
 </body>
 </html>
 
