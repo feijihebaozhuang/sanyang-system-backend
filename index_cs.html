@@ -1576,6 +1576,9 @@
         errEl.style.display = 'none';
         
         try {
+            if (typeof globalThis.SY_AUTH === 'undefined') {
+                throw new Error('auth_session.js 未加载，请检查 /static/auth_session.js 是否返回 200');
+            }
             const res = await SY_AUTH.apiFetch('/api/login', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
