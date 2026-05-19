@@ -2358,7 +2358,9 @@
         if (d.size) {
             segs.push('<span style="color:#1677ff;font-weight:700;font-family:Consolas,monospace;letter-spacing:0.02em;">' + _escProdHtml(d.size) + '</span>');
         }
-        if (d.bundle) {
+        if (d.qty_label) {
+            segs.push('<span style="color:#262626;font-weight:700;">' + _escProdHtml(d.qty_label) + '</span>');
+        } else if (d.bundle) {
             segs.push('<span style="color:#1677ff;">' + _escProdHtml(d.bundle) + '</span>');
         }
         if (d.material) {
@@ -2367,13 +2369,19 @@
         if (d.color) {
             segs.push('<span style="color:#d4380d;font-weight:600;">' + _escProdHtml(d.color) + '</span>');
         }
-        var q = (d.per_group_qty > 0 ? d.order_qty : d.qty) || (item && item.order_qty) || (item && item.qty) || 0;
-        if (q) {
-            segs.push('<span style="color:#262626;font-size:' + qtyFs + ';font-weight:800;line-height:1;">×' + _escProdHtml(String(q)) + '</span>');
+        var html = '';
+        if (segs.length) {
+            html = '<div style="font-size:' + fs + ';margin-top:' + mt + ';line-height:1.55;">' +
+                '<span style="color:#888;font-weight:500;">生产规格：</span>' + segs.join(gap) + '</div>';
         }
-        if (!segs.length) return '';
-        return '<div style="font-size:' + fs + ';margin-top:' + mt + ';line-height:1.55;">' +
-            '<span style="color:#888;font-weight:500;">生产规格：</span>' + segs.join(gap) + '</div>';
+        var raw = (d.platform_spec_raw || '').trim();
+        if (raw && (!d.formatted || raw !== d.formatted)) {
+            html += '<div style="font-size:' + (compact ? '9px' : '10px') + ';color:#999;margin-top:2px;line-height:1.4;word-break:break-word;">' +
+                _escProdHtml(raw) + '</div>';
+        } else if (!segs.length && plain) {
+            html = '<div style="font-size:' + fs + ';margin-top:' + mt + ';color:#666;">' + _escProdHtml(plain) + '</div>';
+        }
+        return html;
     }
     
     async function showProdDetailBySoId(soId) {

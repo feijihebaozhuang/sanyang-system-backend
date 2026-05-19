@@ -175,26 +175,23 @@ def rebuild_dashboard_cache(
                 or item.get("spec")
                 or ""
             ).strip()
-            attrs = pspec.sanitize_sku_attrs(raw_attrs) or raw_attrs
             order_qty = int(item.get("qty", 0) or 0)
             ps = pspec.build_production_spec(
-                attrs,
+                raw_attrs,
                 order_qty,
                 material_mapping=material_mapping or [],
-                item_name=(item.get("name") or "").strip(),
-                seller_memo=(o.get("seller_memo") or "").strip(),
-                buyer_memo=(o.get("buyer_memo") or "").strip(),
             )
             real_qty = int(ps.get("qty") or order_qty)
-            has_stock, stock_qty, stock_info = _match_inventory(attrs, real_qty, inv_rows)
+            has_stock, stock_qty, stock_info = _match_inventory(raw_attrs, real_qty, inv_rows)
             cached_mc = mcalc.get_cached_line(so_id, line_idx)
             mc_status = (cached_mc or {}).get("status") or "pending"
             full_items.append(
                 {
                     "name": item.get("name", "") or "",
-                    "spec": attrs,
-                    "display": attrs,
-                    "platform_attrs": attrs,
+                    "spec": raw_attrs,
+                    "display": raw_attrs,
+                    "platform_attrs": raw_attrs,
+                    "platform_spec_raw": ps.get("platform_spec_raw") or raw_attrs,
                     "production_spec": ps.get("line", "") or "",
                     "production_spec_detail": ps,
                     "qty": real_qty,

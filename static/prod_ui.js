@@ -133,10 +133,9 @@
 
     window.prodDisplayAttrs = function (item) {
         if (!item) return '—';
-        var plain = (item.production_spec || '').trim();
-        if (plain) return plain;
-        var raw = (item.display || item.platform_attrs || item.spec || '').trim();
-        return window.sanitizeSkuAttrs(raw) || raw || '—';
+        var line = (item.production_spec || '').trim();
+        if (line) return line;
+        return (item.platform_spec_raw || item.display || item.platform_attrs || item.spec || '').trim() || '—';
     };
 
     window.prodBuildDashboardQuery = function () {
