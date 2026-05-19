@@ -2176,14 +2176,37 @@ def calculate_quote():
 import dimoldb_store as _dimoldb_store
 
 
-def load_dimoldb():
-    """从 MySQL 加载刀模库（含 code / production_spec / km_mapping_code）。"""
-    return _dimoldb_store.load_dimoldb(get_db)
+def load_dimoldb(force: bool = False):
+    """从 MySQL 加载刀模库（内存缓存，默认 120s）。"""
+    return _dimoldb_store.load_dimoldb_cached(get_db, force=force)
 
 
 def save_dimoldb(data):
     """保存刀模库到 MySQL。"""
-    return _dimoldb_store.save_dimoldb(get_db, data)
+    ok = _dimoldb_store.save_dimoldb(get_db, data)
+    if ok:
+        _dimoldb_store.invalidate_dimoldb_cache()
+    return ok
+
+
+_inv_mem_cache: dict = {"data": None, "ts": 0.0}
+_INV_CACHE_TTL = 60.0
+
+
+def load_inventory_cached():
+    """库存列表用，避免同请求内重复全表读。"""
+    import time as _t
+
+    now = _t.time()
+    if _inv_mem_cache["data"] is not None and now - float(
+        _inv_mem_cache["ts"] or 0
+    ) < _INV_CACHE_TTL:
+        return _inv_mem_cache["data"]
+    data = load_inventory()
+    _inv_mem_cache["data"] = data
+    _inv_mem_cache["ts"] = now
+    return data
+
 
 def _has_dimoldb_edit_perm():
     """检查是否有刀模库编辑权限"""
@@ -2264,8 +2287,8 @@ def get_dimoldb():
     start = (page - 1) * page_size
     end = start + page_size
     page_data = data[start:end] if start < total else []
-    # 给每条刀模补充真实库存数（从inventory.json统计）
-    inv_all = load_inventory()
+    # 给每条刀模补充真实库存数（缓存 60s，避免每页请求重复读全表）
+    inv_all = load_inventory_cached()
     inv_items = inv_all.get('finished', inv_all if isinstance(inv_all, list) else [])
     for d in page_data:
         d['stock'] = _dimoldb_store.calc_dimoldb_stock(d, inv_items)
@@ -2589,6 +2612,20 @@ def search_dimoldb():
         width = data.get('width')
         height = data.get('height')
         dim_type = data.get('dim_type', '')
+        if (
+            not ptype
+            and length is None
+            and width is None
+            and height is None
+            and not dim_type
+        ):
+            return jsonify(
+                {
+                    "success": True,
+                    "matches": [],
+                    "message": "请填写尺寸或类型后再查询",
+                }
+            )
         db = load_dimoldb()
         matches = db
         if ptype:
@@ -2623,6 +2660,8 @@ def search_dimoldb():
                     matches = [d for d in matches if _dimoldb_infer_inner_outer(d) == 'inner']
                 elif dim_type == 'outer':
                     matches = [d for d in matches if _dimoldb_infer_inner_outer(d) == 'outer']
+        if len(matches) > 100:
+            matches = matches[:100]
         return jsonify({"success": True, "matches": matches})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
@@ -2726,8 +2765,9 @@ def _has_inv_edit_perm():
 def get_inventory():
     """获取库存列表（支持分页，同刀模库）"""
     tab = request.args.get('tab', 'finished')
-    data = load_inventory()
+    data = load_inventory_cached()
     items = data.get(tab, [])
+    dm_index = _dimoldb_store.build_dim_match_index(load_dimoldb())
     
     # 材质映射函数：库存中的材质名 → 显示名
     def map_material(m):
@@ -2840,38 +2880,9 @@ def get_inventory():
             item['name'] = '内径' + item['name']
         elif item.get('dim_type') == 'outer' and not item['name'].startswith('外径') and not item['name'].startswith('内'):
             item['name'] = '外径' + item['name']
-        # 匹配对应刀模（按尺寸+内外径）
-        dm_info = []
-        try:
-            db = load_dimoldb()
-            l, w, h = item.get('length'), item.get('width'), item.get('height')
-            itype = item.get('product_type')
-            idim = item.get('dim_type', '')
-            if l and w and h and itype:
-                candidates = [d for d in db if d.get('product_type') == itype
-                    and abs(float(d.get('length', 0)) - float(l)) < 0.1
-                    and abs(float(d.get('width', 0)) - float(w)) < 0.1
-                    and abs(float(d.get('height', 0)) - float(h)) < 0.1]
-                # 内外径过滤（基于刀模 name 与 remark，与客服端一致）
-                if idim == 'outer':
-                    candidates = [d for d in candidates if '(外)' in d.get('name', '') or ('外' in (d.get('remark') or ''))]
-                elif idim == 'inner':
-                    candidates = [d for d in candidates if '(内)' in d.get('name', '') or ('内' in (d.get('remark') or ''))]
-                if not idim:
-                    iname = item.get('name', '')
-                    if iname.startswith('内径'):
-                        candidates = [d for d in candidates if '(内)' in d.get('name', '') or ('内' in (d.get('remark') or ''))]
-                    else:
-                        candidates = [d for d in candidates if '(外)' in d.get('name', '') or ('外' in (d.get('remark') or ''))]
-                for dm in candidates:
-                    dm_info.append({
-                        'id': dm.get('id', ''),
-                        'name': dm.get('name', ''),
-                        'code': dm.get('code', '') or '',
-                        'remark': dm.get('remark', '') or ''
-                    })
-        except: pass
-        item['dimoldb_info'] = dm_info
+        item['dimoldb_info'] = _dimoldb_store.match_dimoldb_for_inventory_item(
+            item, dm_index, infer_fn=_dimoldb_infer_inner_outer
+        )
     resp = jsonify({
         "success": True,
         "data": page_data,
@@ -4048,6 +4059,19 @@ def _warm_prod_dashboard_cache():
 _dash_warm_thread = _th.Thread(target=_warm_prod_dashboard_cache, daemon=True)
 _dash_warm_thread.start()
 
+
+def _warm_dimoldb_cache():
+    while True:
+        try:
+            load_dimoldb(force=True)
+            print("[刀模缓存] 内存索引已刷新")
+        except Exception as e:
+            print(f"[刀模缓存] 刷新失败: {e}")
+        time.sleep(int(os.getenv("DIMOLDB_CACHE_TTL_SEC", "120")))
+
+
+_th.Thread(target=_warm_dimoldb_cache, daemon=True, name="dimoldb-cache-warm").start()
+
 import order_sync_scheduler as _order_sched
 
 _order_sched.start_background_order_sync(
@@ -4056,7 +4080,7 @@ _order_sched.start_background_order_sync(
     include_1688_direct=True,
     full_days_back=30,
     incremental_days_back=7,
-    interval_sec=180,
+    interval_sec=int(os.getenv("ORDER_SYNC_INTERVAL_SEC", "60")),
     on_after_sync=_on_background_sync_done,
 )
 
@@ -4289,6 +4313,12 @@ def production_calc_material_batch():
 @app.route('/api/production/dashboard')
 def production_dashboard():
     """打单管理：缓存 + 分页（page/page_size + 筛选）"""
+    try:
+        import order_visit_sync as _ovs
+
+        _ovs.schedule_incremental_sync(memo_getter=get_order_memo, force=False)
+    except Exception:
+        pass
     force = request.args.get("refresh") == "1"
     cache = _prod_dash_cache.get_dashboard_cache(
         _rebuild_prod_dashboard_cache, force=force

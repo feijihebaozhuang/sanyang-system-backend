@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import threading
+import time
 from typing import Any, Callable
 
 _EXTRA_COLUMNS: tuple[tuple[str, str], ...] = (
@@ -51,7 +53,26 @@ def _row_to_dict(r: dict) -> dict[str, Any]:
     }
 
 
-def load_dimoldb(get_db: Callable) -> list[dict[str, Any]]:
+_dim_cache_lock = threading.Lock()
+_dim_cache: dict[str, Any] = {"rows": [], "ts": 0.0}
+_DIM_CACHE_TTL = float(__import__("os").getenv("DIMOLDB_CACHE_TTL_SEC", "120"))
+
+
+def invalidate_dimoldb_cache() -> None:
+    with _dim_cache_lock:
+        _dim_cache["ts"] = 0.0
+
+
+def load_dimoldb(get_db: Callable, *, force: bool = False) -> list[dict[str, Any]]:
+    """全量读库；列表 API 请优先用 load_dimoldb_cached。"""
+    now = time.time()
+    with _dim_cache_lock:
+        if (
+            not force
+            and _dim_cache["rows"]
+            and now - float(_dim_cache["ts"] or 0) < _DIM_CACHE_TTL
+        ):
+            return list(_dim_cache["rows"])
     try:
         db = get_db()
         cur = db.cursor()
@@ -62,10 +83,95 @@ def load_dimoldb(get_db: Callable) -> list[dict[str, Any]]:
         result = [_row_to_dict(r) for r in rows]
         cur.close()
         db.close()
+        with _dim_cache_lock:
+            _dim_cache["rows"] = result
+            _dim_cache["ts"] = now
         return result
     except Exception as e:
         print(f"[MySQL load_dimoldb] 错误: {e}")
         return []
+
+
+def load_dimoldb_cached(get_db: Callable, *, force: bool = False) -> list[dict[str, Any]]:
+    return load_dimoldb(get_db, force=force)
+
+
+def build_dim_match_index(
+    rows: list[dict[str, Any]], *, tol: float = 0.1
+) -> dict[tuple[str, float, float, float], list[dict[str, Any]]]:
+    """按 (product_type, L, W, H) 建索引，供库存列表匹配刀模（避免每行全表扫描）。"""
+    index: dict[tuple[str, float, float, float], list[dict[str, Any]]] = {}
+    for d in rows:
+        dl, dw, dh = effective_dims(d)
+        if not (dl and dw and dh):
+            continue
+        pt = str(d.get("product_type") or "")
+        key = (pt, round(float(dl), 1), round(float(dw), 1), round(float(dh), 1))
+        index.setdefault(key, []).append(d)
+    return index
+
+
+def match_dimoldb_for_inventory_item(
+    item: dict[str, Any],
+    dm_index: dict[tuple[str, float, float, float], list[dict[str, Any]]],
+    *,
+    infer_fn,
+) -> list[dict[str, Any]]:
+    """库存行匹配刀模（与 get_inventory 原逻辑一致，走索引）。"""
+    l, w, h = item.get("length"), item.get("width"), item.get("height")
+    itype = item.get("product_type") or ""
+    idim = item.get("dim_type") or ""
+    if not (l and w and h and itype):
+        return []
+    try:
+        lk = (
+            itype,
+            round(float(l), 1),
+            round(float(w), 1),
+            round(float(h), 1),
+        )
+    except (TypeError, ValueError):
+        return []
+    candidates = list(dm_index.get(lk, []))
+    if idim == "outer":
+        candidates = [
+            d
+            for d in candidates
+            if "(外)" in d.get("name", "")
+            or "外" in (d.get("remark") or "")
+        ]
+    elif idim == "inner":
+        candidates = [
+            d
+            for d in candidates
+            if "(内)" in d.get("name", "")
+            or "内" in (d.get("remark") or "")
+        ]
+    elif not idim:
+        iname = item.get("name", "")
+        if iname.startswith("内径"):
+            candidates = [
+                d
+                for d in candidates
+                if "(内)" in d.get("name", "")
+                or "内" in (d.get("remark") or "")
+            ]
+        else:
+            candidates = [
+                d
+                for d in candidates
+                if "(外)" in d.get("name", "")
+                or "外" in (d.get("remark") or "")
+            ]
+    return [
+        {
+            "id": dm.get("id", ""),
+            "name": dm.get("name", ""),
+            "code": dm.get("code", "") or "",
+            "remark": dm.get("remark", "") or "",
+        }
+        for dm in candidates
+    ]
 
 
 def save_dimoldb(get_db: Callable, data: list[dict]) -> bool:

@@ -4835,25 +4835,8 @@
                 return;
             }
             // 一次性加载所有刀模数据，用于本地匹配显示刀模信息
-            let dimoldbMap = {};
-            try {
-                const dmAllRes = await fetch('/api/dimoldb/search', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({})
-                });
-                const dmAllData = await dmAllRes.json();
-                if (dmAllData.success && dmAllData.matches) {
-                    dmAllData.matches.forEach(m => {
-                        const key = `${m.length}x${m.width}x${m.height}`;
-                        if (!dimoldbMap[key]) dimoldbMap[key] = [];
-                        m._dmType = _invInferDimoldbRowType(m);
-                        dimoldbMap[key].push(m);
-                    });
-                }
-            } catch(e) {}
-                html = '<div style="display:flex;flex-direction:column;gap:2px;">';
-            items.forEach(item => {
+            html = '<div style="display:flex;flex-direction:column;gap:2px;">';
+items.forEach(item => {
                 const tlabel = _invTypeLabels[item.product_type] || item.product_type || '';
                 const dimLabel = item.dim_type === 'inner' ? '内径' : (item.dim_type === 'outer' ? '外径' : '');
                 const stock = item.stock || 0;
@@ -4862,8 +4845,7 @@
                 const dmKey = `${item.length}x${item.width}x${item.height}`;
                 var dmForRender = item.dimoldb_info && item.dimoldb_info.length > 0
                     ? item.dimoldb_info.slice()
-                    : (dimoldbMap[dmKey] || []).slice();
-                dmForRender = _invFilterDimoldbInfoForItem(item, dmForRender);
+                    : [];
                 const dmHtml = dmForRender.length > 0
                     ? dmForRender.map(m => `<span style="display:inline-block;background:#e6f7ff;color:#1677ff;padding:1px 6px;border-radius:3px;font-size:11px;margin-right:3px;">🔧${_dmDimCode(m)}</span>`).join('')
                     : '';

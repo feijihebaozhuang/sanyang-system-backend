@@ -17,8 +17,8 @@ _state: dict[str, Any] = {
     "last_report": None,
 }
 
-DEBOUNCE_SEC = int(os.getenv("VISIT_SYNC_DEBOUNCE_SEC", "45"))
-INCREMENTAL_HOURS = int(os.getenv("VISIT_SYNC_HOURS", "6"))
+DEBOUNCE_SEC = int(os.getenv("VISIT_SYNC_DEBOUNCE_SEC", "20"))
+INCREMENTAL_HOURS = int(os.getenv("VISIT_SYNC_HOURS", "3"))
 
 
 def cache_updated_ago_sec() -> int | None:

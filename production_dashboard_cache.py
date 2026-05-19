@@ -336,12 +336,28 @@ def get_dashboard_cache(
     global _cache
     now = time.time()
     with _cache_lock:
-        if (
-            not force
-            and _cache.get("orders")
-            and now - float(_cache.get("ts") or 0) < max_age
-        ):
+        age = now - float(_cache.get("ts") or 0)
+        has_orders = bool(_cache.get("orders"))
+        if not force and has_orders and age < max_age:
             return _cache
+        stale = dict(_cache) if has_orders else None
+
+    if not force and stale:
+        def _bg_refresh() -> None:
+            global _cache
+            try:
+                fresh = rebuild_fn()
+                with _cache_lock:
+                    _cache = fresh
+            except Exception as e:
+                with _cache_lock:
+                    _cache["error"] = str(e)
+
+        threading.Thread(
+            target=_bg_refresh, daemon=True, name="prod-dash-refresh"
+        ).start()
+        return stale
+
     try:
         fresh = rebuild_fn()
         with _cache_lock:
