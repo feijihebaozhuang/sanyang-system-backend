@@ -347,7 +347,7 @@ def _parse_lwh_from_attrs(attrs: str) -> tuple[float, float, float] | None:
         if l and w and h:
             return float(l), float(w), float(h)
         if l and w:
-            return float(l), float(w), float(h or 0))
+            return float(l), float(w), float(h or 0)
     except Exception:
         pass
     m_l = re.search(r"【\s*长\s*】\s*(\d+(?:\.\d+)?)", text)
