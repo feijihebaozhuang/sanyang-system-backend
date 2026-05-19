@@ -70,15 +70,15 @@ def _match_dimoldb_for_line(
     order_type: str,
     dimoldb_rows: list[dict],
 ) -> dict[str, Any]:
-    """按尺寸匹配刀模库，返回展示用 name/id（与首页刀模查询一致）。"""
+    """按尺寸匹配刀模库，返回展示用 dimoldb_code（code/id，非尺寸 name）。"""
     import material_calc as mcalc
 
     attrs = ps.get("platform_spec_raw") or ""
     if mcalc._is_carton_product(order_type, attrs):
-        return {"skip": True, "matched": False, "dimoldb_id": "", "dimoldb_name": ""}
+        return {"skip": True, "matched": False, "dimoldb_id": "", "dimoldb_code": ""}
     l, w, h = ps.get("length"), ps.get("width"), ps.get("height")
     if not l or not w:
-        return {"skip": False, "matched": False, "dimoldb_id": "", "dimoldb_name": ""}
+        return {"skip": False, "matched": False, "dimoldb_id": "", "dimoldb_code": ""}
     dm = mcalc.match_dimoldb(
         float(l),
         float(w),
@@ -87,16 +87,18 @@ def _match_dimoldb_for_line(
         order_type,
     )
     if dm.get("skip"):
-        return {"skip": True, "matched": False, "dimoldb_id": "", "dimoldb_name": ""}
+        return {"skip": True, "matched": False, "dimoldb_id": "", "dimoldb_code": ""}
     if dm.get("success"):
-        name = (dm.get("name") or "").strip()
+        code = (dm.get("code") or dm.get("display_code") or "").strip()
+        if not code:
+            code = str(dm.get("dimoldb_id") or "").strip()
         return {
             "skip": False,
             "matched": True,
             "dimoldb_id": dm.get("dimoldb_id") or "",
-            "dimoldb_name": name,
+            "dimoldb_code": code,
         }
-    return {"skip": False, "matched": False, "dimoldb_id": "", "dimoldb_name": ""}
+    return {"skip": False, "matched": False, "dimoldb_id": "", "dimoldb_code": ""}
 
 
 def rebuild_dashboard_cache(
@@ -227,17 +229,17 @@ def rebuild_dashboard_cache(
             dm_info = _match_dimoldb_for_line(ps, order_type, dimoldb_rows)
             cached_mc = mcalc.get_cached_line(so_id, line_idx)
             mc_status = (cached_mc or {}).get("status") or "pending"
-            if cached_mc and cached_mc.get("dimoldb_name"):
+            if cached_mc and (
+                cached_mc.get("dimoldb_code") or cached_mc.get("dimoldb_id")
+            ):
+                mc_code = (cached_mc.get("dimoldb_code") or "").strip()
+                if not mc_code:
+                    mc_code = str(cached_mc.get("dimoldb_id") or "").strip()
                 dm_info = {
                     **dm_info,
                     "dimoldb_id": cached_mc.get("dimoldb_id") or dm_info.get("dimoldb_id") or "",
-                    "dimoldb_name": (cached_mc.get("dimoldb_name") or "").strip()
-                    or dm_info.get("dimoldb_name")
-                    or "",
-                    "matched": bool(
-                        (cached_mc.get("dimoldb_name") or "").strip()
-                        or dm_info.get("matched")
-                    ),
+                    "dimoldb_code": mc_code or dm_info.get("dimoldb_code") or "",
+                    "matched": bool(mc_code or dm_info.get("matched")),
                 }
             full_items.append(
                 {
@@ -257,7 +259,7 @@ def rebuild_dashboard_cache(
                     "stock_qty": stock_qty,
                     "stock_info": stock_info,
                     "dimoldb_id": dm_info.get("dimoldb_id") or "",
-                    "dimoldb_name": dm_info.get("dimoldb_name") or "",
+                    "dimoldb_code": dm_info.get("dimoldb_code") or "",
                     "dimoldb_matched": bool(dm_info.get("matched")),
                     "dimoldb_skip": bool(dm_info.get("skip")),
                     "material_name": ps.get("material") or "—",

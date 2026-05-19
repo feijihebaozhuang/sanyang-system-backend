@@ -87,6 +87,73 @@ def _fmt_num(n: float) -> str:
     return s
 
 
+def _val_to_cm(val: float, unit: str | None) -> float:
+    """mm/毫米 → cm（÷10）；cm/厘米 或 无单位则按厘米。"""
+    u = (unit or "").strip().lower()
+    if u in ("mm", "毫米"):
+        return val / 10.0
+    return val
+
+
+def _fmt_dim_cm(n: float) -> str:
+    return f"{_fmt_num(n)}cm"
+
+
+def _normalize_parsed_dims_units(dims: dict[str, float], text: str) -> dict[str, float]:
+    """按原文单位把已解析的长宽高统一为厘米数值。"""
+    if not dims or not text:
+        return dims
+    out = dict(dims)
+    unit_cap = r"(?P<unit>cm|CM|厘米|mm|MM|毫米)?"
+    scans: list[tuple[str, list[str]]] = [
+        (
+            "l",
+            [
+                rf"【\s*(?:长度|长)\s*(\d+(?:\.\d+)?)\s*{unit_cap}\s*】",
+                rf"(?:长度|长)\s*[-—－]+\s*(\d+(?:\.\d+)?)\s*{unit_cap}",
+                rf"(?:长度|长)\s*【?\s*(\d+(?:\.\d+)?)\s*{unit_cap}\s*】?",
+            ],
+        ),
+        (
+            "w",
+            [
+                rf"【\s*(?:宽度|宽)\s*(\d+(?:\.\d+)?)\s*{unit_cap}\s*】",
+                rf"(?:宽度|宽)\s*【?\s*(\d+(?:\.\d+)?)\s*{unit_cap}\s*】?",
+            ],
+        ),
+        (
+            "h",
+            [
+                rf"【\s*(?:高度|高)\s*(\d+(?:\.\d+)?)\s*{unit_cap}\s*】",
+                rf"(?:高度|高)\s*【\s*(\d+(?:\.\d+)?)\s*{unit_cap}\s*】",
+                rf"(?:高度|高)\s*(\d+(?:\.\d+)?)\s*{unit_cap}\s*【",
+                rf"(?:高度|高)\s*(\d+(?:\.\d+)?)(?:\s*-\s*\d+(?:\.\d+)?)?\s*(?P<unit>cm|CM|厘米|mm|MM|毫米)(?!\s*个)",
+                rf"【\s*(\d+(?:\.\d+)?)\s*{unit_cap}\s*高\s*】",
+            ],
+        ),
+    ]
+    for key, patterns in scans:
+        if key not in out:
+            continue
+        for pat in patterns:
+            m = re.search(pat, text, re.I)
+            if m:
+                out[key] = _val_to_cm(float(m.group(1)), m.groupdict().get("unit"))
+                break
+    m3 = _NUM3_RE.search(text)
+    if m3 and len(out) < 3:
+        suffix = text[m3.end() : m3.end() + 12]
+        um = re.search(r"(mm|MM|毫米|cm|CM|厘米)", suffix, re.I)
+        unit = um.group(1) if um else None
+        if "l" not in out:
+            out["l"] = _val_to_cm(float(m3.group(1)), unit)
+        if "w" not in out:
+            out["w"] = _val_to_cm(float(m3.group(2)), unit)
+        if "h" not in out:
+            out["h"] = _val_to_cm(float(m3.group(3)), unit)
+    return out
+
+
 def platform_spec_raw(attrs: str) -> str:
     """完整保留 platformSpec 原文（display/spec），不做删减。"""
     return (attrs or "").strip()
@@ -212,7 +279,7 @@ def _parse_dimensions(text: str) -> dict[str, float]:
             dims.setdefault("l", float(m2.group(1)))
             dims.setdefault("w", float(m2.group(2)))
 
-    return dims
+    return _normalize_parsed_dims_units(dims, text)
 
 
 def _has_size_digits(text: str) -> bool:
@@ -436,9 +503,11 @@ def build_production_spec(
     dims = _parse_dimensions(raw)
     size = ""
     if dims.get("l") and dims.get("w") and dims.get("h"):
-        size = f"{_fmt_num(dims['l'])}x{_fmt_num(dims['w'])}x{_fmt_num(dims['h'])}"
+        size = (
+            f"{_fmt_dim_cm(dims['l'])}x{_fmt_dim_cm(dims['w'])}x{_fmt_dim_cm(dims['h'])}"
+        )
     elif dims.get("l") and dims.get("w"):
-        size = f"{_fmt_num(dims['l'])}x{_fmt_num(dims['w'])}"
+        size = f"{_fmt_dim_cm(dims['l'])}x{_fmt_dim_cm(dims['w'])}"
 
     qinfo = parse_quantity_info(raw, qty)
     diam = _parse_diameter_type(raw)

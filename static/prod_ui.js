@@ -25,8 +25,12 @@
                     if (!data.success) break;
                     (data.data || []).forEach(function (d) {
                         if (d && d.id) {
+                            var code = (d.code || '').trim();
+                            var name = (d.name || '').trim();
+                            var isDimSize =
+                                name && /\d+(?:\.\d+)?\s*[*×xX]\s*\d+/.test(name);
                             window._dimoldbNameMap[d.id] =
-                                (d.name || '').trim() || d.id;
+                                code || (!isDimSize && name) || String(d.id);
                         }
                     });
                     totalPages = data.total_pages || 1;
@@ -46,33 +50,29 @@
         return window._dimoldbNameMapPromise;
     };
 
-    window.prodDimoldbDisplayName = function (idOrMc) {
+    /** 刀模库展示编码（code / id，不用尺寸串 name） */
+    window.prodDimoldbDisplayCode = function (idOrMc) {
         if (!idOrMc) return '';
         if (typeof idOrMc === 'object') {
             var mc = idOrMc;
+            var code = (mc.dimoldb_code || '').trim();
+            if (code) return code;
             var id =
                 mc.dimoldb_id ||
                 (mc.dimoldb && mc.dimoldb.dimoldb_id) ||
                 '';
+            if (id && window._dimoldbNameMap[id]) {
+                return window._dimoldbNameMap[id];
+            }
             var label = (mc.dimoldb_label || '').trim();
-            var fromName =
-                (mc.dimoldb_name || '').trim() ||
-                (mc.dimoldb && mc.dimoldb.name) ||
-                (id && window._dimoldbNameMap[id]) ||
-                '';
-            if (fromName) return fromName;
             if (label && label.indexOf('dm_') !== 0) return label;
-            return (
-                (mc.dimoldb_code || '').trim() ||
-                (id && window._dimoldbNameMap[id]) ||
-                id ||
-                ''
-            );
+            return id || '';
         }
         var id = String(idOrMc).trim();
         if (!id) return '';
         return window._dimoldbNameMap[id] || id;
     };
+    window.prodDimoldbDisplayName = window.prodDimoldbDisplayCode;
 
     window.openWpsKdocsEmbed = function () {
         if (typeof switchTopPage === 'function') {
@@ -218,27 +218,27 @@
             .replace(/>/g, '&gt;');
     };
 
-    /** 第三行：刀模编码（刀模库 name）+ 成品库存 */
+    /** 第三行：刀模编码（刀模库 code/id）+ 成品库存 */
     window.renderDimoldbStockHtml = function (item, compact) {
         if (!item) return '';
         var fs = compact ? '10px' : '11px';
         var mt = compact ? '2px' : '3px';
         var mc = item.material_calc || {};
-        var dmName = '';
-        if (mc.dimoldb_name || mc.dimoldb_id) {
-            dmName = prodDimoldbDisplayName(mc);
+        var dmCode = '';
+        if (mc.dimoldb_code || mc.dimoldb_id) {
+            dmCode = prodDimoldbDisplayCode(mc);
         }
-        if (!dmName && item.dimoldb_name) {
-            dmName = String(item.dimoldb_name).trim();
+        if (!dmCode && item.dimoldb_code) {
+            dmCode = String(item.dimoldb_code).trim();
         }
-        if (!dmName && item.dimoldb_id) {
-            dmName = prodDimoldbDisplayName(item.dimoldb_id);
+        if (!dmCode && item.dimoldb_id) {
+            dmCode = prodDimoldbDisplayCode(item.dimoldb_id);
         }
         var dmLabel;
         if (item.dimoldb_skip) {
             dmLabel = '无需刀模';
-        } else if (dmName) {
-            dmLabel = dmName;
+        } else if (dmCode) {
+            dmLabel = dmCode;
         } else if ((item.production_spec_detail || {}).is_placeholder) {
             dmLabel = '定制/无规格';
         } else {

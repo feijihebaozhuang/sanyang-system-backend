@@ -232,6 +232,20 @@ def match_paper(
     }
 
 
+def dimoldb_display_code(dm: dict | None) -> str:
+    """刀模展示编码：优先 code，其次 id；name 若为尺寸串（含 *×）则不用于编码。"""
+    if not dm:
+        return ""
+    code = str(dm.get("code") or "").strip()
+    if code:
+        return code
+    rid = str(dm.get("id") or "").strip()
+    name = str(dm.get("name") or "").strip()
+    if name and not re.search(r"\d+(?:\.\d+)?\s*[*×xX]\s*\d+", name):
+        return name
+    return rid
+
+
 def match_dimoldb(
     length: float,
     width: float,
@@ -266,11 +280,14 @@ def match_dimoldb(
         break
     if not best:
         return {"success": False, "error": "未匹配到刀模"}
+    display_code = dimoldb_display_code(best)
     return {
         "success": True,
         "dimoldb_id": best.get("id"),
-        "code": best.get("code") or "",
+        "code": display_code,
         "name": best.get("name") or "",
+        "display_code": display_code,
+        "row": best,
     }
 
 
@@ -464,7 +481,9 @@ def calc_material_line(
         "cuts_length": paper.get("cuts_length"),
         "dimoldb": dm,
         "dimoldb_id": dimoldb_id,
-        "dimoldb_code": dm.get("code") if dm.get("success") else "",
+        "dimoldb_code": (dm.get("code") or dm.get("display_code") or "")
+        if dm.get("success")
+        else "",
         "dimoldb_name": dm.get("name") if dm.get("success") else "",
         "dimoldb_label": dimoldb_label,
     }
