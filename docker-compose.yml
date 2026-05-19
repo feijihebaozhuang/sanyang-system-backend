@@ -1,6 +1,10 @@
 # 三羊系统 Docker 部署
 # 用法见 deploy-docker.sh
-# 配置 JSON / .env / HTML 通过卷挂载，镜像重建不会覆盖 admin 改过的文件
+#
+# network_mode: host — 容器与宿主机共用网络，.env 里 MYSQL_HOST=127.0.0.1 才能连宿主机 MySQL。
+# （bridge 模式下 127.0.0.1 指向容器自身，会连不上库。）
+# host 模式下 ports 映射无效，应用直接监听宿主机 3001 / 3002。
+# 仅 Linux 服务器适用；Docker Desktop (Win/Mac) 不支持 host 网络。
 
 services:
   cs:
@@ -8,10 +12,9 @@ services:
     image: sanyang-system:latest
     container_name: sanyang-cs
     restart: unless-stopped
+    network_mode: host
     working_dir: /app
     command: ["python", "app_cs.py"]
-    ports:
-      - "3001:3001"
     env_file:
       - .env
     volumes:
@@ -36,10 +39,9 @@ services:
     image: sanyang-system:latest
     container_name: sanyang-prod
     restart: unless-stopped
+    network_mode: host
     working_dir: /app
     command: ["python", "app_production.py"]
-    ports:
-      - "3002:3002"
     env_file:
       - .env
     volumes:

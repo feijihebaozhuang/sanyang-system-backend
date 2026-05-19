@@ -69,7 +69,7 @@ fi
 log "[4/6] docker compose build..."
 docker compose build
 
-log "[5/6] docker compose up -d..."
+log "[5/6] docker compose up -d (network_mode=host，MYSQL_HOST 应为 127.0.0.1)..."
 docker compose up -d
 
 sleep 4
