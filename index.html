@@ -2482,10 +2482,7 @@
                 var escA = function(s) {
                     return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
                 };
-                var prodSpec = (item.production_spec || '').trim();
-                var prodSpecHtml = prodSpec
-                    ? '<div style="font-size:11px;color:#1677ff;font-weight:600;margin-top:4px;">生产规格：'+escA(prodSpec)+'</div>'
-                    : '';
+                var prodSpecHtml = renderProductionSpecHtml(item, false);
                 var stockBadge = item.has_stock
                     ? '<span style="font-size:10px;color:#52c41a;font-weight:bold;">✅现货</span>'
                     : '<span style="font-size:10px;color:#e94560;font-weight:bold;">📦需生产 <span style="font-weight:400;color:#999;">(库存'+item.stock_qty+')</span></span>';
