@@ -27,6 +27,11 @@ _HEIGHT_TAG_ONLY_RE = re.compile(
     r"【\s*高\s*】\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?",
     re.I,
 )
+# 长度【28cm】、宽【15cm】、高【6cm】（标签在方括号外）
+_OUTER_LABEL_BRACKET_RE = re.compile(
+    r"(长度|宽度|高度|长|宽|高)\s*【\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?\s*】",
+    re.I,
+)
 _PLATFORM_LABEL_RE = re.compile(
     r"(?:规格|尺寸|材质硬度等级|颜色分类|材质|颜色|硬度等级|硬度)[:：]\s*",
     re.I,
@@ -61,9 +66,10 @@ _COLOR_WORDS = ("白色", "黑色", "红色", "黄色", "牛皮", "原色", "金
 
 _AIRBOX_MATERIAL_PRIORITY: list[tuple[int, str, tuple[str, ...]]] = [
     (1, "台湾", ("台湾", "进口")),
-    (2, "白色", ("白色", "双白", "白卡")),
-    (3, "黑色", ("黑色", "黑卡")),
-    (4, "红色", ("红色", "红卡")),
+    # 裸「白色/黑色/红色」多为颜色词，材料须命中 白卡/黑卡 等
+    (2, "白色", ("双白", "白卡")),
+    (3, "黑色", ("黑卡",)),
+    (4, "红色", ("红卡",)),
     (5, "P6D", ("P6D",)),
     (6, "特硬", ("D6D", "特硬")),
     (7, "EB", ("五层EB", "EB")),
@@ -150,6 +156,7 @@ def _normalize_parsed_dims_units(dims: dict[str, float], text: str) -> dict[str,
             "w",
             [
                 rf"【\s*(?:宽度|宽)\s*(\d+(?:\.\d+)?)\s*{unit_cap}\s*】",
+                rf"(?:宽度|宽)\s*【\s*(\d+(?:\.\d+)?)\s*{unit_cap}\s*】",
                 rf"(?:宽度|宽)\s*【?\s*(\d+(?:\.\d+)?)\s*{unit_cap}\s*】?",
             ],
         ),
@@ -216,6 +223,12 @@ def _parse_dimensions(text: str) -> dict[str, float]:
         dims["w"] = float(m.group(2))
 
     for m in _BRACKET_DIM_RE.finditer(text):
+        label, val = m.group(1), float(m.group(2))
+        key = _LABEL_TO_KEY.get(label) or _LABEL_TO_KEY.get(label[:1])
+        if key:
+            dims[key] = val
+
+    for m in _OUTER_LABEL_BRACKET_RE.finditer(text):
         label, val = m.group(1), float(m.group(2))
         key = _LABEL_TO_KEY.get(label) or _LABEL_TO_KEY.get(label[:1])
         if key:

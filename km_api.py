@@ -489,6 +489,7 @@ def finalize_cache_order(o: dict) -> dict:
             it["spec"] = display
             it["display"] = display
             it["platform_attrs"] = display
+            it["platform_spec_raw"] = display
         elif not (it.get("display") or "").strip():
             it["display"] = (it.get("spec") or "").strip()
         it["is_customization"] = km_item_is_customization(merged)
@@ -1426,9 +1427,14 @@ def _display_has_size(display: str) -> bool:
 
 _KM_ITEM_SNAPSHOT_KEYS = (
     "skuInfos",
+    "platformSpec",
+    "platform_spec",
     "skuPropertiesName",
     "sysSkuPropertiesName",
     "sysSkuPropertiesAlias",
+    "propertiesName",
+    "itemSpec",
+    "skuSpec",
     "sysSkuRemark",
     "sysItemRemark",
     "customization",
@@ -1439,6 +1445,20 @@ _KM_ITEM_SNAPSHOT_KEYS = (
     "shortTitle",
     "isCustomization",
     "isCustom",
+)
+
+# 可能含买家下单规格的平台字段（按优先级尝试拼接）
+_KM_SPEC_SOURCE_KEYS = (
+    "platformSpec",
+    "platform_spec",
+    "skuPropertiesName",
+    "sysSkuPropertiesName",
+    "sysSkuPropertiesAlias",
+    "propertiesName",
+    "itemSpec",
+    "skuSpec",
+    "sysSkuRemark",
+    "sysItemRemark",
 )
 
 
@@ -1470,33 +1490,93 @@ def km_item_for_resolve(it: dict) -> dict:
     return dict(it)
 
 
+def _order_ext_spec_fragments(order_ext: Any) -> list[str]:
+    """从 orderExt（JSON 或文本）抽出可能含规格的片段。"""
+    if order_ext is None or order_ext == "":
+        return []
+    obj = order_ext
+    if isinstance(order_ext, str):
+        s = order_ext.strip()
+        if not s or s in ("{}", "[]"):
+            return []
+        if s.startswith(("{", "[")):
+            try:
+                obj = json.loads(s)
+            except json.JSONDecodeError:
+                return _dedupe_attr_segments(re.split(r"[;；\n]+", _strip_attrs_pollution(s)))
+        else:
+            return _dedupe_attr_segments(re.split(r"[;；\n]+", _strip_attrs_pollution(s)))
+
+    frags: list[str] = []
+
+    def _walk(o: Any, depth: int = 0) -> None:
+        if depth > 10:
+            return
+        if isinstance(o, dict):
+            for k, v in o.items():
+                kl = str(k).lower()
+                if kl in _SKIP_SPEC_KEYS or kl in _CUSTOM_JSON_SKIP_KEYS:
+                    continue
+                if isinstance(v, str) and v.strip():
+                    t = _norm_spec_text(v)
+                    if t and not _is_junk_spec_segment(t) and _ORDER_SPEC_HINT.search(t):
+                        for seg in re.split(r"[;；\n]+", t):
+                            if seg.strip():
+                                frags.append(seg.strip())
+                else:
+                    _walk(v, depth + 1)
+        elif isinstance(o, list):
+            for x in o:
+                _walk(x, depth + 1)
+        elif isinstance(o, str) and o.strip():
+            t = _norm_spec_text(o)
+            if t and not _is_junk_spec_segment(t):
+                for seg in re.split(r"[;；\n]+", t):
+                    if seg.strip() and _ORDER_SPEC_HINT.search(seg):
+                        frags.append(seg.strip())
+
+    _walk(obj)
+    return _dedupe_attr_segments(frags)
+
+
+def _merge_spec_segments_from_text(chunks: list[str], seen: set[str], text: str) -> None:
+    """把一段平台原文按；拆开并入 chunks（仅去 tid/json 污染，不删尺寸片段）。"""
+    if not text:
+        return
+    for seg in re.split(r"[;；\n]+", _strip_attrs_pollution(text)):
+        s = _norm_spec_text(seg)
+        if not s or _is_junk_spec_segment(s):
+            continue
+        k = _norm_spec_seg_key(s)
+        if k in seen:
+            continue
+        seen.add(k)
+        chunks.append(s)
+
+
 def km_collect_item_raw_attrs(it: dict) -> str:
-    """收集平台买家属性原文（未做展示格式化）。"""
+    """
+    收集快麦/平台买家属性全文（platformSpec 等），供生产解析。
+    多字段合并，不做「只抠片段」式精简，避免丢宽【15cm】等。
+    """
     if not isinstance(it, dict):
         return ""
     ali = merge_1688_sku_infos(it.get("skuInfos"))
     if ali:
         return _strip_attrs_pollution(ali)
 
-    plat = _norm_spec_text(it.get("skuPropertiesName"))
-    sys = _norm_spec_text(it.get("sysSkuPropertiesName"))
-    alias = _norm_spec_text(it.get("sysSkuPropertiesAlias"))
     chunks: list[str] = []
-    if plat:
-        chunks.extend(_dedupe_attr_segments(re.split(r"[;；]+", plat)))
-    if sys and plat != sys:
-        for seg in re.split(r"[;；]+", sys):
-            s = _norm_spec_text(seg)
-            if s and _norm_spec_seg_key(s) not in {_norm_spec_seg_key(c) for c in chunks}:
-                chunks.append(s)
-    if alias and _norm_spec_seg_key(alias) not in {_norm_spec_seg_key(c) for c in chunks}:
-        chunks.append(alias)
-    for key in ("sysSkuRemark", "sysItemRemark"):
-        remark = _norm_spec_text(it.get(key))
-        if remark and not _is_junk_spec_segment(remark):
-            rk = _norm_spec_seg_key(remark)
-            if rk not in {_norm_spec_seg_key(c) for c in chunks}:
-                chunks.append(remark)
+    seen: set[str] = set()
+    for key in _KM_SPEC_SOURCE_KEYS:
+        _merge_spec_segments_from_text(chunks, seen, _norm_spec_text(it.get(key)))
+    for frag in _order_ext_spec_fragments(it.get("orderExt")):
+        k = _norm_spec_seg_key(frag)
+        if k not in seen:
+            seen.add(k)
+            chunks.append(frag)
+    cust = _extract_customization_spec_text(it)
+    if cust:
+        _merge_spec_segments_from_text(chunks, seen, cust)
     legacy = _norm_spec_text(it.get("spec"))
     if chunks:
         return "；".join(_dedupe_attr_segments(chunks))
@@ -1505,20 +1585,26 @@ def km_collect_item_raw_attrs(it: dict) -> str:
 
 def km_resolve_item_display(it: dict) -> str:
     """
-    展示买家选的尺寸与材质。
-    仅「定制链接」且整段属性都没有长宽高时，才显示「定制」；有尺寸一律显示尺寸。
+    生产/打单用：返回平台买家属性原文（完整合并 platformSpec、skuProperties 等）。
+    不在此处做 km_format_buyer_spec_display 精简，避免丢失宽【15cm】等字段。
     """
     src = km_item_for_resolve(it)
-    spec_part = ""
     raw = km_collect_item_raw_attrs(src)
     if raw:
-        spec_part = km_format_buyer_spec_display(raw)
-        if not spec_part:
-            spec_part = _buyer_property_values_only(raw)
-    if not spec_part:
-        spec_part = _extract_customization_spec_text(src)
-    if spec_part:
-        return spec_part
+        return raw
+    if km_item_is_customization(src):
+        return "定制"
+    return ""
+
+
+def km_resolve_item_display_compact(it: dict) -> str:
+    """客服端精简展示（仅抠尺寸/材质片段）；生产打单请用 km_resolve_item_display。"""
+    src = km_item_for_resolve(it)
+    raw = km_collect_item_raw_attrs(src)
+    if raw:
+        spec_part = km_format_buyer_spec_display(raw) or _buyer_property_values_only(raw)
+        if spec_part:
+            return spec_part
     if km_item_is_customization(src):
         return "定制"
     return ""
@@ -1609,6 +1695,7 @@ def km_trade_to_cache_order(trade: dict, shops: dict[str, dict] | None = None) -
                 "spec": display,
                 "display": display,
                 "platform_attrs": display,
+                "platform_spec_raw": display,
                 "is_customization": km_item_is_customization(src),
                 "_km": snap,
             }

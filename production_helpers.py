@@ -163,7 +163,8 @@ def item_buyer_attrs(it: dict) -> str:
     if not isinstance(it, dict):
         return ""
     d = (
-        it.get("display")
+        it.get("platform_spec_raw")
+        or it.get("display")
         or it.get("platform_attrs")
         or it.get("spec")
         or ""

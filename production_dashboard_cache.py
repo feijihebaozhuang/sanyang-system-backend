@@ -213,11 +213,19 @@ def rebuild_dashboard_cache(
             if not isinstance(item, dict):
                 continue
             raw_attrs = (
-                item.get("display")
+                item.get("platform_spec_raw")
+                or item.get("display")
                 or item.get("platform_attrs")
                 or item.get("spec")
                 or ""
             ).strip()
+            if not raw_attrs:
+                try:
+                    import production_helpers as ph
+
+                    raw_attrs = ph.item_buyer_attrs(item)
+                except Exception:
+                    pass
             order_qty = int(item.get("qty", 0) or 0)
             ps = pspec.build_production_spec(raw_attrs, order_qty)
             real_qty = int(ps.get("qty") or order_qty)
