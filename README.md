@@ -33,6 +33,8 @@
 
 详见 `docs/ANCHOR-8.33.md`。服务器数据包：`./scripts/backup-anchor.sh 8.33`。
 
+**快麦对齐阶段（只文档、不动业务代码）**：`docs/对齐会议纪要模板.md`、`docs/商家编码映射表.md`。
+
 ## 部署（小马哥）
 
 服务器 `/www/feijihe/stable/` 需有（勿提交 Git）：
