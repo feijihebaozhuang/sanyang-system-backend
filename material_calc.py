@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""生产算料：展开尺寸、纸板匹配、刀模匹配。"""
+"""生产算料：报价英寸纸长/纸度 → raw_materials 匹配 → 开数 → 刀模。"""
 from __future__ import annotations
 
 import json
@@ -11,21 +11,20 @@ from typing import Any, Callable
 
 import quote_calc_core as qcc
 
-# 材质关键词 → 优先供应商（名称包含即可）
-MATERIAL_SUPPLIER_HINTS: list[tuple[str, list[str]]] = [
-    ("台湾", ["龙成", "锦丰"]),
-    ("进口", ["龙成", "锦丰"]),
-    ("D6D", ["同舟", "新浦", "龙成"]),
-    ("P6D", ["同舟", "新浦"]),
-    ("特硬", ["同舟", "新浦", "龙成"]),
-    ("国产", ["同舟", "新浦"]),
-    ("双白", ["同舟", "新浦", "龙成"]),
-    ("白色", ["同舟", "新浦", "龙成"]),
-    ("EB", ["同舟", "新浦"]),
-    ("BC", ["同舟", "新浦"]),
-    ("B坑", ["同舟", "新浦"]),
-    ("E坑", ["同舟", "新浦"]),
+# 订单材质关键词 → raw_materials 行需同时包含的供应商/材质标记（按优先级）
+MATERIAL_ROW_RULES: list[tuple[tuple[str, ...], tuple[str, ...]]] = [
+    (("P6D",), ("同舟", "P6D")),
+    (("D6D", "特硬", "国产"), ("同舟", "D6D")),
+    (("白色", "双白", "W7W"), ("锦丰", "白")),
+    (("台湾", "进口"), ("龙成", "台湾")),
+    (("黑色", "黑卡"), ("龙成", "黑")),
+    (("红色",), ("龙成", "红")),
+    (("EB", "五层EB", "5层"), ("新浦", "EB")),
+    (("BC", "五层BC"), ("新浦", "BC")),
+    (("B坑", "B瓦", "三层", "3层"), ("新浦", "B")),
 ]
+
+MAX_REMAINDER_INCH = 1.0
 
 _raw_cache: dict[str, Any] = {"ts": 0, "rows": []}
 _calc_cache: dict[str, dict] = {}
@@ -43,100 +42,135 @@ def _float_val(v: Any) -> float:
         return 0.0
 
 
-def _paper_size_cm(row: dict) -> tuple[float, float]:
-    """纸度×纸长 → (width_cm, length_cm)。"""
-    pw = _float_val(row.get("paper_width"))
-    pl = _float_val(row.get("paper_length"))
-    if pl > 500:
-        pl = pl / 10.0
-    if pw > 500:
-        pw = pw / 10.0
-    if pl > 0 and pl < 50 and pw > pl * 2:
+def _to_inch(val: float) -> float:
+    """库内数值：≤120 视为英寸；更大视为厘米并换算。"""
+    if val <= 0:
+        return 0.0
+    if val > 120:
+        return val / 2.54
+    return val
+
+
+def _paper_dims_inch(row: dict) -> tuple[float, float]:
+    """paper_width=纸度(英寸), paper_length=纸长(英寸)。"""
+    pw = _to_inch(_float_val(row.get("paper_width")))
+    pl = _to_inch(_float_val(row.get("paper_length")))
+    if pw > 0 and pl > 0 and pw > pl * 3:
         pw, pl = pl, pw
     return pw, pl
 
 
-def load_raw_rows(load_raw_fn: Callable[[], list[dict]], *, max_age: int = 120) -> list[dict]:
-    global _raw_cache
-    now = time.time()
-    if _raw_cache.get("rows") and now - float(_raw_cache.get("ts") or 0) < max_age:
-        return _raw_cache["rows"]
-    rows = load_raw_fn() or []
-    _raw_cache = {"ts": now, "rows": rows}
-    return rows
-
-
-def supplier_hints_for_material(material_text: str) -> list[str]:
-    t = (material_text or "").strip()
-    hints: list[str] = []
-    for kw, sups in MATERIAL_SUPPLIER_HINTS:
-        if kw in t:
-            hints.extend(sups)
-    seen: set[str] = set()
-    out: list[str] = []
-    for s in hints:
-        if s not in seen:
-            seen.add(s)
-            out.append(s)
-    return out
+def _row_blob(row: dict) -> str:
+    return f"{row.get('supplier','')} {row.get('name','')} {row.get('remark','')}"
 
 
 def row_matches_material(row: dict, material_text: str) -> bool:
-    blob = f"{row.get('name','')} {row.get('remark','')} {row.get('supplier','')}"
     if not material_text:
         return True
-    t = material_text.lower()
-    for kw, _ in MATERIAL_SUPPLIER_HINTS:
-        if kw.lower() in t and kw in blob:
-            return True
-    return any(k in blob for k in re.split(r"[\s,，/、]+", material_text) if len(k) >= 2)
+    t = material_text.upper()
+    blob = _row_blob(row).upper()
+    for order_kws, row_kws in MATERIAL_ROW_RULES:
+        if any(kw.upper() in t for kw in order_kws):
+            return all(rk.upper() in blob for rk in row_kws)
+    return any(
+        k.upper() in blob
+        for k in re.split(r"[\s,，/、]+", material_text)
+        if len(k) >= 2
+    )
+
+
+def _leftover_inch(stock: float, need: float) -> float | None:
+    """开数≥1 且余料≤1英寸；否则该规格不可用。"""
+    if need <= 0 or stock < need:
+        return None
+    n = int(stock // need)
+    if n < 1:
+        return None
+    rem = stock - n * need
+    if rem > MAX_REMAINDER_INCH:
+        return None
+    return rem
 
 
 def match_paper(
-    spread_l_cm: float,
-    spread_w_cm: float,
+    paper_l_inch: float,
+    paper_w_inch: float,
     material_text: str,
     raw_rows: list[dict],
+    *,
+    prefer_stock: bool = True,
 ) -> dict[str, Any]:
-    """匹配最小可用纸板规格。"""
-    need_l = float(spread_l_cm)
-    need_w = float(spread_w_cm)
+    """
+    按英寸匹配纸板：纸度≥paper_w_inch、纸长≥paper_l_inch，余料≤1英寸，选浪费最小。
+    优先 qty>0；无库存则退而求其次。
+    """
+    need_l = float(paper_l_inch)
+    need_w = float(paper_w_inch)
     if need_l <= 0 or need_w <= 0:
-        return {"success": False, "error": "展开尺寸无效"}
+        return {"success": False, "error": "纸长/纸度英寸无效", "shortage": True}
 
-    candidates: list[dict] = []
-    for row in raw_rows:
-        if not row_matches_material(row, material_text):
-            continue
-        pw, pl = _paper_size_cm(row)
-        if pw >= need_w and pl >= need_l:
-            candidates.append(
+    def _scan(rows: list[dict]) -> list[dict]:
+        out: list[dict] = []
+        for row in rows:
+            if not row_matches_material(row, material_text):
+                continue
+            pw, pl = _paper_dims_inch(row)
+            rem_w = _leftover_inch(pw, need_w)
+            rem_l = _leftover_inch(pl, need_l)
+            if rem_w is None or rem_l is None:
+                continue
+            cuts_w = int(pw // need_w)
+            cuts_l = int(pl // need_l)
+            per_board = cuts_w * cuts_l
+            if per_board < 1:
+                continue
+            waste = rem_w + rem_l
+            out.append(
                 {
                     "row": row,
-                    "paper_width_cm": pw,
-                    "paper_length_cm": pl,
+                    "paper_width_inch": pw,
+                    "paper_length_inch": pl,
+                    "waste": waste,
                     "area": pw * pl,
+                    "cuts_w": cuts_w,
+                    "cuts_l": cuts_l,
+                    "per_board": per_board,
+                    "qty_on_hand": int(row.get("qty") or 0),
                 }
             )
+        return out
+
+    stocked = [r for r in raw_rows if int(r.get("qty") or 0) > 0]
+    candidates = _scan(stocked if prefer_stock and stocked else raw_rows)
+    if not candidates and prefer_stock and stocked:
+        candidates = _scan(raw_rows)
+
     if not candidates:
         return {
             "success": False,
-            "error": "未找到满足尺寸的纸板（请检查材质与 raw_materials 数据）",
-            "need_l_cm": need_l,
-            "need_w_cm": need_w,
+            "shortage": True,
+            "error": "缺料：未找到合适纸板规格，请员工自行决定",
+            "paper_l_inch": need_l,
+            "paper_w_inch": need_w,
             "material": material_text,
         }
-    best = min(candidates, key=lambda x: x["area"])
+
+    best = min(candidates, key=lambda x: (x["waste"], x["area"], -x["qty_on_hand"]))
     r = best["row"]
     return {
         "success": True,
         "supplier": r.get("supplier") or "",
         "name": r.get("name") or "",
-        "paper_spec": f"{best['paper_width_cm']}×{best['paper_length_cm']}cm",
-        "paper_width_cm": best["paper_width_cm"],
-        "paper_length_cm": best["paper_length_cm"],
-        "qty_on_hand": int(r.get("qty") or 0),
+        "paper_spec": f"{best['paper_width_inch']}×{best['paper_length_inch']}英寸",
+        "paper_width_inch": best["paper_width_inch"],
+        "paper_length_inch": best["paper_length_inch"],
+        "cuts_width": best["cuts_w"],
+        "cuts_length": best["cuts_l"],
+        "sheets_per_board": best["per_board"],
+        "qty_on_hand": best["qty_on_hand"],
+        "waste_inch": round(best["waste"], 2),
         "material": material_text,
+        "has_stock": best["qty_on_hand"] > 0,
     }
 
 
@@ -148,6 +182,7 @@ def match_dimoldb(
     product_type: str = "",
     tol: float = 0.6,
 ) -> dict[str, Any]:
+    del product_type
     best = None
     for dm in dimoldb:
         try:
@@ -198,11 +233,13 @@ def infer_product_type_for_calc(order_type: str, attrs: str) -> str:
     ot = (order_type or "").strip()
     a = attrs or ""
     if ot in ("扣底盒", "双插盒", "纸箱", "带扣", "飞机盒"):
-        if ot == "飞机盒" and ("带扣" in a or "扣" in ot):
+        if ot == "飞机盒" and ("带扣" in a or "扣" in a):
             return "带扣"
         return ot
-    if "扣底" in a or "双插" in ot:
-        return "扣底盒" if "扣底" in a else "双插盒"
+    if "扣底" in a:
+        return "扣底盒"
+    if "双插" in a:
+        return "双插盒"
     if "纸箱" in a:
         return "纸箱"
     if "飞机盒" in a or ot == "飞机盒":
@@ -210,12 +247,25 @@ def infer_product_type_for_calc(order_type: str, attrs: str) -> str:
     return "飞机盒"
 
 
-def calc_sheets_per_board(spread_l_cm: float, spread_w_cm: float, paper_l_cm: float, paper_w_cm: float) -> int:
-    if spread_l_cm <= 0 or spread_w_cm <= 0 or paper_l_cm <= 0 or paper_w_cm <= 0:
+def calc_sheets_per_board(
+    paper_l_inch: float,
+    paper_w_inch: float,
+    stock_l_inch: float,
+    stock_w_inch: float,
+) -> int:
+    if paper_l_inch <= 0 or paper_w_inch <= 0:
         return 0
-    nx = max(0, int(paper_l_cm // spread_l_cm))
-    ny = max(0, int(paper_w_cm // spread_w_cm))
-    return max(nx * ny, 0)
+    return int(stock_w_inch // paper_w_inch) * int(stock_l_inch // paper_l_inch)
+
+
+def load_raw_rows(load_raw_fn: Callable[[], list[dict]], *, max_age: int = 120) -> list[dict]:
+    global _raw_cache
+    now = time.time()
+    if _raw_cache.get("rows") and now - float(_raw_cache.get("ts") or 0) < max_age:
+        return _raw_cache["rows"]
+    rows = load_raw_fn() or []
+    _raw_cache = {"ts": now, "rows": rows}
+    return rows
 
 
 def calc_material_line(
@@ -234,6 +284,7 @@ def calc_material_line(
     l, w, h = lwh
     pt = infer_product_type_for_calc(order_type, attrs)
     is_buckle = pt in ("带扣", "daikou")
+    calc_pt = pt
     if pt == "纸箱":
         calc_pt = "纸箱"
     elif pt == "扣底盒":
@@ -243,50 +294,71 @@ def calc_material_line(
     else:
         calc_pt = "飞机盒"
 
-    expand = qcc.expand_dimensions(
-        calc_pt, l, w, h, quote_data=quote_data, is_buckle=is_buckle or pt == "带扣"
-    )
-    spread_l = expand["spread_l_cm"]
-    spread_w = expand["spread_w_cm"]
     mat_key = resolve_material_key(material_text, quote_data)
-    paper = match_paper(spread_l, spread_w, material_text, raw_rows)
+    inches = qcc.calc_paper_inches(
+        calc_pt,
+        l,
+        w,
+        h,
+        quote_data=quote_data,
+        is_buckle=is_buckle,
+        material_key=mat_key,
+    )
+    paper_l_inch = inches["paper_l_inch"]
+    paper_w_inch = inches["paper_w_inch"]
+
+    paper = match_paper(paper_l_inch, paper_w_inch, material_text, raw_rows)
     if not paper.get("success"):
         return {
-            "status": "error",
+            "status": "shortage" if paper.get("shortage") else "error",
+            "material_status": "shortage" if paper.get("shortage") else "error",
             "error": paper.get("error", "纸板匹配失败"),
-            "expand": expand,
+            "paper_l_inch": paper_l_inch,
+            "paper_w_inch": paper_w_inch,
+            "inches": inches,
             "material": material_text,
             "attrs": attrs,
         }
 
-    per_board = calc_sheets_per_board(
-        spread_l, spread_w, paper["paper_length_cm"], paper["paper_width_cm"]
+    per_board = paper.get("sheets_per_board") or calc_sheets_per_board(
+        paper_l_inch,
+        paper_w_inch,
+        paper["paper_length_inch"],
+        paper["paper_width_inch"],
     )
     if per_board <= 0:
         return {
             "status": "error",
             "error": "纸板尺寸不足以开料（每张裁0个）",
-            "expand": expand,
+            "paper_l_inch": paper_l_inch,
+            "paper_w_inch": paper_w_inch,
             "paper": paper,
         }
+
     need_boards = int(math.ceil(qty / per_board * 1.02)) if qty else 0
     dm = match_dimoldb(l, w, h, dimoldb, pt)
+    spec_label = f"{paper.get('supplier')} - {paper.get('name')} - {paper.get('paper_spec')}"
 
     return {
         "status": "done",
+        "material_status": "done",
         "attrs": attrs,
         "qty": qty,
         "material": material_text or mat_key,
         "material_key": mat_key,
         "product_type": calc_pt,
-        "expand": expand,
-        "spread_l_cm": spread_l,
-        "spread_w_cm": spread_w,
+        "inches": inches,
+        "paper_l_inch": paper_l_inch,
+        "paper_w_inch": paper_w_inch,
         "paper": paper,
-        "paper_display": f"{paper.get('supplier')} - {paper.get('name')} - {paper.get('paper_spec')}",
-        "sheets_per_board": per_board,
+        "paper_display": spec_label,
+        "paper_spec": spec_label,
         "boards_needed": need_boards,
+        "sheets_per_board": per_board,
+        "cuts_width": paper.get("cuts_width"),
+        "cuts_length": paper.get("cuts_length"),
         "dimoldb": dm,
+        "dimoldb_id": dm.get("dimoldb_id") if dm.get("success") else "",
         "dimoldb_code": dm.get("code") if dm.get("success") else "",
         "dimoldb_name": dm.get("name") if dm.get("success") else "",
     }

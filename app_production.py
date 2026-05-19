@@ -4176,11 +4176,19 @@ def production_match_paper():
     if not resolve_login_user():
         return jsonify({"success": False, "error": "未登录"}), 401
     body = request.get_json() or {}
-    spread_l = float(body.get("spread_l_cm") or body.get("spread_l") or 0)
-    spread_w = float(body.get("spread_w_cm") or body.get("spread_w") or 0)
+    paper_l_inch = float(
+        body.get("paper_l_inch") or body.get("spread_l_inch") or body.get("spread_l") or 0
+    )
+    paper_w_inch = float(
+        body.get("paper_w_inch") or body.get("spread_w_inch") or body.get("spread_w") or 0
+    )
+    if not paper_l_inch and body.get("spread_l_cm"):
+        paper_l_inch = float(body["spread_l_cm"]) / 2.54
+    if not paper_w_inch and body.get("spread_w_cm"):
+        paper_w_inch = float(body["spread_w_cm"]) / 2.54
     material = (body.get("material") or body.get("material_text") or "").strip()
     rows = mcalc.load_raw_rows(load_raw_data)
-    result = mcalc.match_paper(spread_l, spread_w, material, rows)
+    result = mcalc.match_paper(paper_l_inch, paper_w_inch, material, rows)
     return jsonify(result)
 
 
