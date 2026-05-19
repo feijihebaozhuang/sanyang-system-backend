@@ -4834,20 +4834,17 @@
                 container.innerHTML = '<div style="text-align:center;padding:40px;color:#999;">暂无数据，在右侧录入或导入Excel</div>';
                 return;
             }
-            // 一次性加载所有刀模数据，用于本地匹配显示刀模信息
             html = '<div style="display:flex;flex-direction:column;gap:2px;">';
-items.forEach(item => {
+            items.forEach(item => {
                 const tlabel = _invTypeLabels[item.product_type] || item.product_type || '';
                 const dimLabel = item.dim_type === 'inner' ? '内径' : (item.dim_type === 'outer' ? '外径' : '');
                 const stock = item.stock || 0;
                 const stockColor = stock <= 0 ? '#e94560' : (stock < 50 ? '#d48806' : '#52c41a');
-                // 本地匹配刀模
-                const dmKey = `${item.length}x${item.width}x${item.height}`;
-                var dmForRender = item.dimoldb_info && item.dimoldb_info.length > 0
+                var dmForRender = (item.dimoldb_info && item.dimoldb_info.length > 0)
                     ? item.dimoldb_info.slice()
                     : [];
                 const dmHtml = dmForRender.length > 0
-                    ? dmForRender.map(m => `<span style="display:inline-block;background:#e6f7ff;color:#1677ff;padding:1px 6px;border-radius:3px;font-size:11px;margin-right:3px;">🔧${_dmDimCode(m)}</span>`).join('')
+                    ? dmForRender.map(m => `<span style="display:inline-block;background:#e6f7ff;color:#1677ff;padding:1px 6px;border-radius:3px;font-size:11px;margin-right:3px;">🔧${(m.code || m.remark || '')}</span>`).join('')
                     : '';
                 html += `
                 <div onclick="fillInvQuick('${item.id}')" style="display:flex;align-items:center;padding:8px 10px;border-bottom:1px solid #f0f0f0;cursor:pointer;" title="点击填充查询">
