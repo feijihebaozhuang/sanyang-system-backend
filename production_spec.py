@@ -14,6 +14,11 @@ _LABELED_DIM_RE = re.compile(
     r"(长度|宽度|高度)\s*【\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?\s*】",
     re.I,
 )
+# 长度---240mm（标签在方括号外，横线连接数字）
+_LENGTH_DASH_RE = re.compile(
+    r"(?:长度|长)\s*[-—－]+\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?",
+    re.I,
+)
 _HEIGHT_BRACKET_RE = re.compile(
     r"(?:高度|高)\s*【\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?\s*】",
     re.I,
@@ -168,6 +173,10 @@ def _parse_dimensions(text: str) -> dict[str, float]:
             text,
             re.I,
         )
+        if m:
+            dims["l"] = float(m.group(1))
+    if "l" not in dims:
+        m = _LENGTH_DASH_RE.search(text)
         if m:
             dims["l"] = float(m.group(1))
 
