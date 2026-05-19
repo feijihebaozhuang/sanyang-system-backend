@@ -44,6 +44,12 @@ _BUNDLE_RE = re.compile(
 # 仅明确写法，不用【内/【外（会误伤【高度】等）
 _OUTER_DIAM_RE = re.compile(r"外径|外尺寸|\(外\)|（外）", re.I)
 _INNER_DIAM_RE = re.compile(r"内径|内尺寸|\(内\)|（内）", re.I)
+_COLOR_LABEL_RE = re.compile(r"颜色\s*[:：]\s*([^\s;；,，]+)", re.I)
+_COLOR_WORDS = ("白色", "黑色", "红色", "黄色", "牛皮", "原色", "金色", "银色")
+_MATERIAL_FALLBACK_RE = re.compile(
+    r"(特硬|优质|台湾|三层|加硬|E瓦|瓦楞|进口)",
+    re.I,
+)
 
 _LABEL_TO_KEY = {
     "长度": "l",
@@ -135,6 +141,20 @@ def _parse_bundle(text: str) -> str:
     return f"{n}个/捆" if n else ""
 
 
+def _parse_color(text: str, material: str = "") -> str:
+    """从买家属性解析颜色（与材料分开展示）。"""
+    if not text:
+        return ""
+    m = _COLOR_LABEL_RE.search(text)
+    if m:
+        c = m.group(1).strip()
+        return c if c and c != material else ""
+    for word in _COLOR_WORDS:
+        if word in text and word != material:
+            return word
+    return ""
+
+
 def match_production_material(text: str, mapping: list[dict]) -> str:
     """按关键词映射为生产用材料简称（如 特硬）。"""
     low = (text or "").lower()
@@ -164,7 +184,7 @@ def build_production_spec(
 ) -> dict[str, Any]:
     """
     返回 production_spec 字段供打单管理展示（仅解析买家下单 SKU 属性，不用商品标题）。
-    line 示例: 外径 18x14x5   50个/捆   1   特硬
+    line 示例: 外径 18x14x5   50个/捆   特硬   ×1（数量在材料/颜色后）
     """
     text = (attrs or "").strip()
     diam_type = _parse_diameter_type(text)
@@ -179,15 +199,12 @@ def build_production_spec(
     bundle = _parse_bundle(text)
     material = match_production_material(text, material_mapping or [])
     if not material:
-        hm = re.search(
-            r"(?:外径|内径)?\s*(特硬|优质|台湾|白色|黑色|三层|加硬|E瓦|瓦楞|进口)",
-            text,
-            re.I,
-        )
+        hm = _MATERIAL_FALLBACK_RE.search(text)
         if hm:
             material = hm.group(1)
             if material == "进口":
                 material = "特硬"
+    color = _parse_color(text, material)
 
     parts: list[str] = []
     if diam_type:
@@ -196,10 +213,12 @@ def build_production_spec(
         parts.append(size)
     if bundle:
         parts.append(bundle)
-    if qty:
-        parts.append(str(int(qty)))
     if material:
         parts.append(material)
+    if color:
+        parts.append(color)
+    if qty:
+        parts.append(f"×{int(qty)}")
 
     line = "   ".join(parts) if parts else (text if text and text != "—" else "")
 
@@ -209,6 +228,7 @@ def build_production_spec(
         "bundle": bundle,
         "qty": int(qty or 0),
         "material": material,
+        "color": color,
         "diameter_type": diam_type,
         "length": dims.get("l"),
         "width": dims.get("w"),

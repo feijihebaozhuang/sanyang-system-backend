@@ -2265,6 +2265,48 @@
     let _prodDashboardOrders = [];
     let _prodDashboardIdxMap = {}; // so_id -> index in raw array
     let _prodMappingData = []; // 材料关键词映射
+
+    function _escProdHtml(s) {
+        return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    /** 生产规格分行展示：尺寸蓝色、材料紫色、颜色橙红、数量加大且在最后 */
+    function renderProductionSpecHtml(item, compact) {
+        var d = item && item.production_spec_detail;
+        var plain = (item && item.production_spec || '').trim();
+        if (!d && !plain) return '';
+        var fs = compact ? '10px' : '11px';
+        var qtyFs = compact ? '13px' : '15px';
+        var mt = compact ? '3px' : '4px';
+        if (!d) {
+            return '<div style="font-size:' + fs + ';margin-top:' + mt + ';line-height:1.5;">' +
+                '<span style="color:#888;font-weight:500;">生产规格：</span>' +
+                '<span style="color:#1677ff;font-weight:600;">' + _escProdHtml(plain) + '</span></div>';
+        }
+        var segs = [];
+        var gap = '&nbsp;&nbsp;';
+        if (d.diameter_type) {
+            segs.push('<span style="color:#1677ff;font-weight:600;">' + _escProdHtml(d.diameter_type) + '</span>');
+        }
+        if (d.size) {
+            segs.push('<span style="color:#1677ff;font-weight:700;font-family:Consolas,monospace;letter-spacing:0.02em;">' + _escProdHtml(d.size) + '</span>');
+        }
+        if (d.bundle) {
+            segs.push('<span style="color:#1677ff;">' + _escProdHtml(d.bundle) + '</span>');
+        }
+        if (d.material) {
+            segs.push('<span style="color:#722ed1;font-weight:600;">' + _escProdHtml(d.material) + '</span>');
+        }
+        if (d.color) {
+            segs.push('<span style="color:#d4380d;font-weight:600;">' + _escProdHtml(d.color) + '</span>');
+        }
+        var q = d.qty || (item && item.qty) || 0;
+        if (q) {
+            segs.push('<span style="color:#262626;font-size:' + qtyFs + ';font-weight:800;line-height:1;">×' + _escProdHtml(String(q)) + '</span>');
+        }
+        if (!segs.length) return '';
+        return '<div style="font-size:' + fs + ';margin-top:' + mt + ';line-height:1.55;">' +
+            '<span style="color:#888;font-weight:500;">生产规格：</span>' + segs.join(gap) + '</div>';
+    }
     
     async function loadProdDashboard() {
         const shop = document.getElementById('prodFilterShop').value;
@@ -2347,10 +2389,7 @@
                         var _escProd = function(s) {
                             return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
                         };
-                        var prodSpec = (item.production_spec || '').trim();
-                        var prodLine = prodSpec
-                            ? '<div style="font-size:10px;color:#1677ff;margin-top:3px;font-weight:600;">生产规格：' + _escProd(prodSpec) + '</div>'
-                            : '';
+                        var prodLine = renderProductionSpecHtml(item, true);
                         lines.push('<div style="font-size:11px;line-height:1.5;padding:2px 0;border-bottom:' + (idx < specs.length-1 ? '1px dashed #eee' : 'none') + ';white-space:normal;word-break:break-word;">' +
                             '<span style="color:#333;">' + _escProd(attrs || '—') + '</span> ' +
                             '<strong style="color:#e94560;">×' + (item.qty || 0) + '</strong> ' +
@@ -3514,7 +3553,7 @@
             '<button type="button" onclick="saveProductionMaterialMapping()" style="padding:4px 12px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">💾 保存</button>' +
             '</div></div>' +
             '<div style="display:block;font-size:12px;color:#666;margin:8px 0;padding:8px;background:#f6ffed;border-radius:6px;">' +
-            '示例：含「外径特硬」→ 生产规格：<code>外径 &nbsp; 18x14x5 &nbsp; 50个/捆 &nbsp; 1 &nbsp; 特硬</code>（外径/内径必显示）</div>' +
+            '示例：含「外径特硬」→ 生产规格：<code>外径 &nbsp; 18x14x5 &nbsp; 50个/捆 &nbsp; 特硬 &nbsp; ×1</code>（数量在材料/颜色后；尺寸蓝、材料紫、颜色橙）</div>' +
             '<div style="overflow-x:auto;padding:8px;"><table id="prodMaterialMapTable" style="min-width:520px;font-size:13px;width:100%;">' +
             '<thead><tr><th style="width:120px;">生产简称</th><th>匹配关键词（逗号分隔）</th><th style="width:60px;">操作</th></tr></thead>' +
             '<tbody>' + (rows || '<tr><td colspan="3" style="text-align:center;color:#999;padding:16px;">暂无规则</td></tr>') + '</tbody></table></div>';
