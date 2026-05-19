@@ -10,12 +10,24 @@ _BRACKET_DIM_RE = re.compile(
     r"【\s*(长度|宽度|高度|长|宽|高)\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?\s*】",
     re.I,
 )
-# 长度18CM / 宽度14CM（无括号）
-_LABEL_DIM_RE = re.compile(
-    r"(长度|宽度|高度|长|宽|高)\s*【?\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?",
+_LABELED_DIM_RE = re.compile(
+    r"(长度|宽度|高度)\s*【\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?\s*】",
     re.I,
 )
-# 210*210*100 mm
+_HEIGHT_BRACKET_RE = re.compile(
+    r"(?:高度|高)\s*【\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?\s*】",
+    re.I,
+)
+# 长x宽【20x20cm】 / 长x宽【20*20】
+_LW_IN_BRACKET_RE = re.compile(
+    r"长\s*x?\s*宽\s*【\s*(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?\s*】",
+    re.I,
+)
+# 长x宽【16x16】旧格式（括号内无 cm）
+_LW_SPLIT_BRACKET_RE = re.compile(
+    r"长\s*x?\s*宽\s*【\s*(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*】",
+    re.I,
+)
 _NUM3_RE = re.compile(
     r"(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)"
     r"\s*(?:cm|CM|厘米|mm|MM|毫米)?",
@@ -25,17 +37,13 @@ _NUM2_RE = re.compile(
     r"(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?",
     re.I,
 )
-# 长x宽【16x16】
-_LW_BRACKET_RE = re.compile(
-    r"长\s*x?\s*宽\s*【\s*(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*】",
-    re.I,
-)
 _BUNDLE_RE = re.compile(
     r"【?\s*(\d+)\s*个\s*[/／]?\s*捆\s*】?|【?\s*(\d+)\s*个一捆\s*】?",
     re.I,
 )
-_OUTER_DIAM_RE = re.compile(r"外径|外尺寸|【外|（外）|\(外\)", re.I)
-_INNER_DIAM_RE = re.compile(r"内径|内尺寸|【内|（内）|\(内\)", re.I)
+# 仅明确写法，不用【内/【外（会误伤【高度】等）
+_OUTER_DIAM_RE = re.compile(r"外径|外尺寸|\(外\)|（外）", re.I)
+_INNER_DIAM_RE = re.compile(r"内径|内尺寸|\(内\)|（内）", re.I)
 
 _LABEL_TO_KEY = {
     "长度": "l",
@@ -55,10 +63,15 @@ def _fmt_num(n: float) -> str:
 
 
 def _parse_dimensions(text: str) -> dict[str, float]:
-    """解析长/宽/高（厘米，整数显示）。"""
+    """解析长/宽/高（厘米）。"""
     dims: dict[str, float] = {}
     if not text:
         return dims
+
+    m = _LW_IN_BRACKET_RE.search(text) or _LW_SPLIT_BRACKET_RE.search(text)
+    if m:
+        dims["l"] = float(m.group(1))
+        dims["w"] = float(m.group(2))
 
     for m in _BRACKET_DIM_RE.finditer(text):
         label, val = m.group(1), float(m.group(2))
@@ -66,16 +79,15 @@ def _parse_dimensions(text: str) -> dict[str, float]:
         if key:
             dims[key] = val
 
-    for m in _LABEL_DIM_RE.finditer(text):
+    for m in _LABELED_DIM_RE.finditer(text):
         label, val = m.group(1), float(m.group(2))
-        key = _LABEL_TO_KEY.get(label) or _LABEL_TO_KEY.get(label[:1])
-        if key and key not in dims:
+        key = _LABEL_TO_KEY.get(label)
+        if key:
             dims[key] = val
 
-    m = _LW_BRACKET_RE.search(text)
-    if m:
-        dims.setdefault("l", float(m.group(1)))
-        dims.setdefault("w", float(m.group(2)))
+    hm = _HEIGHT_BRACKET_RE.search(text)
+    if hm:
+        dims["h"] = float(hm.group(1))
 
     if len(dims) < 3:
         m3 = _NUM3_RE.search(text)
@@ -94,7 +106,7 @@ def _parse_dimensions(text: str) -> dict[str, float]:
 
 
 def _parse_diameter_type(text: str) -> str:
-    """解析外径 / 内径（买家属性里常见，生产不能丢）。"""
+    """外径/内径：只看买家属性原文，不看商品标题（避免标题「内径现货」误判）。"""
     t = text or ""
     if not t:
         return ""
@@ -158,7 +170,7 @@ def build_production_spec(
     text = (attrs or "").strip()
     name = (item_name or "").strip()
     combined = f"{text} {name}".strip()
-    diam_type = _parse_diameter_type(combined)
+    diam_type = _parse_diameter_type(text)
 
     dims = _parse_dimensions(text)
     size = ""
@@ -170,9 +182,15 @@ def build_production_spec(
     bundle = _parse_bundle(text)
     material = match_production_material(combined, material_mapping or [])
     if not material:
-        hm = re.search(r"(?:外径|内径)?\s*(特硬|优质|台湾|白色|黑色|三层|加硬|E瓦|瓦楞)", text, re.I)
+        hm = re.search(
+            r"(?:外径|内径)?\s*(特硬|优质|台湾|白色|黑色|三层|加硬|E瓦|瓦楞|进口)",
+            text,
+            re.I,
+        )
         if hm:
             material = hm.group(1)
+            if material == "进口":
+                material = "特硬"
 
     parts: list[str] = []
     if diam_type:

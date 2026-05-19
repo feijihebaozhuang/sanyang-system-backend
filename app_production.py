@@ -3871,10 +3871,7 @@ def production_dashboard():
         so_id = ph.internal_order_id(o)
         first_item = (o.get('items') or [{}])[0]
         prod_name = first_item.get('name', '')
-        order_type = '飞机盒'
-        if '纸箱' in prod_name: order_type = '纸箱'
-        elif '扣底盒' in prod_name or '双插盒' in prod_name: order_type = '扣底盒'
-        elif '现货' in prod_name or '现' in prod_name: order_type = '现货'
+        order_type = ph.infer_order_type(o)
         
         try:
             import order_sync as _osync

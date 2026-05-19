@@ -159,14 +159,24 @@ def load_cache_orders(cache_file: str, *, finalize: bool = True) -> list[dict]:
 
 
 def infer_order_type(o: dict) -> str:
-    first = (o.get("items") or [{}])[0]
-    name = (first.get("name") or "") + (first.get("spec") or "")
-    if "纸箱" in name:
-        return "纸箱"
-    if "扣底盒" in name or "双插盒" in name:
+    """按订单内商品名 + 买家属性判断类型（飞机盒/纸箱等）。"""
+    parts: list[str] = []
+    for it in o.get("items") or []:
+        if not isinstance(it, dict):
+            continue
+        parts.append(str(it.get("name") or ""))
+        parts.append(str(it.get("display") or it.get("spec") or ""))
+    blob = " ".join(parts)
+    if "扣底盒" in blob or "双插盒" in blob:
         return "扣底盒"
-    if "现货" in name:
+    if "飞机盒" in blob:
+        return "飞机盒"
+    if "纸箱" in blob:
+        return "纸箱"
+    if "现货" in blob:
         return "现货"
+    if "带扣" in blob:
+        return "扣底盒"
     return "飞机盒"
 
 
