@@ -181,11 +181,12 @@ def main() -> None:
         1,
     )
 
-    start = cs.index("    /** 与 dimoldb_store.infer_inner_outer 一致 */")
-    end = cs.index("    // ===== 固定刀模库 =====", start)
-    dm_helpers = cs[start:end]
     mark = "    // ===== 固定刀模库 ====="
-    text = text.replace(mark, dm_helpers + mark, 1)
+    if "_dmDimScopeText" not in text:
+        start = cs.index("    /** 与 dimoldb_store.infer_inner_outer 一致 */")
+        end = cs.index(mark, start)
+        dm_helpers = cs[start:end]
+        text = text.replace(mark, dm_helpers + mark, 1)
 
     text = replace_js_function(
         text,

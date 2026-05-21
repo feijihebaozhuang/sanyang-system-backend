@@ -4435,50 +4435,6 @@
         return dmDt === riDt;
     }
 
-    /** 与 dimoldb_store.infer_inner_outer 一致 */
-    function _dmDimCode(m) {
-        return String((m && (m.code || m.dim_code || m.km_mapping_code)) || '').trim() || '未编码';
-    }
-    function _dmInferInnerOuter(m) {
-        if (!m) return '';
-        var dt = String(m.dim_type || '').trim();
-        if (dt === 'inner' || dt === 'outer') return dt;
-        var blob = [m.production_spec, m.remark, m.name].filter(Boolean).join(' ');
-        var name = m.name || '';
-        if (blob.indexOf('内径') >= 0 || name.indexOf('(内)') >= 0 || name.indexOf('内径') >= 0) return 'inner';
-        if (blob.indexOf('外径') >= 0 || name.indexOf('(外)') >= 0 || name.indexOf('外径') >= 0) return 'outer';
-        return '';
-    }
-    function _dmInvDimMatch(dmDt, riDt) {
-        if (!dmDt) return true;
-        if (!riDt) return true;
-        return dmDt === riDt;
-    }
-    function _dmDimScopeText(m, fallbackDimType) {
-        var dt = _dmInferInnerOuter(m) || fallbackDimType || '';
-        if (dt === 'inner') return '内径';
-        if (dt === 'outer') return '外径';
-        return '';
-    }
-    function _dimSearchScopeBanner(dimType, l, w, h) {
-        var scope = dimType === 'inner' ? '内径' : (dimType === 'outer' ? '外径' : '');
-        var parts = [l, w, h].filter(function(x) { return x !== '' && x != null && x !== undefined; });
-        var size = parts.length ? parts.join('×') + ' cm' : '';
-        if (!scope && !size) return '';
-        return '<div style="font-size:12px;color:#595959;margin-bottom:6px;padding:6px 10px;background:#e6f4ff;border-radius:6px;width:100%;">'
-            + '<strong>当前查询：</strong>' + (scope || '未区分内外径') + (size ? ' · ' + size : '') + '</div>';
-    }
-    function _quoteTypeToDimType(qt) {
-        if (qt === 'zhengsquare-inner' || qt === 'changfang-inner') return 'inner';
-        if (qt === 'zhengsquare-outer' || qt === 'changfang-outer') return 'outer';
-        return '';
-    }
-    function _searchSizeDimType() {
-        var el = document.getElementById('searchSizeDimType');
-        if (el && el.value) return el.value;
-        return _quoteTypeToDimType((document.getElementById('quoteType') || {}).value || '') || 'outer';
-    }
-
     // ===== 固定刀模库 =====
     let _editingDimoldbId = null;
 
