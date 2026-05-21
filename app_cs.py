@@ -1953,6 +1953,7 @@ def get_dimoldb():
     inv_items = inv_all.get('finished', inv_all if isinstance(inv_all, list) else [])
     for d in page_data:
         d['stock'] = _dimoldb_store.calc_dimoldb_stock(d, inv_items)
+        d['type_class'] = _dimoldb_store.infer_type_class(d)
     return jsonify({
         "success": True,
         "data": page_data,
@@ -2248,6 +2249,12 @@ def search_dimoldb():
                     matches = [d for d in matches if _dimoldb_infer_inner_outer(d) == 'inner']
                 elif dim_type == 'outer':
                     matches = [d for d in matches if _dimoldb_infer_inner_outer(d) == 'outer']
+        for d in matches:
+            d['type_class'] = _dimoldb_store.infer_type_class(d)
+            if not d.get('dim_type'):
+                d['dim_type'] = _dimoldb_infer_inner_outer(d)
+        if len(matches) > 100:
+            matches = matches[:100]
         return jsonify({"success": True, "matches": matches})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
