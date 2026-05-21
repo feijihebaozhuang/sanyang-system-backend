@@ -256,7 +256,7 @@ def main() -> None:
         )
     import re as _re
 
-    prod_ui_ver = "20260521b"
+    prod_ui_ver = "20260522a"
     m = _re.search(r'/static/prod_ui\.js\?v=([\w]+)', PROD.read_text(encoding="utf-8"))
     if m:
         prod_ui_ver = m.group(1)

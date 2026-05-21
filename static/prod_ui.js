@@ -67,6 +67,28 @@
     };
     window.prodDimoldbDisplayName = window.prodDimoldbDisplayCode;
 
+    window.prodCopyText = function (text, ev) {
+        if (ev && ev.stopPropagation) ev.stopPropagation();
+        var s = String(text || '').trim();
+        if (!s) return;
+        var done = function () {
+            if (typeof showToast === 'function') {
+                showToast('已复制');
+            }
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(s).then(done).catch(function () {
+                window.prompt('复制', s);
+            });
+        } else {
+            window.prompt('复制', s);
+        }
+    };
+
+    window.prodCopySoId = function (soId, ev) {
+        window.prodCopyText(soId, ev);
+    };
+
     window.openWpsKdocsEmbed = function () {
         if (typeof switchTopPage === 'function') {
             var fake = { classList: { add: function () {}, remove: function () {} } };
@@ -632,9 +654,13 @@
                         '<td style="font-size:11px;">' +
                         printBadge +
                         '</td>' +
-                        '<td style="font-family:monospace;font-size:12px;color:#1677ff;font-weight:600;">' +
+                        '<td style="font-family:monospace;font-size:12px;" onclick="event.stopPropagation()">' +
+                        '<span style="color:#1677ff;font-weight:600;cursor:pointer;text-decoration:underline dotted;" ' +
+                        'title="点击复制内部单号" onclick="prodCopySoId(\'' +
                         esc(o.so_id || '') +
-                        '</td>' +
+                        '\',event)">' +
+                        esc(o.so_id || '') +
+                        '</span></td>' +
                         '<td style="font-size:12px;">' +
                         esc(o.shop || '') +
                         '</td>' +

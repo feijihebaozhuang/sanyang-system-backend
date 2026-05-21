@@ -268,7 +268,10 @@ def rebuild_dashboard_cache(
             order_qty = int(item.get("qty", 0) or 0)
             item_name = (item.get("name") or "").strip()
             ps = pspec.build_production_spec(
-                raw_attrs, order_qty, title=item_name
+                raw_attrs,
+                order_qty,
+                title=item_name,
+                material_mapping=material_mapping,
             )
             real_qty = int(ps.get("qty") or order_qty)
             has_stock, stock_qty, stock_info = _match_inventory(raw_attrs, real_qty, inv_rows)
@@ -326,6 +329,7 @@ def rebuild_dashboard_cache(
         result.append(
             {
                 "so_id": so_id,
+                "tid": str(o.get("tid") or o.get("platform_tid") or "").strip(),
                 "shop": shop,
                 "province": addr_parts[0] if addr_parts else "",
                 "created": created_date,

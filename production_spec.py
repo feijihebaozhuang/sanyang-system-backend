@@ -77,19 +77,6 @@ _OUTER_MARK_RE = re.compile(r"【\s*外\s*】|外径|外尺寸|\(外\)|（外）
 _COLOR_LABEL_RE = re.compile(r"颜色\s*[:：]\s*([^\s;；,，]+)", re.I)
 _COLOR_WORDS = ("白色", "黑色", "红色", "黄色", "牛皮", "原色", "金色", "银色")
 
-_AIRBOX_MATERIAL_PRIORITY: list[tuple[int, str, tuple[str, ...]]] = [
-    (1, "台湾", ("台湾", "进口")),
-    # 裸「白色/黑色/红色」多为颜色词，材料须命中 白卡/黑卡 等
-    (2, "白色", ("双白", "白卡")),
-    (3, "黑色", ("黑卡",)),
-    (4, "红色", ("红卡",)),
-    (5, "P6D", ("P6D",)),
-    (6, "特硬", ("D6D", "特硬")),
-    (7, "EB", ("五层EB", "EB")),
-    (8, "BC", ("五层BC", "BC")),
-    (9, "E坑", ("E坑", "E瓦", "三层", "五层")),
-]
-
 _LABEL_TO_KEY = {
     "长度": "l",
     "长": "l",
@@ -159,6 +146,24 @@ def dimensions_ready_for_calc(dims: dict[str, float]) -> bool:
     return all(dims.get(k) is not None for k in ("l", "w", "h"))
 
 
+def _is_outer_dim_label_inside_lw_pair(text: str, m: re.Match[str]) -> bool:
+    """「长*宽【26*18】」里的「宽【」不是独立宽标签，避免覆盖长宽对解析。"""
+    label = (m.group(1) or "").strip()
+    if label in ("长度", "长", "宽度"):
+        return False
+    pos = m.start()
+    prefix = text[max(0, pos - 12):pos]
+    if label in ("宽",):
+        if re.search(r"长\s*[*×xX]?\s*$", prefix, re.I):
+            return True
+        if re.search(r"长宽\s*$", prefix, re.I):
+            return True
+    if label in ("高", "高度"):
+        if re.search(r"宽\s*[*×xX]?\s*$", prefix, re.I):
+            return True
+    return False
+
+
 def _normalize_parsed_dims_units(dims: dict[str, float], text: str) -> dict[str, float]:
     """按原文单位把已解析的长宽高统一为厘米数值。"""
     if not dims or not text:
@@ -177,9 +182,9 @@ def _normalize_parsed_dims_units(dims: dict[str, float], text: str) -> dict[str,
         (
             "w",
             [
-                rf"【\s*(?:宽度|(?<![*×xX])宽)\s*(\d+(?:\.\d+)?)\s*{unit_cap}\s*】",
-                rf"(?:宽度|(?<![*×xX])宽)\s*【\s*(\d+(?:\.\d+)?)\s*{unit_cap}\s*】",
-                rf"(?:宽度|(?<![*×xX])宽)\s*【?\s*(\d+(?:\.\d+)?)\s*{unit_cap}\s*】?",
+                rf"【\s*(?:宽度|(?<![长])宽)\s*(\d+(?:\.\d+)?)\s*{unit_cap}\s*】",
+                rf"(?:宽度|(?<![长*×xX])宽)\s*【\s*(\d+(?:\.\d+)?)\s*{unit_cap}\s*】",
+                rf"(?:宽度|(?<![长*×xX])宽)\s*【?\s*(\d+(?:\.\d+)?)\s*{unit_cap}\s*】?",
             ],
         ),
         (
@@ -198,6 +203,8 @@ def _normalize_parsed_dims_units(dims: dict[str, float], text: str) -> dict[str,
             continue
         for pat in patterns:
             m = re.search(pat, text, re.I)
+            if m and key == "w" and _is_outer_dim_label_inside_lw_pair(text, m):
+                continue
             if m:
                 out[key] = _val_to_cm(float(m.group(1)), m.groupdict().get("unit"))
                 break
@@ -251,6 +258,16 @@ def _apply_merged_dimension_tags(dims: dict[str, float], text: str) -> None:
         ("宽高", "w", "h"),
         ("长高", "l", "h"),
     ):
+        m_bracket_pair = re.search(
+            rf"{label}\s*【\s*(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*(cm|CM|厘米|mm|MM|毫米)?\s*】",
+            text,
+            re.I,
+        )
+        if m_bracket_pair:
+            u = m_bracket_pair.group(3) if m_bracket_pair.lastindex and m_bracket_pair.lastindex >= 3 else None
+            dims[k1] = _val_to_cm(float(m_bracket_pair.group(1)), u)
+            dims[k2] = _val_to_cm(float(m_bracket_pair.group(2)), u)
+            continue
         m_pair = re.search(
             rf"{label}\s*(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*{unit}",
             text,
@@ -380,6 +397,8 @@ def _parse_dimensions(text: str) -> dict[str, float]:
             dims[key] = _val_to_cm(float(m.group(2)), u)
 
     for m in _OUTER_LABEL_BRACKET_RE.finditer(text):
+        if _is_outer_dim_label_inside_lw_pair(text, m):
+            continue
         label = m.group(1)
         g0 = m.group(0) or ""
         u = "mm" if re.search(r"mm|毫米", g0, re.I) else None
@@ -387,7 +406,7 @@ def _parse_dimensions(text: str) -> dict[str, float]:
             u = "cm"
         key = _LABEL_TO_KEY.get(label) or _LABEL_TO_KEY.get(label[:1])
         if key:
-            dims[key] = _val_to_cm(float(m.group(2)), u)
+            dims.setdefault(key, _val_to_cm(float(m.group(2)), u))
 
     for m in _LABELED_DIM_RE.finditer(text):
         label, val = m.group(1), float(m.group(2))
@@ -510,8 +529,8 @@ def _parse_dimensions(text: str) -> dict[str, float]:
             text,
             re.I,
         ):
-            prefix = text[max(0, m.start() - 4) : m.start()]
-            if re.search(r"(?:长宽|宽高|长高)$", prefix):
+            prefix = text[max(0, m.start() - 8) : m.start()]
+            if re.search(r"(?:长宽|宽高|长高|长\s*[*×xX]?\s*宽)\s*【?$", prefix, re.I):
                 continue
             dims.setdefault("l", float(m.group(1)))
             dims.setdefault("w", float(m.group(2)))
@@ -546,18 +565,22 @@ def _parse_dimensions(text: str) -> dict[str, float]:
             re.I,
         )
         if m_wh:
-            has_long = bool(
-                re.search(
-                    r"(?:长度|长)\s*[:：【\d]|【\s*(?:长度|长)",
-                    text,
-                    re.I,
+            prefix = text[max(0, m_wh.start() - 8) : m_wh.start()]
+            if re.search(r"(?:长宽|长高)\s*【\s*$", prefix, re.I):
+                pass
+            else:
+                has_long = bool(
+                    re.search(
+                        r"(?:长度|长)\s*[:：【\d]|【\s*(?:长度|长)",
+                        text,
+                        re.I,
+                    )
                 )
-            )
-            has_wh = bool(re.search(r"宽|高", text, re.I))
-            if has_wh or not has_long:
-                dims["w"] = _val_to_cm(float(m_wh.group(1)), "cm")
-                dims["h"] = _val_to_cm(float(m_wh.group(2)), "cm")
-                dims.pop("l", None)
+                has_wh = bool(re.search(r"宽|高", text, re.I))
+                if has_wh or not has_long:
+                    dims["w"] = _val_to_cm(float(m_wh.group(1)), "cm")
+                    dims["h"] = _val_to_cm(float(m_wh.group(2)), "cm")
+                    dims.pop("l", None)
 
     dims = _apply_mm_size_heuristic(dims, text)
     return _normalize_parsed_dims_units(dims, text)
@@ -669,6 +692,21 @@ def parse_quantity_info(text: str, platform_qty: int = 0) -> dict[str, Any]:
             "qty_source": "bracket_qty",
         }
 
+    m_tail = re.search(
+        r"(?:cm|CM|厘米|mm|MM|毫米|】)\s*(\d+)\s*个",
+        raw,
+        re.I,
+    )
+    if m_tail:
+        n = int(m_tail.group(1))
+        return {
+            "total_qty": n,
+            "order_qty": n,
+            "per_group_qty": 0,
+            "qty_label": f"×{n}个",
+            "qty_source": "tail_qty",
+        }
+
     per_group, bundle_label = parse_group_info(raw)
     plat = int(platform_qty or 0)
     if per_group > 0:
@@ -719,50 +757,20 @@ def is_airbox_product(attrs: str) -> bool:
     return True
 
 
-def _kw_in_attrs(kw: str, text: str) -> bool:
-    if not kw or not text:
-        return False
-    if kw.isascii():
-        return kw.upper() in text.upper()
-    return kw in text
-
-
-def match_airbox_material(text: str) -> str:
-    """飞机盒：按优先级取材料；无关键词时由 match_production_material 默认「特硬」。"""
-    t = (text or "").strip()
-    if not t:
-        return ""
-    raw: list[tuple[int, str, str]] = []
-    for rank, label, kws in _AIRBOX_MATERIAL_PRIORITY:
-        for kw in sorted(kws, key=len, reverse=True):
-            if _kw_in_attrs(kw, t):
-                raw.append((rank, label, kw))
-                break
-    if not raw:
-        return ""
-    kept: list[tuple[int, str, int]] = []
-    for rank, label, kw in raw:
-        if any(
-            len(kw2) > len(kw) and kw in kw2 and _kw_in_attrs(kw2, t)
-            for _, _, kw2 in raw
-        ):
-            continue
-        kept.append((rank, label, len(kw)))
-    if not kept:
-        return ""
-    kept.sort(key=lambda x: (x[0], -x[2]))
-    return kept[0][1]
-
-
 def match_production_material(text: str, mapping: list[dict] | None = None) -> str:
-    """仅从 SKU 属性解析材料；飞机盒走优先级表（无关键词默认特硬），纸箱走硬编码规则。"""
-    import hardcoded_config as hc
+    """材料仅走 production_material_mapping（报价参数编辑 / data.json），无硬编码降级。"""
+    import config_json as cfg
 
     raw = platform_spec_raw(text)
     parse_text = sanitize_sku_attrs(raw) or raw
-    if is_airbox_product(raw):
-        return match_airbox_material(parse_text) or "特硬"
-    return hc.match_carton_material(parse_text)
+    rows = mapping
+    if rows is None:
+        try:
+            overlay = cfg.read_permission_overlay()
+            rows = overlay.get("production_material_mapping") or []
+        except Exception:
+            rows = []
+    return cfg.match_material_from_mapping(parse_text, rows) or ""
 
 
 def _is_placeholder_spec(attrs: str) -> bool:
@@ -805,7 +813,7 @@ def build_production_spec(
     qty: int = 0,
     *,
     title: str = "",
-    material_mapping: list[dict] | None = None,  # 已废弃，仅保留参数兼容
+    material_mapping: list[dict] | None = None,
 ) -> dict[str, Any]:
     """
     四层展示（C）之解析数据：
@@ -825,7 +833,7 @@ def build_production_spec(
 
     qinfo = parse_quantity_info(parse_text, qty)
     diam = _parse_diameter_type(parse_text)
-    material = match_production_material(parse_text)
+    material = match_production_material(parse_text, material_mapping)
     color = _parse_color(parse_text, material)
 
     if not dims_ok:
