@@ -248,8 +248,18 @@ def main() -> None:
         1,
     )
 
-    text = text.replace("</script>\n\n</body>", BATCH_CALC_FN + "\n</script>\n\n</body>", 1)
-    text = text.replace("</body>", '<script src="/static/prod_ui.js"></script>\n</body>', 1)
+    if "batchCalcMaterialOrders" not in text:
+        text = text.replace(
+            "</body>",
+            "<script>\n" + BATCH_CALC_FN.strip() + "\n</script>\n</body>",
+            1,
+        )
+    if "/static/prod_ui.js" not in text:
+        text = text.replace(
+            "</body>",
+            '<script src="/static/prod_ui.js?v=20260520c"></script>\n</body>',
+            1,
+        )
 
     OUT.write_text(text, encoding="utf-8", newline="\n")
     t = OUT.read_text(encoding="utf-8")

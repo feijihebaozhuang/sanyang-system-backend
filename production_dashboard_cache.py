@@ -65,12 +65,25 @@ def _match_inventory(
     return False, 0, "无匹配库存"
 
 
+def _order_type_to_dimoldb_pt(order_type: str) -> str:
+    ot = (order_type or "").strip()
+    if ot in ("扣底盒", "双插盒", "koudi", "shuangcha"):
+        return "koudi" if ot in ("扣底盒", "koudi") else "shuangcha"
+    if ot in ("长方形飞机盒", "juxing", "带扣飞机盒", "daikou"):
+        return "juxing" if ot in ("长方形飞机盒", "juxing") else "daikou"
+    if ot in ("纸箱", "qita"):
+        return "qita"
+    return "zhengsquare"
+
+
 def _match_dimoldb_for_line(
     ps: dict[str, Any],
     order_type: str,
     dimoldb_rows: list[dict],
+    dm_index: dict | None = None,
 ) -> dict[str, Any]:
     """按尺寸匹配刀模库，返回展示用 dimoldb_code（code/id，非尺寸 name）。"""
+    import dimoldb_store as ds
     import material_calc as mcalc
 
     attrs = ps.get("platform_spec_raw") or ""
@@ -79,26 +92,46 @@ def _match_dimoldb_for_line(
     l, w, h = ps.get("length"), ps.get("width"), ps.get("height")
     if not l or not w:
         return {"skip": False, "matched": False, "dimoldb_id": "", "dimoldb_code": ""}
-    dm = mcalc.match_dimoldb(
-        float(l),
-        float(w),
-        float(h or 0),
-        dimoldb_rows or [],
-        order_type,
-    )
-    if dm.get("skip"):
-        return {"skip": True, "matched": False, "dimoldb_id": "", "dimoldb_code": ""}
-    if dm.get("success"):
-        code = (dm.get("code") or dm.get("display_code") or "").strip()
-        if not code:
-            code = str(dm.get("dimoldb_id") or "").strip()
-        return {
-            "skip": False,
-            "matched": True,
-            "dimoldb_id": dm.get("dimoldb_id") or "",
-            "dimoldb_code": code,
+    best_row: dict[str, Any] | None = None
+    if dimoldb_rows:
+        if dm_index is None:
+            dm_index = ds.build_dim_match_index(dimoldb_rows)
+        fake_item = {
+            "length": l,
+            "width": w,
+            "height": h or 0,
+            "product_type": _order_type_to_dimoldb_pt(order_type),
         }
-    return {"skip": False, "matched": False, "dimoldb_id": "", "dimoldb_code": ""}
+        hits = ds.match_dimoldb_for_inventory_item(
+            fake_item, dm_index, infer_fn=ds.infer_type_class
+        )
+        if hits:
+            best_row = hits[0]
+    if not best_row:
+        dm = mcalc.match_dimoldb(
+            float(l),
+            float(w),
+            float(h or 0),
+            dimoldb_rows or [],
+            order_type,
+        )
+        if dm.get("success"):
+            best_row = dm.get("row") or {}
+            code = (dm.get("code") or dm.get("display_code") or "").strip()
+            return {
+                "skip": False,
+                "matched": True,
+                "dimoldb_id": dm.get("dimoldb_id") or "",
+                "dimoldb_code": code or str(dm.get("dimoldb_id") or ""),
+            }
+        return {"skip": False, "matched": False, "dimoldb_id": "", "dimoldb_code": ""}
+    code = (best_row.get("code") or "").strip() or str(best_row.get("id") or "")
+    return {
+        "skip": False,
+        "matched": True,
+        "dimoldb_id": str(best_row.get("id") or ""),
+        "dimoldb_code": code,
+    }
 
 
 def rebuild_dashboard_cache(
@@ -151,6 +184,9 @@ def rebuild_dashboard_cache(
             dimoldb_rows = load_dimoldb_fn() or []
         except Exception:
             dimoldb_rows = []
+    import dimoldb_store as ds
+
+    dm_index = ds.build_dim_match_index(dimoldb_rows) if dimoldb_rows else {}
 
     all_orders: list[dict] = []
     try:
@@ -236,7 +272,9 @@ def rebuild_dashboard_cache(
             )
             real_qty = int(ps.get("qty") or order_qty)
             has_stock, stock_qty, stock_info = _match_inventory(raw_attrs, real_qty, inv_rows)
-            dm_info = _match_dimoldb_for_line(ps, order_type, dimoldb_rows)
+            dm_info = _match_dimoldb_for_line(
+                ps, order_type, dimoldb_rows, dm_index
+            )
             cached_mc = mcalc.get_cached_line(so_id, line_idx)
             mc_status = (cached_mc or {}).get("status") or "pending"
             if cached_mc and (

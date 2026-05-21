@@ -36,13 +36,6 @@
                     totalPages = data.total_pages || 1;
                     page += 1;
                 }
-                if (
-                    window._prodDashboardOrders &&
-                    window._prodDashboardOrders.length &&
-                    typeof renderProdDashboard === 'function'
-                ) {
-                    renderProdDashboard(window._prodDashboardOrders);
-                }
             } catch (e) {
                 /* ignore */
             }
@@ -95,31 +88,61 @@
         }
     };
 
+    var _prodPagerDelegated = false;
+    window.bindProdPagerEvents = function () {
+        if (_prodPagerDelegated) return;
+        var root = document.getElementById('prodPagination');
+        if (!root) return;
+        _prodPagerDelegated = true;
+        root.addEventListener('click', function (ev) {
+            var btn = ev.target.closest('[data-prod-page]');
+            if (!btn || btn.disabled) return;
+            ev.preventDefault();
+            prodGoPage(btn.getAttribute('data-prod-page'));
+        });
+        root.addEventListener('change', function (ev) {
+            if (ev.target && ev.target.id === 'prodPageSizeSel') {
+                prodChangePageSize(ev.target.value);
+            }
+        });
+        root.addEventListener('keydown', function (ev) {
+            if (
+                ev.target &&
+                ev.target.id === 'prodPageInput' &&
+                ev.key === 'Enter'
+            ) {
+                ev.preventDefault();
+                prodGoPageInput();
+            }
+        });
+    };
+
     window.prodRenderPagination = function () {
         var el = document.getElementById('prodPagination');
         if (!el) return;
+        bindProdPagerEvents();
         var p = window._prodPage;
         var tp = window._prodTotalPages;
         el.innerHTML =
             '<div class="prod-pager">' +
-            '<button type="button" ' +
-            (p <= 1 ? 'disabled' : '') +
-            ' onclick="prodGoPage(' +
+            '<button type="button" data-prod-page="' +
             (p - 1) +
-            ')">上一页</button>' +
+            '" ' +
+            (p <= 1 ? 'disabled' : '') +
+            '>上一页</button>' +
             '<span>第 <input type="number" id="prodPageInput" min="1" max="' +
             tp +
             '" value="' +
             p +
-            '" style="width:48px;text-align:center;padding:4px;" onkeydown="if(event.key===\'Enter\')prodGoPageInput()"> / ' +
+            '" style="width:48px;text-align:center;padding:4px;"> / ' +
             tp +
             ' 页</span>' +
-            '<button type="button" ' +
-            (p >= tp ? 'disabled' : '') +
-            ' onclick="prodGoPage(' +
+            '<button type="button" data-prod-page="' +
             (p + 1) +
-            ')">下一页</button>' +
-            '<select id="prodPageSizeSel" onchange="prodChangePageSize(this.value)" style="margin-left:8px;padding:4px;">' +
+            '" ' +
+            (p >= tp ? 'disabled' : '') +
+            '>下一页</button>' +
+            '<select id="prodPageSizeSel" style="margin-left:8px;padding:4px;">' +
             [10, 15, 20]
                 .map(function (n) {
                     return (
@@ -135,6 +158,7 @@
                 .join('') +
             '</select></div>';
         el.innerHTML = el.innerHTML.replace(/motion\.div/g, 'div');
+        bindProdPagerEvents();
     };
 
     window.prodGoPage = function (n) {
@@ -844,4 +868,10 @@
             statusEl.textContent = '❌ ' + e.message;
         }
     };
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bindProdPagerEvents);
+    } else {
+        bindProdPagerEvents();
+    }
 })();

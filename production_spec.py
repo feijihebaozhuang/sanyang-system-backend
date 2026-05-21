@@ -36,12 +36,21 @@ _PLATFORM_LABEL_RE = re.compile(
     r"(?:规格|尺寸|材质硬度等级|颜色分类|材质|颜色|硬度等级|硬度)[:：]\s*",
     re.I,
 )
+_LW_SEP = r"[x\*×]"
 _LW_IN_BRACKET_RE = re.compile(
-    r"长\s*x?\s*宽\s*【\s*(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?\s*】",
+    rf"长\s*{_LW_SEP}?\s*宽\s*【\s*(\d+(?:\.\d+)?)\s*[*×xX\*]\s*(\d+(?:\.\d+)?)\s*(cm|CM|厘米|mm|MM|毫米)?\s*】",
     re.I,
 )
 _LW_SPLIT_BRACKET_RE = re.compile(
-    r"长\s*x?\s*宽\s*【\s*(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*】",
+    rf"长\s*{_LW_SEP}?\s*宽\s*【\s*(\d+(?:\.\d+)?)\s*[*×xX\*]\s*(\d+(?:\.\d+)?)\s*】",
+    re.I,
+)
+_LW_REV_BRACKET_RE = re.compile(
+    r"(\d+(?:\.\d+)?)\s*[*×xX\*]\s*(\d+(?:\.\d+)?)\s*【\s*长\s*宽\s*】\s*(cm|CM|厘米|mm|MM|毫米)?",
+    re.I,
+)
+_HEIGHT_NUM_FIRST_RE = re.compile(
+    r"【\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?\s*高\s*】",
     re.I,
 )
 _NUM3_RE = re.compile(
@@ -164,9 +173,9 @@ def _normalize_parsed_dims_units(dims: dict[str, float], text: str) -> dict[str,
         (
             "w",
             [
-                rf"【\s*(?:宽度|宽)\s*(\d+(?:\.\d+)?)\s*{unit_cap}\s*】",
-                rf"(?:宽度|宽)\s*【\s*(\d+(?:\.\d+)?)\s*{unit_cap}\s*】",
-                rf"(?:宽度|宽)\s*【?\s*(\d+(?:\.\d+)?)\s*{unit_cap}\s*】?",
+                rf"【\s*(?:宽度|(?<![*×xX])宽)\s*(\d+(?:\.\d+)?)\s*{unit_cap}\s*】",
+                rf"(?:宽度|(?<![*×xX])宽)\s*【\s*(\d+(?:\.\d+)?)\s*{unit_cap}\s*】",
+                rf"(?:宽度|(?<![*×xX])宽)\s*【?\s*(\d+(?:\.\d+)?)\s*{unit_cap}\s*】?",
             ],
         ),
         (
@@ -307,10 +316,13 @@ def _parse_dimensions(text: str) -> dict[str, float]:
         dims["w"] = float(m_wh_br.group(1))
         dims["h"] = float(m_wh_br.group(2))
 
-    m = _LW_IN_BRACKET_RE.search(text) or _LW_SPLIT_BRACKET_RE.search(text)
-    if m:
-        dims.setdefault("l", float(m.group(1)))
-        dims.setdefault("w", float(m.group(2)))
+    m_lw_in = _LW_IN_BRACKET_RE.search(text)
+    m_lw_split = _LW_SPLIT_BRACKET_RE.search(text) if not m_lw_in else None
+    m_lw_pair = m_lw_in or m_lw_split
+    if m_lw_pair:
+        u = m_lw_pair.group(3) if m_lw_pair.lastindex and m_lw_pair.lastindex >= 3 else None
+        dims.setdefault("l", _val_to_cm(float(m_lw_pair.group(1)), u))
+        dims.setdefault("w", _val_to_cm(float(m_lw_pair.group(2)), u))
 
     m_lw_spec = re.search(
         r"长\s*[*×xX]?\s*宽\s*【\s*(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*】\s*(mm|MM|毫米|cm|CM|厘米)?",
@@ -321,6 +333,25 @@ def _parse_dimensions(text: str) -> dict[str, float]:
         u = m_lw_spec.group(3)
         dims.setdefault("l", _val_to_cm(float(m_lw_spec.group(1)), u))
         dims.setdefault("w", _val_to_cm(float(m_lw_spec.group(2)), u))
+
+    if "l" not in dims or "w" not in dims:
+        m_lw_rev = _LW_REV_BRACKET_RE.search(text)
+        if m_lw_rev:
+            u = m_lw_rev.group(3) if m_lw_rev.lastindex and m_lw_rev.lastindex >= 3 else None
+            dims.setdefault("l", _val_to_cm(float(m_lw_rev.group(1)), u))
+            dims.setdefault("w", _val_to_cm(float(m_lw_rev.group(2)), u))
+    if ("l" not in dims or "w" not in dims) and re.search(
+        r"【\s*长\s*宽\s*】", text, re.I
+    ):
+        m_lw_rev2 = re.search(
+            r"(\d+(?:\.\d+)?)\s*[*×xX\*]\s*(\d+(?:\.\d+)?)\s*【\s*长\s*宽\s*】\s*(cm|CM|厘米|mm|MM|毫米)?",
+            text,
+            re.I,
+        )
+        if m_lw_rev2:
+            u2 = m_lw_rev2.group(3) if m_lw_rev2.lastindex and m_lw_rev2.lastindex >= 3 else None
+            dims.setdefault("l", _val_to_cm(float(m_lw_rev2.group(1)), u2))
+            dims.setdefault("w", _val_to_cm(float(m_lw_rev2.group(2)), u2))
 
     m_wh_paren = re.search(
         r"[（(]\s*宽\s*x?\s*高\s*[）)]\s*(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?",
@@ -352,6 +383,7 @@ def _parse_dimensions(text: str) -> dict[str, float]:
     for hm in (
         _HEIGHT_BRACKET_RE.search(text),
         _HEIGHT_TAG_ONLY_RE.search(text),
+        _HEIGHT_NUM_FIRST_RE.search(text),
         re.search(
             r"(\d+(?:\.\d+)?)\s*(?:mm|MM|毫米)\s*【\s*高\s*】",
             text,
@@ -366,6 +398,8 @@ def _parse_dimensions(text: str) -> dict[str, float]:
         if hm:
             g0 = hm.group(0) or ""
             u = "mm" if re.search(r"mm|毫米", g0, re.I) else None
+            if not u and re.search(r"cm|厘米", g0, re.I):
+                u = "cm"
             dims["h"] = _val_to_cm(float(hm.group(1)), u)
             break
 
@@ -387,13 +421,11 @@ def _parse_dimensions(text: str) -> dict[str, float]:
                 dims["h"] = float(m.group(1))
                 break
     if "h" not in dims:
-        m = re.search(
-            r"【\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?\s*高\s*】",
-            text,
-            re.I,
-        )
+        m = _HEIGHT_NUM_FIRST_RE.search(text)
         if m:
-            dims["h"] = float(m.group(1))
+            g0 = m.group(0) or ""
+            u = "mm" if re.search(r"mm|毫米", g0, re.I) else None
+            dims["h"] = _val_to_cm(float(m.group(1)), u)
     if "h" not in dims:
         m = re.search(
             r"(?:高度|高)\s*[:：]\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?",
