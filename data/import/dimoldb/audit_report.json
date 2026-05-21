@@ -1,0 +1,210 @@
+[
+  {
+    "file": "d:\\Desktop\\sanyang-system\\data\\import\\dimoldb\\全量刀模_第1批(7列).xlsx",
+    "format": "7",
+    "headers": [
+      "产品类型",
+      "名称",
+      "编码",
+      "备注",
+      "长(cm)",
+      "宽(cm)",
+      "高(cm)"
+    ],
+    "col_map": {
+      "product_type": "产品类型",
+      "name": "名称",
+      "code": "编码",
+      "remark": "备注",
+      "length": "长(cm)",
+      "width": "宽(cm)",
+      "height": "高(cm)"
+    },
+    "rows": 5000,
+    "skipped": 0
+  },
+  {
+    "file": "d:\\Desktop\\sanyang-system\\data\\import\\dimoldb\\全量刀模_第2批(7列).xlsx",
+    "format": "7",
+    "headers": [
+      "产品类型",
+      "名称",
+      "编码",
+      "备注",
+      "长(cm)",
+      "宽(cm)",
+      "高(cm)"
+    ],
+    "col_map": {
+      "product_type": "产品类型",
+      "name": "名称",
+      "code": "编码",
+      "remark": "备注",
+      "length": "长(cm)",
+      "width": "宽(cm)",
+      "height": "高(cm)"
+    },
+    "rows": 5000,
+    "skipped": 0
+  },
+  {
+    "file": "d:\\Desktop\\sanyang-system\\data\\import\\dimoldb\\全量刀模_第3批(7列).xlsx",
+    "format": "7",
+    "headers": [
+      "产品类型",
+      "名称",
+      "编码",
+      "备注",
+      "长(cm)",
+      "宽(cm)",
+      "高(cm)"
+    ],
+    "col_map": {
+      "product_type": "产品类型",
+      "name": "名称",
+      "code": "编码",
+      "remark": "备注",
+      "length": "长(cm)",
+      "width": "宽(cm)",
+      "height": "高(cm)"
+    },
+    "rows": 5000,
+    "skipped": 0
+  },
+  {
+    "file": "d:\\Desktop\\sanyang-system\\data\\import\\dimoldb\\全量刀模_第4批(7列).xlsx",
+    "format": "7",
+    "headers": [
+      "产品类型",
+      "名称",
+      "编码",
+      "备注",
+      "长(cm)",
+      "宽(cm)",
+      "高(cm)"
+    ],
+    "col_map": {
+      "product_type": "产品类型",
+      "name": "名称",
+      "code": "编码",
+      "remark": "备注",
+      "length": "长(cm)",
+      "width": "宽(cm)",
+      "height": "高(cm)"
+    },
+    "rows": 3114,
+    "skipped": 0
+  },
+  {
+    "file": "d:\\Desktop\\sanyang-system\\data\\import\\dimoldb\\全量刀模v2_第1批9列.xlsx",
+    "format": "9",
+    "headers": [
+      "产品类型",
+      "名称",
+      "编码",
+      "生产规格",
+      "快麦商品映射",
+      "备注",
+      "长(cm)",
+      "宽(cm)",
+      "高(cm)"
+    ],
+    "col_map": {
+      "product_type": "产品类型",
+      "name": "名称",
+      "code": "编码",
+      "production_spec": "生产规格",
+      "km_mapping_code": "快麦商品映射",
+      "remark": "备注",
+      "length": "长(cm)",
+      "width": "宽(cm)",
+      "height": "高(cm)"
+    },
+    "rows": 5000,
+    "skipped": 0
+  },
+  {
+    "file": "d:\\Desktop\\sanyang-system\\data\\import\\dimoldb\\全量刀模v2_第2批9列.xlsx",
+    "format": "9",
+    "headers": [
+      "产品类型",
+      "名称",
+      "编码",
+      "生产规格",
+      "快麦商品映射",
+      "备注",
+      "长(cm)",
+      "宽(cm)",
+      "高(cm)"
+    ],
+    "col_map": {
+      "product_type": "产品类型",
+      "name": "名称",
+      "code": "编码",
+      "production_spec": "生产规格",
+      "km_mapping_code": "快麦商品映射",
+      "remark": "备注",
+      "length": "长(cm)",
+      "width": "宽(cm)",
+      "height": "高(cm)"
+    },
+    "rows": 5000,
+    "skipped": 0
+  },
+  {
+    "file": "d:\\Desktop\\sanyang-system\\data\\import\\dimoldb\\全量刀模v2_第3批9列.xlsx",
+    "format": "9",
+    "headers": [
+      "产品类型",
+      "名称",
+      "编码",
+      "生产规格",
+      "快麦商品映射",
+      "备注",
+      "长(cm)",
+      "宽(cm)",
+      "高(cm)"
+    ],
+    "col_map": {
+      "product_type": "产品类型",
+      "name": "名称",
+      "code": "编码",
+      "production_spec": "生产规格",
+      "km_mapping_code": "快麦商品映射",
+      "remark": "备注",
+      "length": "长(cm)",
+      "width": "宽(cm)",
+      "height": "高(cm)"
+    },
+    "rows": 5000,
+    "skipped": 0
+  },
+  {
+    "file": "d:\\Desktop\\sanyang-system\\data\\import\\dimoldb\\全量刀模v2_第4批9列.xlsx",
+    "format": "9",
+    "headers": [
+      "产品类型",
+      "名称",
+      "编码",
+      "生产规格",
+      "快麦商品映射",
+      "备注",
+      "长(cm)",
+      "宽(cm)",
+      "高(cm)"
+    ],
+    "col_map": {
+      "product_type": "产品类型",
+      "name": "名称",
+      "code": "编码",
+      "production_spec": "生产规格",
+      "km_mapping_code": "快麦商品映射",
+      "remark": "备注",
+      "length": "长(cm)",
+      "width": "宽(cm)",
+      "height": "高(cm)"
+    },
+    "rows": 3114,
+    "skipped": 0
+  }
+]

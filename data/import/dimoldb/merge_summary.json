@@ -1,0 +1,8 @@
+{
+  "merged_total": 18111,
+  "no_code": 0,
+  "duplicate_rows_collapsed": 18117,
+  "source_rows_sum": 36228,
+  "strategy": "7列1-4批打底，v2九列1-4批覆盖同编码",
+  "output": "D:\\Desktop\\sanyang-system\\data\\import\\dimoldb\\dimoldb_merged.json"
+}
