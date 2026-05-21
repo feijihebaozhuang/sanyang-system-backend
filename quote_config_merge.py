@@ -6,6 +6,16 @@ import copy
 from typing import Any
 
 
+def _deep_merge(target: dict, patch: dict) -> dict:
+    """只更新 patch 里出现的键，保留 target 其余字段（避免 price patch 清掉 name/gram_weight）。"""
+    for k, v in patch.items():
+        if isinstance(v, dict) and isinstance(target.get(k), dict):
+            _deep_merge(target[k], v)
+        else:
+            target[k] = copy.deepcopy(v) if isinstance(v, dict) else v
+    return target
+
+
 def _normalize_material_row(row: dict) -> dict:
     name = (row.get("material_name") or row.get("label") or "").strip()
     key = (row.get("material_key") or name or "").strip()
@@ -31,17 +41,11 @@ def merge_quote_config(existing: dict | None, patch: dict | None) -> dict:
                 for row in val
                 if isinstance(row, dict)
             ]
-        elif isinstance(val, dict) and isinstance(base.get(key), dict):
-            sub = base[key]
-            for sk, sv in val.items():
-                if isinstance(sv, dict) and isinstance(sub.get(sk), dict):
-                    for mk, mv in sv.items():
-                        if isinstance(mv, dict) and isinstance(sub[sk].get(mk), dict):
-                            sub[sk][mk].update(mv)
-                        else:
-                            sub[sk][mk] = mv
-                else:
-                    sub[sk] = sv
+        elif isinstance(val, dict):
+            if isinstance(base.get(key), dict):
+                _deep_merge(base[key], val)
+            else:
+                base[key] = copy.deepcopy(val)
         else:
             base[key] = val
     return base
