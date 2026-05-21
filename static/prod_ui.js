@@ -759,21 +759,15 @@
             var msg =
                 err.indexOf('缺料') === 0
                     ? err
-                    : '缺料：' + (err || '未找到合适纸板规格，请员工自行决定');
-            var pl = mc.paper_l_inch;
-            var pw = mc.paper_w_inch;
-            var extra =
-                pl && pw
-                    ? '（需纸长' +
-                      prodEscHtml(String(pl)) +
-                      '×纸度' +
-                      prodEscHtml(String(pw)) +
-                      '英寸）'
-                    : '';
+                    : err
+                      ? '缺料：' + err
+                      : '';
+            if (!msg) {
+                return '';
+            }
             return (
                 '<div style="font-size:10px;color:#cf1322;font-weight:600;margin-top:2px;line-height:1.45;">⚠️' +
                 prodEscHtml(msg) +
-                extra +
                 '</div>'
             );
         }

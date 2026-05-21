@@ -767,13 +767,46 @@ _TITLE_LENGTH_RANGE_RE = re.compile(
 )
 
 
-def _sanitize_title_for_spec(title: str) -> str:
-    """去掉标题营销尺寸噪声（如「18宽」「长18—35」），避免覆盖 platformSpec 长宽。"""
+def _material_keywords_from_mapping(
+    mapping: list[dict] | None,
+) -> list[str]:
+    """报价 material_mapping 中的 label/keywords，用于从标题剔除材质词（避免「特硬」误判 D6D）。"""
+    seen: set[str] = set()
+    out: list[str] = []
+    for row in mapping or []:
+        if not isinstance(row, dict):
+            continue
+        label = (row.get("label") or row.get("material_name") or "").strip()
+        if len(label) >= 2 and label.lower() not in seen:
+            seen.add(label.lower())
+            out.append(label)
+        for kw in (row.get("keywords") or "").split(","):
+            kw = kw.strip()
+            if len(kw) >= 2 and kw.lower() not in seen:
+                seen.add(kw.lower())
+                out.append(kw)
+    return sorted(out, key=len, reverse=True)
+
+
+def _strip_material_keywords(text: str, mapping: list[dict] | None) -> str:
+    t = (text or "").strip()
+    if not t:
+        return ""
+    for kw in _material_keywords_from_mapping(mapping):
+        t = re.sub(re.escape(kw), " ", t, flags=re.I)
+    return re.sub(r"\s{2,}", " ", t).strip()
+
+
+def _sanitize_title_for_spec(
+    title: str, material_mapping: list[dict] | None = None
+) -> str:
+    """去掉标题营销尺寸噪声与材质关键词，避免覆盖 platformSpec 长宽/材质。"""
     t = (title or "").strip()
     if not t:
         return ""
     t = _TITLE_SIZE_NOISE_RE.sub(" ", t)
     t = _TITLE_LENGTH_RANGE_RE.sub(" ", t)
+    t = _strip_material_keywords(t, material_mapping)
     return re.sub(r"\s{2,}", " ", t).strip()
 
 
@@ -848,13 +881,14 @@ def build_production_spec(
     raw = platform_spec_raw(attrs)
     line1 = raw
     attrs_have_lw = _attrs_have_lw_size(raw)
-    t = _sanitize_title_for_spec(title)
+    t = _sanitize_title_for_spec(title, material_mapping)
     parse_text = raw
     if t and t not in parse_text and not attrs_have_lw:
         parse_text = f"{t} {parse_text}".strip()
 
-    mat_text = sanitize_sku_attrs(raw) or raw
-    if t:
+    attrs_mat_src = sanitize_sku_attrs(raw) or raw
+    mat_text = attrs_mat_src
+    if t and not attrs_have_lw:
         mat_text = f"{t} {mat_text}".strip()
 
     dims = _parse_dimensions(parse_text)
@@ -863,7 +897,9 @@ def build_production_spec(
 
     qinfo = parse_quantity_info(parse_text, qty)
     diam = _parse_diameter_type(parse_text)
-    material = match_production_material(mat_text, material_mapping)
+    material = match_production_material(
+        attrs_mat_src if attrs_have_lw else mat_text, material_mapping
+    )
     color_src = raw if attrs_have_lw else mat_text
     color = _parse_color(color_src, material)
 
