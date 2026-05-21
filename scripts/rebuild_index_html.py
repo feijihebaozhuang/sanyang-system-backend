@@ -254,18 +254,40 @@ def main() -> None:
             "<script>\n" + BATCH_CALC_FN.strip() + "\n</script>\n</body>",
             1,
         )
-    if "/static/prod_ui.js" not in text:
-        text = text.replace(
-            "</body>",
-            '<script src="/static/prod_ui.js?v=20260520c"></script>\n</body>',
-            1,
-        )
+    import re as _re
 
-    OUT.write_text(text, encoding="utf-8", newline="\n")
-    t = OUT.read_text(encoding="utf-8")
+    prod_ui_ver = "20260521b"
+    m = _re.search(r'/static/prod_ui\.js\?v=([\w]+)', PROD.read_text(encoding="utf-8"))
+    if m:
+        prod_ui_ver = m.group(1)
+    batch_block = (
+        "<script>\n" + BATCH_CALC_FN.strip() + "\n</script>\n"
+        f'<script src="/static/prod_ui.js?v={prod_ui_ver}"></script>\n'
+    )
+    # 去掉旧版尾部脚本，避免重复或乱码片段
+    text = _re.sub(
+        r"<script>\s*async function batchCalcMaterialOrders[\s\S]*?</script>\s*",
+        "",
+        text,
+        count=1,
+    )
+    text = _re.sub(
+        r'<script src="/static/prod_ui\.js[^"]*"></script>\s*',
+        "",
+        text,
+    )
+    if not text.rstrip().endswith("</html>"):
+        raise SystemExit("index 模板结构异常：缺少 </html>")
+    text = text.replace("</body>", batch_block + "</body>", 1)
+
+    OUT.write_bytes(text.encode("utf-8"))
+    raw = OUT.read_bytes()
+    if b"\xe4\xb8\x89\xe7\xbe\x8a" not in raw:  # 「三羊」UTF-8
+        raise SystemExit("index.html 编码校验失败：未找到「三羊」，禁止提交乱码文件")
+    t = raw.decode("utf-8")
     cjk = sum(1 for c in t if "\u4e00" <= c <= "\u9fff")
     bad = t.count("\ufffd")
-    print(f"wrote {OUT.name}: U+FFFD={bad} CJK={cjk} bytes={len(t.encode('utf-8'))}")
+    print(f"wrote {OUT.name}: U+FFFD={bad} CJK={cjk} bytes={len(raw)} prod_ui={prod_ui_ver}")
     if bad:
         raise SystemExit(1)
 
