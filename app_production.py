@@ -1612,19 +1612,81 @@ def scan_workers():
 QUOTE_DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'quote_data.json')
 
 def load_quote_data():
+    """优先 MySQL quote_config，与客服端一致；失败时回退 quote_data.json。"""
     try:
-        with open(QUOTE_DATA_FILE, 'r', encoding='utf-8') as f:
+        db = get_db()
+        cur = db.cursor()
+        cur.execute("SELECT config_key, config_value FROM quote_config")
+        rows = cur.fetchall()
+        cur.close()
+        db.close()
+        result = {}
+        for r in rows:
+            key = r["config_key"]
+            val = r["config_value"]
+            if isinstance(val, str):
+                try:
+                    val = json.loads(val)
+                except Exception:
+                    pass
+            result[key] = val
+        if result:
+            return result
+    except Exception as e:
+        print(f"[load_quote_data] MySQL: {e}")
+    try:
+        with open(QUOTE_DATA_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-    except:
+    except Exception:
         return None
 
+
 def save_quote_data(qd):
+    """写入 MySQL quote_config，并同步 quote_data.json 备份。"""
+    ok_mysql = False
     try:
-        with open(QUOTE_DATA_FILE, 'w', encoding='utf-8') as f:
+        db = get_db()
+        cur = db.cursor()
+        for key, val in qd.items():
+            cur.execute(
+                "INSERT INTO quote_config (config_key, config_value) VALUES (%s,%s) "
+                "ON DUPLICATE KEY UPDATE config_value=VALUES(config_value)",
+                (key, json.dumps(val, ensure_ascii=False)),
+            )
+        cur.close()
+        db.close()
+        ok_mysql = True
+    except Exception as e:
+        print(f"[save_quote_data] MySQL: {e}")
+    ok_file = False
+    try:
+        with open(QUOTE_DATA_FILE, "w", encoding="utf-8") as f:
             json.dump(qd, f, ensure_ascii=False, indent=2)
-        return True
-    except:
-        return False
+        ok_file = True
+    except Exception as e:
+        print(f"[save_quote_data] file: {e}")
+    return ok_mysql or ok_file
+
+
+def _quote_material_mapping_for_spec() -> list[dict]:
+    """报价参数 material_mapping → 打单/算料匹配（兼容 material_name / label）。"""
+    rows = (load_quote_data() or {}).get("material_mapping") or []
+    out: list[dict] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        label = (row.get("material_name") or row.get("label") or "").strip()
+        if not label:
+            continue
+        out.append(
+            {
+                "label": label,
+                "keywords": (row.get("keywords") or "").strip(),
+                "material_name": label,
+                "material_key": row.get("material_key") or "",
+            }
+        )
+    return out
 
 
 def ceil_to_half(val):
@@ -2012,13 +2074,11 @@ def calc_carton(length, width, height, qty, material_key, quote_data):
 
 @app.route('/api/quote_data')
 def get_quote_data():
-    """返回报价基础数据（保持JSON key顺序）"""
-    try:
-        with open(QUOTE_DATA_FILE, 'r', encoding='utf-8') as f:
-            raw = f.read()
-        return '{"success":true,"data":' + raw + '}', 200, {'Content-Type': 'application/json'}
-    except:
+    """返回报价基础数据（MySQL quote_config 优先）。"""
+    qd = load_quote_data()
+    if not qd:
         return jsonify({"success": False, "error": "报价数据未加载"})
+    return jsonify({"success": True, "data": qd})
 
 @app.route('/api/quote/save_config', methods=['POST'])
 def save_quote_config():
@@ -3972,7 +4032,7 @@ def _run_auto_material_calc():
             quote_data=load_quote_data() or {},
             load_raw_fn=load_raw_data,
             load_dimoldb_fn=load_dimoldb,
-            material_mapping=_production_material_mapping(),
+            material_mapping=_quote_material_mapping_for_spec(),
             mark_flow=True,
             db_config=DB_CONFIG,
             processes=_permission_data.get("processes", []),
@@ -4059,7 +4119,7 @@ def _rebuild_prod_dashboard_cache():
     return _prod_dash_cache.rebuild_dashboard_cache(
         orders_cache_file=ORDERS_CACHE_FILE,
         permission_data=_permission_data,
-        material_mapping=_production_material_mapping(),
+        material_mapping=_quote_material_mapping_for_spec(),
         load_inventory_fn=load_inventory,
         load_dimoldb_fn=load_dimoldb,
         load_cache_orders_fn=lambda: ph.load_cache_orders(_orders_cache_path()),
@@ -4265,7 +4325,7 @@ def _calc_material_for_request(so_id: str, line_index: int, *, mark_flow: bool =
         quote_data=load_quote_data() or {},
         raw_rows=mcalc.load_raw_rows(load_raw_data),
         dimoldb=load_dimoldb(),
-        material_mapping=_production_material_mapping(),
+        material_mapping=_quote_material_mapping_for_spec(),
         mark_flow=mark_flow,
         db_config=DB_CONFIG,
         processes=_permission_data.get("processes", []),

@@ -139,7 +139,7 @@ def match_material_from_mapping(text: str, mapping: list[dict] | None) -> str:
     for row in mapping:
         if not isinstance(row, dict):
             continue
-        label = (row.get("label") or "").strip()
+        label = (row.get("label") or row.get("material_name") or "").strip()
         kws = (row.get("keywords") or "").strip()
         for kw in (k.strip() for k in kws.split(",") if k.strip()):
             kl = kw.lower()

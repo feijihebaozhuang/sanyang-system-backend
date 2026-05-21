@@ -757,6 +757,31 @@ def is_airbox_product(attrs: str) -> bool:
     return True
 
 
+_TITLE_SIZE_NOISE_RE = re.compile(
+    r"(?:\d+(?:\.\d+)?\s*宽|\d+(?:\.\d+)?\s*高|宽\s*\d+(?:\.\d+)?)",
+    re.I,
+)
+_TITLE_LENGTH_RANGE_RE = re.compile(
+    r"(?:长度|长)\s*\d+(?:\.\d+)?(?:\s*[-—－~至]\s*\d+(?:\.\d+)?)?",
+    re.I,
+)
+
+
+def _sanitize_title_for_spec(title: str) -> str:
+    """去掉标题营销尺寸噪声（如「18宽」「长18—35」），避免覆盖 platformSpec 长宽。"""
+    t = (title or "").strip()
+    if not t:
+        return ""
+    t = _TITLE_SIZE_NOISE_RE.sub(" ", t)
+    t = _TITLE_LENGTH_RANGE_RE.sub(" ", t)
+    return re.sub(r"\s{2,}", " ", t).strip()
+
+
+def _attrs_have_lw_size(attrs: str) -> bool:
+    d = _parse_dimensions((attrs or "").strip())
+    return d.get("l") is not None and d.get("w") is not None
+
+
 def match_production_material(text: str, mapping: list[dict] | None = None) -> str:
     """材料仅走 production_material_mapping（报价参数编辑 / data.json），无硬编码降级。"""
     import config_json as cfg
@@ -822,10 +847,15 @@ def build_production_spec(
     """
     raw = platform_spec_raw(attrs)
     line1 = raw
+    attrs_have_lw = _attrs_have_lw_size(raw)
+    t = _sanitize_title_for_spec(title)
     parse_text = raw
-    t = (title or "").strip()
-    if t and t not in parse_text:
+    if t and t not in parse_text and not attrs_have_lw:
         parse_text = f"{t} {parse_text}".strip()
+
+    mat_text = sanitize_sku_attrs(raw) or raw
+    if t:
+        mat_text = f"{t} {mat_text}".strip()
 
     dims = _parse_dimensions(parse_text)
     dim_missing = missing_dimension_labels(dims)
@@ -833,8 +863,9 @@ def build_production_spec(
 
     qinfo = parse_quantity_info(parse_text, qty)
     diam = _parse_diameter_type(parse_text)
-    material = match_production_material(parse_text, material_mapping)
-    color = _parse_color(parse_text, material)
+    material = match_production_material(mat_text, material_mapping)
+    color_src = raw if attrs_have_lw else mat_text
+    color = _parse_color(color_src, material)
 
     if not dims_ok:
         formatted = (

@@ -6,6 +6,17 @@ import copy
 from typing import Any
 
 
+def _normalize_material_row(row: dict) -> dict:
+    name = (row.get("material_name") or row.get("label") or "").strip()
+    key = (row.get("material_key") or name or "").strip()
+    out = dict(row)
+    out["material_name"] = name
+    out["material_key"] = key
+    if name:
+        out.setdefault("label", name)
+    return out
+
+
 def merge_quote_config(existing: dict | None, patch: dict | None) -> dict:
     """合并报价配置：只更新 patch 中出现的字段，保留用户已有 material_mapping 等。"""
     base = copy.deepcopy(existing) if isinstance(existing, dict) else {}
@@ -15,27 +26,11 @@ def merge_quote_config(existing: dict | None, patch: dict | None) -> dict:
         if key == "material_mapping" and isinstance(val, list):
             if not val:
                 continue
-            rows = list(base.get("material_mapping") or [])
-            by_id: dict[str, dict[str, Any]] = {}
-            for i, row in enumerate(rows):
-                if not isinstance(row, dict):
-                    continue
-                rid = str(row.get("material_key") or row.get("material_name") or i)
-                by_id[rid] = row
-            for row in val:
-                if not isinstance(row, dict):
-                    continue
-                rid = str(row.get("material_key") or row.get("material_name") or "")
-                if rid in by_id:
-                    cur = by_id[rid]
-                    if "keywords" in row:
-                        cur["keywords"] = row["keywords"]
-                    if row.get("group"):
-                        cur["group"] = row["group"]
-                else:
-                    rows.append(row)
-                    by_id[rid] = row
-            base["material_mapping"] = rows
+            base["material_mapping"] = [
+                _normalize_material_row(row)
+                for row in val
+                if isinstance(row, dict)
+            ]
         elif isinstance(val, dict) and isinstance(base.get(key), dict):
             sub = base[key]
             for sk, sv in val.items():
