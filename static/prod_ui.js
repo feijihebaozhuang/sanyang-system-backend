@@ -88,31 +88,34 @@
         }
     };
 
-    var _prodPagerDelegated = false;
     window.bindProdPagerEvents = function () {
-        if (_prodPagerDelegated) return;
-        var root = document.getElementById('prodPagination');
-        if (!root) return;
-        _prodPagerDelegated = true;
-        root.addEventListener('click', function (ev) {
-            var btn = ev.target.closest('[data-prod-page]');
-            if (!btn || btn.disabled) return;
-            ev.preventDefault();
-            prodGoPage(btn.getAttribute('data-prod-page'));
-        });
-        root.addEventListener('change', function (ev) {
+        if (window._prodPagerDocBound) return;
+        window._prodPagerDocBound = true;
+        document.addEventListener(
+            'click',
+            function (ev) {
+                var btn = ev.target.closest('[data-prod-page]');
+                if (!btn || btn.disabled) return;
+                if (!btn.closest('#prodPagination')) return;
+                ev.preventDefault();
+                ev.stopPropagation();
+                window.prodGoPage(btn.getAttribute('data-prod-page'));
+            },
+            true
+        );
+        document.addEventListener('change', function (ev) {
             if (ev.target && ev.target.id === 'prodPageSizeSel') {
-                prodChangePageSize(ev.target.value);
+                window.prodChangePageSize(ev.target.value);
             }
         });
-        root.addEventListener('keydown', function (ev) {
+        document.addEventListener('keydown', function (ev) {
             if (
                 ev.target &&
                 ev.target.id === 'prodPageInput' &&
                 ev.key === 'Enter'
             ) {
                 ev.preventDefault();
-                prodGoPageInput();
+                window.prodGoPageInput();
             }
         });
     };
@@ -123,13 +126,17 @@
         bindProdPagerEvents();
         var p = window._prodPage;
         var tp = window._prodTotalPages;
+        var prevP = p - 1;
+        var nextP = p + 1;
         el.innerHTML =
             '<div class="prod-pager">' +
             '<button type="button" data-prod-page="' +
-            (p - 1) +
+            prevP +
             '" ' +
             (p <= 1 ? 'disabled' : '') +
-            '>上一页</button>' +
+            ' onclick="window.prodGoPage(' +
+            prevP +
+            ');return false;">上一页</button>' +
             '<span>第 <input type="number" id="prodPageInput" min="1" max="' +
             tp +
             '" value="' +
@@ -138,10 +145,12 @@
             tp +
             ' 页</span>' +
             '<button type="button" data-prod-page="' +
-            (p + 1) +
+            nextP +
             '" ' +
             (p >= tp ? 'disabled' : '') +
-            '>下一页</button>' +
+            ' onclick="window.prodGoPage(' +
+            nextP +
+            ');return false;">下一页</button>' +
             '<select id="prodPageSizeSel" style="margin-left:8px;padding:4px;">' +
             [10, 15, 20]
                 .map(function (n) {
@@ -166,18 +175,26 @@
         if (isNaN(n) || n < 1) n = 1;
         if (n > window._prodTotalPages) n = window._prodTotalPages;
         window._prodPage = n;
-        loadProdDashboard(false, { forceRefresh: true, skipCache: true });
+        window.loadProdDashboard(false, {
+            forceRefresh: true,
+            skipCache: true,
+            paging: true,
+        });
     };
 
     window.prodGoPageInput = function () {
         var inp = document.getElementById('prodPageInput');
-        prodGoPage(inp ? inp.value : 1);
+        window.prodGoPage(inp ? inp.value : 1);
     };
 
     window.prodChangePageSize = function (v) {
         window._prodPageSize = parseInt(v, 10) || 15;
         window._prodPage = 1;
-        loadProdDashboard(false, { forceRefresh: true, skipCache: true });
+        window.loadProdDashboard(false, {
+            forceRefresh: true,
+            skipCache: true,
+            paging: true,
+        });
     };
 
     window.prodApplyCachedDashboard = function () {
@@ -201,8 +218,6 @@
                     });
                 }
             }
-            renderProdDashboard(data.orders);
-            prodRenderPagination();
             var st = data.stats || {};
             document.getElementById('prodStats').textContent =
                 '共 ' +
@@ -397,21 +412,22 @@
     window.loadProdDashboard = async function (resetPage, options) {
         options = options || {};
         if (resetPage === true) window._prodPage = 1;
-        ensureDimoldbNameMap();
+        window.ensureDimoldbNameMap();
+        var pageWanted = window._prodPage;
         window._prodDashReqSeq = (window._prodDashReqSeq || 0) + 1;
         var reqId = window._prodDashReqSeq;
         var hadCache = false;
-        if (!options.skipCache && window._prodPage === 1) {
-            hadCache = prodApplyCachedDashboard();
+        if (!options.skipCache && !options.paging && window._prodPage === 1) {
+            hadCache = window.prodApplyCachedDashboard();
         }
-        if (!hadCache) {
-            renderProdDashboard([]);
-            var stEl = document.getElementById('prodStats');
-            if (stEl) stEl.textContent = '—';
+        var stEl = document.getElementById('prodStats');
+        if (!hadCache && stEl) {
+            stEl.textContent =
+                '加载第 ' + pageWanted + ' 页…（共 ' + (window._prodTotalPages || '?') + ' 页）';
         }
         try {
-            var qs = prodBuildDashboardQuery();
-            if (options.forceRefresh || window._prodPage > 1) {
+            var qs = window.prodBuildDashboardQuery();
+            if (options.forceRefresh || options.paging || window._prodPage > 1) {
                 qs += (qs ? '&' : '') + 'refresh=1';
             }
             var fetchFn =
@@ -422,11 +438,12 @@
             if (reqId !== window._prodDashReqSeq) return;
             var data = await res.json();
             if (!data.success) throw new Error(data.error || '加载失败');
+            if ((data.page || 1) !== pageWanted) return;
             window._prodMappingData =
                 data.material_mapping || data.production_material_mapping || [];
             window._prodDashboardOrders = data.orders || [];
             window._prodTotalPages = data.total_pages || 1;
-            window._prodPage = data.page || 1;
+            window._prodPage = data.page || pageWanted;
             var shopSel = document.getElementById('prodFilterShop');
             if (shopSel && shopSel.options.length <= 1 && data.filters && data.filters.shops) {
                 data.filters.shops.forEach(function (s) {
@@ -456,14 +473,24 @@
                 ' ｜ 未打印 ' +
                 (st.unprinted || 0) +
                 ' 单';
-            renderProdDashboard(data.orders);
-            prodRenderPagination();
+            window.renderProdDashboard(data.orders);
+            window.prodRenderPagination();
+            var tbl = document.getElementById('prodTable');
+            if (tbl && tbl.closest('.table-wrap')) {
+                tbl.closest('.table-wrap').scrollTop = 0;
+            }
         } catch (e) {
+            if (!hadCache && stEl) {
+                stEl.textContent = '加载失败';
+            }
             if (!hadCache) {
-                document.getElementById('prodTable').innerHTML =
-                    '<tr><td colspan="11" style="color:#e94560;text-align:center;padding:30px;">❌ ' +
-                    e.message +
-                    '</td></tr>';
+                var tblErr = document.getElementById('prodTable');
+                if (tblErr) {
+                    tblErr.innerHTML =
+                        '<tr><td colspan="11" style="color:#e94560;text-align:center;padding:30px;">❌ ' +
+                        e.message +
+                        '</td></tr>';
+                }
             }
         }
     };

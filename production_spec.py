@@ -6,8 +6,10 @@ import re
 from typing import Any
 
 # 【长度18CM】【宽度14CM】【高度5CM】
+_BRACKET_INNER_TAIL = r"[^】]*】"
 _BRACKET_DIM_RE = re.compile(
-    r"【\s*(长度|宽度|高度|长|宽|高)\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?\s*】",
+    r"【\s*(长度|宽度|高度|长|宽|高)\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?\s*"
+    + _BRACKET_INNER_TAIL,
     re.I,
 )
 _LABELED_DIM_RE = re.compile(
@@ -20,7 +22,8 @@ _LENGTH_DASH_RE = re.compile(
     re.I,
 )
 _HEIGHT_BRACKET_RE = re.compile(
-    r"(?:高度|高)\s*【\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?\s*】",
+    r"(?:高度|高)\s*【\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?\s*"
+    + _BRACKET_INNER_TAIL,
     re.I,
 )
 _HEIGHT_TAG_ONLY_RE = re.compile(
@@ -29,7 +32,8 @@ _HEIGHT_TAG_ONLY_RE = re.compile(
 )
 # 长度【28cm】、宽【15cm】、高【6cm】（标签在方括号外）
 _OUTER_LABEL_BRACKET_RE = re.compile(
-    r"(长度|宽度|高度|长|宽|高)\s*【\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?\s*】",
+    r"(长度|宽度|高度|长|宽|高)\s*【\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?\s*"
+    + _BRACKET_INNER_TAIL,
     re.I,
 )
 _PLATFORM_LABEL_RE = re.compile(
@@ -181,8 +185,8 @@ def _normalize_parsed_dims_units(dims: dict[str, float], text: str) -> dict[str,
         (
             "h",
             [
-                rf"【\s*(?:高度|高)\s*(\d+(?:\.\d+)?)\s*{unit_cap}\s*】",
-                rf"(?:高度|高)\s*【\s*(\d+(?:\.\d+)?)\s*{unit_cap}\s*】",
+                rf"【\s*(?:高度|高)\s*(\d+(?:\.\d+)?)\s*{unit_cap}\s*[^】]*】",
+                rf"(?:高度|高)\s*【\s*(\d+(?:\.\d+)?)\s*{unit_cap}\s*[^】]*】",
                 rf"(?:高度|高)\s*(\d+(?:\.\d+)?)\s*{unit_cap}\s*【",
                 rf"(?:高度|高)\s*(\d+(?:\.\d+)?)(?:\s*-\s*\d+(?:\.\d+)?)?\s*(?P<unit>cm|CM|厘米|mm|MM|毫米)(?!\s*个)",
                 rf"【\s*(\d+(?:\.\d+)?)\s*{unit_cap}\s*高\s*】",
@@ -285,11 +289,14 @@ def _extract_lwh_triple_early(text: str) -> dict[str, float]:
     for pat in (
         r"(?:^|[\s;；、])(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*(mm|MM|毫米|cm|CM|厘米)?",
         r"(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*(mm|MM|毫米|cm|CM|厘米)?",
+        r"(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)(mm|MM|毫米)",
     ):
         m = re.search(pat, text, re.I)
         if not m:
             continue
-        u = m.group(4) if m.lastindex and m.lastindex >= 4 else None
+        u = None
+        if m.lastindex and m.lastindex >= 4:
+            u = m.group(4)
         out["l"] = _val_to_cm(float(m.group(1)), u)
         out["w"] = _val_to_cm(float(m.group(2)), u)
         out["h"] = _val_to_cm(float(m.group(3)), u)
@@ -363,16 +370,24 @@ def _parse_dimensions(text: str) -> dict[str, float]:
         dims.setdefault("h", float(m_wh_paren.group(2)))
 
     for m in _BRACKET_DIM_RE.finditer(text):
-        label, val = m.group(1), float(m.group(2))
+        label = m.group(1)
+        g0 = m.group(0) or ""
+        u = "mm" if re.search(r"mm|毫米", g0, re.I) else None
+        if not u and re.search(r"cm|厘米", g0, re.I):
+            u = "cm"
         key = _LABEL_TO_KEY.get(label) or _LABEL_TO_KEY.get(label[:1])
         if key:
-            dims[key] = val
+            dims[key] = _val_to_cm(float(m.group(2)), u)
 
     for m in _OUTER_LABEL_BRACKET_RE.finditer(text):
-        label, val = m.group(1), float(m.group(2))
+        label = m.group(1)
+        g0 = m.group(0) or ""
+        u = "mm" if re.search(r"mm|毫米", g0, re.I) else None
+        if not u and re.search(r"cm|厘米", g0, re.I):
+            u = "cm"
         key = _LABEL_TO_KEY.get(label) or _LABEL_TO_KEY.get(label[:1])
         if key:
-            dims[key] = val
+            dims[key] = _val_to_cm(float(m.group(2)), u)
 
     for m in _LABELED_DIM_RE.finditer(text):
         label, val = m.group(1), float(m.group(2))
@@ -382,6 +397,11 @@ def _parse_dimensions(text: str) -> dict[str, float]:
 
     for hm in (
         _HEIGHT_BRACKET_RE.search(text),
+        re.search(
+            r"【\s*(?:高度|高)\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?[^】]*】",
+            text,
+            re.I,
+        ),
         _HEIGHT_TAG_ONLY_RE.search(text),
         _HEIGHT_NUM_FIRST_RE.search(text),
         re.search(
