@@ -847,6 +847,18 @@
         </div>
     </div>
 
+    <!-- ===== 快麦 ERP 嵌入（底部入口进入，顶栏不显示） ===== -->
+    <div id="page-erp" class="page-section">
+        <div class="overview-header">
+            <h3>🔗 快麦 ERP</h3>
+            <span style="font-size:12px;color:#888;">系统内嵌入，需登录快麦账号</span>
+        </div>
+        <iframe class="iframe-container" data-src="https://erp.superboss.cc/login.html"
+            allow="clipboard-read; clipboard-write"
+            sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+            style="width:100%;height:calc(100vh - 160px);border:none;border-radius:8px;"></iframe>
+    </div>
+
     <!-- ===== 首页（生产概览 + 查单） ===== -->
     <div id="page-main" class="page-section active">
 
@@ -908,6 +920,15 @@
                 <input type="number" id="dmQuickW" placeholder="宽 cm" step="0.1" style="flex:1;min-width:80px;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;" onfocus="this.select()">
                 <span style="color:#999;font-weight:600;">×</span>
                 <input type="number" id="dmQuickH" placeholder="高 cm" step="0.1" style="flex:1;min-width:80px;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;" onfocus="this.select()">
+                <select id="dmQuickType" style="flex:0 0 auto;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;background:#fff;">
+                    <option value="">全部类型</option>
+                    <option value="zhengsquare">正方形飞机盒</option>
+                    <option value="juxing">长方形飞机盒</option>
+                    <option value="daikou">带扣飞机盒</option>
+                    <option value="koudi">扣底盒</option>
+                    <option value="shuangcha">双插盒</option>
+                    <option value="changfang">长条盒</option>
+                </select>
                 <select id="dmQuickDimType" style="flex:0 0 auto;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;background:#fff;">
                     <option value="">全部</option>
                     <option value="outer">外径</option>
@@ -1198,7 +1219,74 @@
         </div>
     </div>
 
-    <!-- ===== 报价页面 ===== -->
+    <!-- ===== 智能报价页 ===== -->
+    <div id="page-quote" class="page-section">
+        <div class="overview-header">
+            <h3>💰 智能报价</h3>
+            <span style="font-size:12px;color:#888;font-weight:400;">输入尺寸，快速算价</span>
+        </div>
+        <div id="quoteContent" style="padding:12px 0;">
+            <div class="quote-layout" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                <div style="background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+                    <div style="margin-bottom:12px;">
+                        <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">产品类型</label>
+                        <select id="quoteType" onchange="onQuoteTypeChange()" style="width:100%;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;">
+                            <option value="zhengsquare-outer">📦 正方形飞机盒 · 外径</option>
+                            <option value="zhengsquare-inner">📦 正方形飞机盒 · 内径</option>
+                            <option value="juxing">📦 长方形飞机盒</option>
+                            <option value="daikou">📦 带扣飞机盒</option>
+                            <option value="koudi">📋 扣底盒</option>
+                            <option value="shuangcha">📐 双插盒</option>
+                            <option value="qita">🧱 纸箱</option>
+                        </select>
+                    </div>
+                    <div id="quoteMaterialGroup" style="margin-bottom:12px;">
+                        <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">材质</label>
+                        <div id="materialOptions" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;" id="quoteSizeGroup">
+                        <div><label style="font-size:12px;color:#666;" id="sizeLabelL">长 (cm)</label><input type="number" id="quoteLength" step="0.1" style="width:100%;padding:8px;border:1px solid #d9d9d9;border-radius:6px;"></div>
+                        <div><label style="font-size:12px;color:#666;" id="sizeLabelW">宽 (cm)</label><input type="number" id="quoteWidth" step="0.1" style="width:100%;padding:8px;border:1px solid #d9d9d9;border-radius:6px;"></div>
+                        <div><label style="font-size:12px;color:#666;" id="sizeLabelH">高 (cm)</label><input type="number" id="quoteHeight" step="0.1" style="width:100%;padding:8px;border:1px solid #d9d9d9;border-radius:6px;"></div>
+                    </div>
+                    <div style="margin-bottom:12px;">
+                        <input type="number" id="quoteQty" value="1000" min="1" style="width:100px;padding:6px;border:1px solid #d9d9d9;border-radius:6px;">
+                        <input type="number" id="quoteDiscount" value="100" min="1" max="100" style="width:70px;padding:6px;margin-left:8px;border:1px solid #d9d9d9;border-radius:6px;">
+                        <span style="font-size:12px;color:#999;">% 折扣</span>
+                    </div>
+                    <button onclick="doQuote()" style="width:100%;padding:10px;background:#1677ff;color:#fff;border:none;border-radius:8px;font-size:16px;cursor:pointer;">🚀 开始报价</button>
+                    <div id="quoteTipBox" style="margin-top:12px;padding:10px;background:#fff7e6;border-radius:8px;font-size:12px;color:#d48806;"></div>
+                </div>
+                <div id="quoteResultArea" style="background:#fff;border-radius:10px;padding:16px;min-height:200px;box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+                    <div style="text-align:center;padding:40px;color:#bbb;">输入尺寸后点击报价</div>
+                </div>
+            </div>
+            <div style="margin-top:16px;background:#fff;border-radius:10px;padding:12px 16px;">
+                <div style="font-size:13px;font-weight:600;margin-bottom:8px;">🔍 常用尺寸快速查询</div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+                    <button type="button" onclick="applyCommonSize(40,10,4)" style="padding:4px 10px;border:1px solid #91caff;background:#e6f4ff;border-radius:6px;cursor:pointer;font-size:12px;">40×10×4</button>
+                    <button type="button" onclick="applyCommonSize(25,17,9)" style="padding:4px 10px;border:1px solid #91caff;background:#e6f4ff;border-radius:6px;cursor:pointer;font-size:12px;">25×17×9</button>
+                    <button type="button" onclick="applyCommonSize(20,15,10)" style="padding:4px 10px;border:1px solid #91caff;background:#e6f4ff;border-radius:6px;cursor:pointer;font-size:12px;">20×15×10</button>
+                    <button type="button" onclick="applyCommonSize(13,24,4)" style="padding:4px 10px;border:1px solid #91caff;background:#e6f4ff;border-radius:6px;cursor:pointer;font-size:12px;">13×24×4</button>
+                    <button type="button" onclick="applyCommonSize(7,14,7)" style="padding:4px 10px;border:1px solid #91caff;background:#e6f4ff;border-radius:6px;cursor:pointer;font-size:12px;">7×14×7</button>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                    <input type="number" id="searchSizeL" placeholder="长" step="0.1" style="width:70px;padding:6px;border:1px solid #d9d9d9;border-radius:6px;">
+                    <span>×</span>
+                    <input type="number" id="searchSizeW" placeholder="宽" step="0.1" style="width:70px;padding:6px;border:1px solid #d9d9d9;border-radius:6px;">
+                    <span>×</span>
+                    <input type="number" id="searchSizeH" placeholder="高" step="0.1" style="width:70px;padding:6px;border:1px solid #d9d9d9;border-radius:6px;">
+                    <select id="searchSizeDimType" style="padding:6px 10px;border:1px solid #d9d9d9;border-radius:6px;">
+                        <option value="">全部</option><option value="outer">外径</option><option value="inner">内径</option>
+                    </select>
+                    <button onclick="quickSearchSize()" style="padding:6px 14px;background:#1677ff;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;">🔍 查找</button>
+                </div>
+                <div id="sizeSearchResult" style="font-size:12px;color:#666;margin-top:8px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== 权限管理页 ===== -->
     <div id="page-permission" class="page-section">
         <div class="overview-header">
             <h3>🔐 权限与员工管理</h3>
@@ -1236,6 +1324,11 @@
 
 <!-- ===== 底部功能栏 ===== -->
 <div class="footer-bar">
+    <div class="footer-card" onclick="switchTopPage('erp', null)" data-perm="快麦ERP">
+        <div class="icon">🔗</div>
+        <div class="f-title">快麦 ERP</div>
+        <div class="f-desc">嵌入快麦后台查单</div>
+    </div>
     <div class="footer-card" onclick="openWpsKdocsEmbed()" data-perm="刀模库">
         <div class="icon">🔩</div>
         <div class="f-title">WPS刀模嵌入</div>
@@ -4001,7 +4094,8 @@
         resultEl.style.color = '#666';
 
         try {
-            const dmBody = {length: l, width: w, height: h, dim_type: dimType, type: 'zhengsquare'};
+            const dmBody = {length: l, width: w, height: h};
+            if (dimType) dmBody.dim_type = dimType;
             if (quoteType) {
                 dmBody.type = quoteType.replace('-outer', '').replace('-inner', '');
             }
@@ -4607,6 +4701,29 @@
         }
     }
 
+    /** 常用尺寸：填入报价计算器 + 快速查询输入框 */
+    function applyCommonSize(l, w, h) {
+        const set = (id, v) => {
+            const el = document.getElementById(id);
+            if (el) el.value = v;
+        };
+        set('searchSizeL', l);
+        set('searchSizeW', w);
+        set('searchSizeH', h);
+        set('quoteLength', l);
+        set('quoteWidth', w);
+        set('quoteHeight', h);
+        set('dmQuickL', l);
+        set('dmQuickW', w);
+        set('dmQuickH', h);
+        if (document.getElementById('page-quote') && typeof switchSubPage === 'function') {
+            switchSubPage('quote', null);
+        }
+        if (typeof quickSearchSize === 'function') {
+            quickSearchSize();
+        }
+    }
+
     // ===== 首页刀模快速查询（在今日订单上面） =====
     async function homeQuickSearchDimoldb() {
         const l = document.getElementById('dmQuickL').value.trim();
@@ -4623,12 +4740,13 @@
         resultEl.innerHTML = '<span style="color:#999;">查询中...</span>';
 
         try {
+            const ptype = (document.getElementById('dmQuickType') || {}).value || '';
             const params = {
                 length: parseFloat(l),
                 width: parseFloat(w),
-                height: parseFloat(h),
-                type: 'zhengsquare'
+                height: parseFloat(h)
             };
+            if (ptype) params.type = ptype;
             if (dimType) params.dim_type = dimType;
             const [dmRes, invRes] = await Promise.all([
                 SY_AUTH.apiFetch('/api/dimoldb/search', {
@@ -4644,21 +4762,26 @@
             const matches = dmData.matches || [];
             const invItems = (invData.success && invData.data) ? invData.data : [];
 
-            // 按 spec 分组库存，方便刀模关联
-            const invBySpec = {};
-            for (const inv of invItems) {
-                const spec = inv.spec || inv.name || '';
-                if (!invBySpec[spec]) invBySpec[spec] = [];
-                invBySpec[spec].push(inv);
+            function _invMatchesDims(inv, dl, dw, dh) {
+                const blob = ((inv.name || '') + ' ' + (inv.spec || '')).toLowerCase();
+                const tol = 0.2;
+                const nums = blob.match(/\d+(?:\.\d+)?/g) || [];
+                if (nums.length >= 3) {
+                    const il = parseFloat(nums[0]), iw = parseFloat(nums[1]), ih = parseFloat(nums[2]);
+                    return Math.abs(il - dl) <= tol && Math.abs(iw - dw) <= tol && Math.abs(ih - dh) <= tol;
+                }
+                const key = dl + 'x' + dw + 'x' + dh;
+                return blob.indexOf(key) >= 0 || blob.indexOf(dl + '×' + dw) >= 0;
             }
 
             if (matches.length > 0) {
                 let html = _dimSearchScopeBanner(dimType, l, w, h);
+                const fl = parseFloat(l), fw = parseFloat(w), fh = parseFloat(h);
                 for (const m of matches) {
-                    // 每个刀模对应的库存（按 spec = 尺寸匹配）
-                    const specKey = m.length + 'x' + m.width + 'x' + m.height;
                     const dmDimType = _dmInferInnerOuter(m) || dimType;
-                    let relatedInv = invBySpec[specKey] || invBySpec[m.name] || [];
+                    let relatedInv = invItems.filter(function (inv) {
+                        return _invMatchesDims(inv, fl, fw, fh);
+                    });
                     relatedInv = relatedInv.filter(ri => _dmInvDimMatch(dmDimType, ri.dim_type));
                     // 汇总库存数量
                     let totalStock = 0;
@@ -6062,7 +6185,7 @@ async function filterProdOrders(keyword) {
     loadProdDashboard();
 }
 </script>
-<script src="/static/prod_ui.js">
+<script src="/static/prod_ui.js?v=20260519b">
 async function batchCalcMaterialOrders() {
     const ids = getSelectedProdIds();
     if (!ids.length) { alert('请先勾选要打单的订单'); return; }

@@ -216,9 +216,18 @@ def sanitize_sku_attrs(text: str) -> str:
     return re.sub(r"\s{2,}", " ", t).strip()
 
 
-def parse_dimensions_cm(text: str) -> dict[str, float]:
-    """仅从 SKU 属性文本解析长宽高（厘米）。"""
-    return _parse_dimensions(platform_spec_raw(text))
+def parse_dimensions_cm(text: str, *, title: str = "") -> dict[str, float]:
+    """从 SKU 属性 + 可选商品标题解析长宽高（厘米）。"""
+    blob = platform_spec_raw(text)
+    t = (title or "").strip()
+    if t and t not in blob:
+        blob = f"{t} {blob}".strip()
+    return _parse_dimensions(blob)
+
+
+def parse_dimensions_for_item(attrs: str, title: str = "") -> dict[str, float]:
+    """打单/算料统一入口：合并标题后再解析。"""
+    return parse_dimensions_cm(attrs, title=title)
 
 
 def _apply_merged_dimension_tags(dims: dict[str, float], text: str) -> None:
@@ -259,10 +268,32 @@ def _apply_merged_dimension_tags(dims: dict[str, float], text: str) -> None:
             dims[k2] = v
 
 
+def _extract_lwh_triple_early(text: str) -> dict[str, float]:
+    """首轮：L×W×H 三连（13×24×4、7*14*7 等），避免后续规则误删「长」。"""
+    out: dict[str, float] = {}
+    if not text:
+        return out
+    for pat in (
+        r"(?:^|[\s;；、])(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*(mm|MM|毫米|cm|CM|厘米)?",
+        r"(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*(mm|MM|毫米|cm|CM|厘米)?",
+    ):
+        m = re.search(pat, text, re.I)
+        if not m:
+            continue
+        u = m.group(4) if m.lastindex and m.lastindex >= 4 else None
+        out["l"] = _val_to_cm(float(m.group(1)), u)
+        out["w"] = _val_to_cm(float(m.group(2)), u)
+        out["h"] = _val_to_cm(float(m.group(3)), u)
+        break
+    return out
+
+
 def _parse_dimensions(text: str) -> dict[str, float]:
     dims: dict[str, float] = {}
     if not text:
         return dims
+
+    dims.update(_extract_lwh_triple_early(text))
 
     _apply_merged_dimension_tags(dims, text)
 
@@ -278,8 +309,27 @@ def _parse_dimensions(text: str) -> dict[str, float]:
 
     m = _LW_IN_BRACKET_RE.search(text) or _LW_SPLIT_BRACKET_RE.search(text)
     if m:
-        dims["l"] = float(m.group(1))
-        dims["w"] = float(m.group(2))
+        dims.setdefault("l", float(m.group(1)))
+        dims.setdefault("w", float(m.group(2)))
+
+    m_lw_spec = re.search(
+        r"长\s*[*×xX]?\s*宽\s*【\s*(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*】\s*(mm|MM|毫米|cm|CM|厘米)?",
+        text,
+        re.I,
+    )
+    if m_lw_spec:
+        u = m_lw_spec.group(3)
+        dims.setdefault("l", _val_to_cm(float(m_lw_spec.group(1)), u))
+        dims.setdefault("w", _val_to_cm(float(m_lw_spec.group(2)), u))
+
+    m_wh_paren = re.search(
+        r"[（(]\s*宽\s*x?\s*高\s*[）)]\s*(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?",
+        text,
+        re.I,
+    )
+    if m_wh_paren:
+        dims.setdefault("w", float(m_wh_paren.group(1)))
+        dims.setdefault("h", float(m_wh_paren.group(2)))
 
     for m in _BRACKET_DIM_RE.finditer(text):
         label, val = m.group(1), float(m.group(2))
@@ -299,9 +349,24 @@ def _parse_dimensions(text: str) -> dict[str, float]:
         if key:
             dims[key] = val
 
-    for hm in (_HEIGHT_BRACKET_RE.search(text), _HEIGHT_TAG_ONLY_RE.search(text)):
+    for hm in (
+        _HEIGHT_BRACKET_RE.search(text),
+        _HEIGHT_TAG_ONLY_RE.search(text),
+        re.search(
+            r"(\d+(?:\.\d+)?)\s*(?:mm|MM|毫米)\s*【\s*高\s*】",
+            text,
+            re.I,
+        ),
+        re.search(
+            r"(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米)\s*高(?!\s*个)",
+            text,
+            re.I,
+        ),
+    ):
         if hm:
-            dims["h"] = float(hm.group(1))
+            g0 = hm.group(0) or ""
+            u = "mm" if re.search(r"mm|毫米", g0, re.I) else None
+            dims["h"] = _val_to_cm(float(hm.group(1)), u)
             break
 
     if "h" not in dims:
@@ -355,13 +420,14 @@ def _parse_dimensions(text: str) -> dict[str, float]:
         if m:
             dims["w"] = float(m.group(1))
     if "l" not in dims:
-        m = re.search(
+        for pat in (
             r"(?:长度|长)\s*【?\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?\s*】?",
-            text,
-            re.I,
-        )
-        if m:
-            dims["l"] = float(m.group(1))
+            r"(?:长度|长)\s+(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)(?!\s*个)",
+        ):
+            m = re.search(pat, text, re.I)
+            if m:
+                dims["l"] = _val_to_cm(float(m.group(1)), m.group(0))
+                break
     if "l" not in dims:
         m = re.search(
             r"(?:长度|长)\s*[:：]\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?",
@@ -402,9 +468,12 @@ def _parse_dimensions(text: str) -> dict[str, float]:
     if len(dims) < 3:
         m3 = _NUM3_RE.search(text)
         if m3:
-            dims.setdefault("l", float(m3.group(1)))
-            dims.setdefault("w", float(m3.group(2)))
-            dims.setdefault("h", float(m3.group(3)))
+            suffix = text[m3.end() : m3.end() + 12]
+            um = re.search(r"(mm|MM|毫米|cm|CM|厘米)", suffix, re.I)
+            unit = um.group(1) if um else None
+            dims.setdefault("l", _val_to_cm(float(m3.group(1)), unit))
+            dims.setdefault("w", _val_to_cm(float(m3.group(2)), unit))
+            dims.setdefault("h", _val_to_cm(float(m3.group(3)), unit))
 
     if len(dims) < 2:
         m2 = _NUM2_RE.search(text)
@@ -412,8 +481,13 @@ def _parse_dimensions(text: str) -> dict[str, float]:
             dims.setdefault("l", float(m2.group(1)))
             dims.setdefault("w", float(m2.group(2)))
 
-    # 宽×高（如 7*3cm）：无「长」语境时按宽、高，避免误为长×宽导致缺高
-    if dims.get("l") is not None and dims.get("w") is not None and dims.get("h") is None:
+    # 宽×高（如 7*3cm）：仅缺「高」且尚无完整三维时，才按宽高压掉「长」
+    if (
+        dims.get("h") is None
+        and dims.get("l") is not None
+        and dims.get("w") is not None
+        and not all(dims.get(k) is not None for k in ("l", "w", "h"))
+    ):
         m_wh = re.search(
             r"(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米)(?!\s*[*×xX])",
             text,
@@ -667,7 +741,13 @@ def build_production_spec(
     color = _parse_color(parse_text, material)
 
     if not dims_ok:
-        formatted = raw.strip() or t or ""
+        formatted = (
+            raw.strip()
+            or line1.strip()
+            or parse_text.strip()
+            or t
+            or ""
+        )
         line2 = formatted
         size = ""
     else:

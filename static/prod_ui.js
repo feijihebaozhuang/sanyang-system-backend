@@ -142,7 +142,7 @@
         if (isNaN(n) || n < 1) n = 1;
         if (n > window._prodTotalPages) n = window._prodTotalPages;
         window._prodPage = n;
-        loadProdDashboard(false);
+        loadProdDashboard(false, { forceRefresh: true, skipCache: true });
     };
 
     window.prodGoPageInput = function () {
@@ -153,7 +153,7 @@
     window.prodChangePageSize = function (v) {
         window._prodPageSize = parseInt(v, 10) || 15;
         window._prodPage = 1;
-        loadProdDashboard(false);
+        loadProdDashboard(false, { forceRefresh: true, skipCache: true });
     };
 
     window.prodApplyCachedDashboard = function () {
@@ -227,7 +227,17 @@
             det.formatted ||
             item.display ||
             '';
-        return String(line).trim() || '—';
+        line = String(line).trim();
+        if (!line) {
+            var fallback =
+                det.platform_spec_raw ||
+                det.line1 ||
+                item.spec ||
+                item.display ||
+                '';
+            line = String(fallback).trim();
+        }
+        return line || '—';
     };
 
     window.renderProductionSpecHtml = function (item, compact) {
@@ -360,17 +370,32 @@
         return q.toString();
     };
 
-    window.loadProdDashboard = async function (resetPage) {
+    window.loadProdDashboard = async function (resetPage, options) {
+        options = options || {};
         if (resetPage === true) window._prodPage = 1;
         ensureDimoldbNameMap();
-        var hadCache = prodApplyCachedDashboard();
+        window._prodDashReqSeq = (window._prodDashReqSeq || 0) + 1;
+        var reqId = window._prodDashReqSeq;
+        var hadCache = false;
+        if (!options.skipCache && window._prodPage === 1) {
+            hadCache = prodApplyCachedDashboard();
+        }
         if (!hadCache) {
             renderProdDashboard([]);
             var stEl = document.getElementById('prodStats');
             if (stEl) stEl.textContent = '—';
         }
         try {
-            var res = await fetch('/api/production/dashboard?' + prodBuildDashboardQuery());
+            var qs = prodBuildDashboardQuery();
+            if (options.forceRefresh || window._prodPage > 1) {
+                qs += (qs ? '&' : '') + 'refresh=1';
+            }
+            var fetchFn =
+                typeof SY_AUTH !== 'undefined' && SY_AUTH.apiFetch
+                    ? SY_AUTH.apiFetch
+                    : fetch;
+            var res = await fetchFn('/api/production/dashboard?' + qs);
+            if (reqId !== window._prodDashReqSeq) return;
             var data = await res.json();
             if (!data.success) throw new Error(data.error || '加载失败');
             window._prodMappingData =

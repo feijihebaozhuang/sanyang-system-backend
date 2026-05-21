@@ -1426,6 +1426,13 @@
             <!-- 底部：常用尺寸快速查询 -->
             <div style="margin-top:16px;background:#fff;border-radius:10px;padding:12px 16px;box-shadow:0 1px 4px rgba(0,0,0,0.06);">
                 <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:#333;">🔍 常用尺寸快速查询</div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+                    <button type="button" onclick="applyCommonSize(40,10,4)" style="padding:4px 10px;border:1px solid #91caff;background:#e6f4ff;border-radius:6px;cursor:pointer;font-size:12px;">40×10×4</button>
+                    <button type="button" onclick="applyCommonSize(25,17,9)" style="padding:4px 10px;border:1px solid #91caff;background:#e6f4ff;border-radius:6px;cursor:pointer;font-size:12px;">25×17×9</button>
+                    <button type="button" onclick="applyCommonSize(20,15,10)" style="padding:4px 10px;border:1px solid #91caff;background:#e6f4ff;border-radius:6px;cursor:pointer;font-size:12px;">20×15×10</button>
+                    <button type="button" onclick="applyCommonSize(13,24,4)" style="padding:4px 10px;border:1px solid #91caff;background:#e6f4ff;border-radius:6px;cursor:pointer;font-size:12px;">13×24×4</button>
+                    <button type="button" onclick="applyCommonSize(7,14,7)" style="padding:4px 10px;border:1px solid #91caff;background:#e6f4ff;border-radius:6px;cursor:pointer;font-size:12px;">7×14×7</button>
+                </div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
                     <input type="number" id="searchSizeL" placeholder="长" step="0.1" style="width:70px;padding:6px 8px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;" onfocus="this.select()">
                     <span style="line-height:34px;color:#999;">×</span>
@@ -4362,6 +4369,25 @@
         }
     }
 
+    function applyCommonSize(l, w, h) {
+        const set = (id, v) => {
+            const el = document.getElementById(id);
+            if (el) el.value = v;
+        };
+        set('searchSizeL', l);
+        set('searchSizeW', w);
+        set('searchSizeH', h);
+        set('quoteLength', l);
+        set('quoteWidth', w);
+        set('quoteHeight', h);
+        if (document.getElementById('page-quote') && typeof switchTopPage === 'function') {
+            switchTopPage('quote', null);
+        }
+        if (typeof quickSearchSize === 'function') {
+            quickSearchSize();
+        }
+    }
+
     async function quickSearchSize() {
         const l = parseFloat(document.getElementById('searchSizeL').value);
         const w = parseFloat(document.getElementById('searchSizeW').value);
@@ -4380,7 +4406,8 @@
         resultEl.style.color = '#666';
 
         try {
-            const dmBody = {length: l, width: w, height: h, dim_type: dimType, type: 'zhengsquare'};
+            const dmBody = {length: l, width: w, height: h};
+            if (dimType) dmBody.dim_type = dimType;
             if (quoteType) {
                 dmBody.type = quoteType.replace('-outer', '').replace('-inner', '');
             }

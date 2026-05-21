@@ -358,10 +358,10 @@ def load_raw_rows(load_raw_fn: Callable[[], list[dict]], *, max_age: int = 120) 
     return rows
 
 
-def _parse_lwh_from_attrs(attrs: str) -> tuple[float, float, float] | None:
+def _parse_lwh_from_attrs(attrs: str, *, title: str = "") -> tuple[float, float, float] | None:
     import production_spec as pspec
 
-    dims = pspec.parse_dimensions_cm(attrs or "")
+    dims = pspec.parse_dimensions_for_item(attrs or "", title or "")
     if not pspec.dimensions_ready_for_calc(dims):
         return None
     return float(dims["l"]), float(dims["w"]), float(dims["h"])
@@ -376,25 +376,30 @@ def calc_material_line(
     quote_data: dict,
     raw_rows: list[dict],
     dimoldb: list[dict],
+    title: str = "",
 ) -> dict[str, Any]:
     import production_spec as pspec
 
     raw_attrs = (attrs or "").strip()
     clean_attrs = pspec.sanitize_sku_attrs(raw_attrs) or raw_attrs
-    dims = pspec.parse_dimensions_cm(raw_attrs)
-    if not pspec.dimensions_ready_for_calc(dims):
-        missing = pspec.missing_dimension_labels(dims)
-        if missing:
-            err = f"规格缺少{'、'.join(missing)}，无法算料（需长宽高齐全，单位已统一为cm）"
-        else:
-            err = "无法从规格解析长宽高，无法算料"
-        return {
-            "status": "error",
-            "error": err,
-            "attrs": attrs,
-            "dimensions_missing": missing,
-        }
-    l, w, h = float(dims["l"]), float(dims["w"]), float(dims["h"])
+    ps = pspec.build_production_spec(raw_attrs, max(qty, 1), title=title or "")
+    if ps.get("dimensions_ok") and all(ps.get(k) is not None for k in ("length", "width", "height")):
+        l, w, h = float(ps["length"]), float(ps["width"]), float(ps["height"])
+    else:
+        dims = pspec.parse_dimensions_for_item(raw_attrs, title or "")
+        if not pspec.dimensions_ready_for_calc(dims):
+            missing = ps.get("dimensions_missing") or pspec.missing_dimension_labels(dims)
+            if missing:
+                err = f"规格缺少{'、'.join(missing)}，无法算料（需长宽高齐全，单位已统一为cm）"
+            else:
+                err = "无法从规格解析长宽高，无法算料"
+            return {
+                "status": "error",
+                "error": err,
+                "attrs": attrs,
+                "dimensions_missing": missing,
+            }
+        l, w, h = float(dims["l"]), float(dims["w"]), float(dims["h"])
     pt = infer_product_type_for_calc(order_type, clean_attrs or attrs)
     is_buckle = pt in ("带扣", "daikou")
     calc_pt = (
@@ -542,13 +547,26 @@ def calc_order_line(
         return {"status": "error", "error": "子单行号无效"}
     it = items[line_index]
     raw_attrs = (
-        it.get("display") or it.get("platform_attrs") or it.get("spec") or ""
+        it.get("platform_spec_raw")
+        or it.get("platform_attrs")
+        or it.get("display")
+        or it.get("spec")
+        or ""
     ).strip()
+    try:
+        import production_helpers as ph
+
+        if not raw_attrs:
+            raw_attrs = ph.item_buyer_attrs(it)
+    except Exception:
+        pass
+    item_name = (it.get("name") or "").strip()
     attrs = pspec.sanitize_sku_attrs(raw_attrs) or raw_attrs
     order_qty = int(it.get("qty") or 0)
     ps = pspec.build_production_spec(
         raw_attrs,
         order_qty,
+        title=item_name,
         material_mapping=material_mapping or [],
     )
     qty = int(ps.get("qty") or order_qty)
@@ -567,6 +585,7 @@ def calc_order_line(
         quote_data=quote_data,
         raw_rows=raw_rows,
         dimoldb=dimoldb,
+        title=item_name,
     )
     so_id = str(order.get("so_id") or order.get("sid") or "")
     set_cached_line(so_id, line_index, result)
