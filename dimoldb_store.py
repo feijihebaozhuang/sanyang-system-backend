@@ -213,26 +213,40 @@ def save_dimoldb(get_db: Callable, data: list[dict]) -> bool:
         return False
 
 
+def detect_import_header_format(headers: list[str]) -> str:
+    """返回 '9' | '7' | 'legacy'。"""
+    hs = [str(h or "").strip() for h in headers]
+    if any("生产规格" in h for h in hs) or any("快麦" in h and "映射" in h for h in hs):
+        return "9"
+    if any("名称" in h or h == "name" for h in hs):
+        return "7"
+    return "legacy"
+
+
 def map_dimoldb_import_headers(headers: list[str]) -> dict[str, int]:
-    """Excel 表头 → 字段列索引。"""
+    """Excel 表头 → 字段列索引。自动识别 7 列或 9 列；匹配逻辑仍只用长宽厚。"""
     col_map: dict[str, int] = {}
+    fmt = detect_import_header_format(headers)
     for i, raw in enumerate(headers):
         h = str(raw or "").strip()
         hl = h.lower()
-        if "名称" in h or h == "name":
+        if "名称" in h or h == "name" or h == "刀模名称":
             col_map["name"] = i
         elif "类型" in h or "产品" in h or "product" in hl:
             col_map["product_type"] = i
         elif "编码" in h or h == "code" or hl == "code":
             col_map["code"] = i
-        # 表头铁律：仅 7 列导入，勿在此识别「生产规格」「快麦商品映射」（改表头会牵动全系统）
+        elif fmt == "9" and ("生产规格" in h or "production_spec" in hl):
+            col_map["production_spec"] = i
+        elif fmt == "9" and (("快麦" in h and "映射" in h) or "km_mapping" in hl):
+            col_map["km_mapping_code"] = i
         elif "备注" in h or "remark" in hl:
             col_map["remark"] = i
-        elif "长" in h or "length" in hl:
+        elif h in ("长", "长(cm)", "长（cm）") or hl == "length" or (h.startswith("长") and "cm" in hl):
             col_map["length"] = i
-        elif "宽" in h or "width" in hl:
+        elif h in ("宽", "宽(cm)", "宽（cm）") or hl == "width" or (h.startswith("宽") and "cm" in hl):
             col_map["width"] = i
-        elif "高" in h or "height" in hl:
+        elif h in ("高", "高(cm)", "高（cm）") or hl == "height" or (h.startswith("高") and "cm" in hl):
             col_map["height"] = i
     return col_map
 
