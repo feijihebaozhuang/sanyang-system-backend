@@ -350,7 +350,13 @@ def rebuild_dashboard_cache(
                 or o.get("receiver_mobile", ""),
                 "progress": progress,
                 "steps": steps,
+                "has_stock": any(x.get("has_stock") for x in full_items)
+                if full_items
+                else False,
                 "has_all_stock": all(x.get("has_stock") for x in full_items)
+                if full_items
+                else False,
+                "inventory_matched": any((x.get("stock_qty") or 0) > 0 for x in full_items)
                 if full_items
                 else False,
                 "placeholder_spec": any(

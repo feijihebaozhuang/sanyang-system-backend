@@ -612,9 +612,9 @@
                         itemsHtml = lines.join('');
                     }
                     var typeClass = 'tag-default';
-                    if (o.product_type === '纸箱') typeClass = 'tag-warning';
+                    if (o.has_stock) typeClass = 'tag-success';
+                    else if (o.product_type === '纸箱') typeClass = 'tag-warning';
                     else if (o.product_type === '扣底盒') typeClass = 'tag-info';
-                    else if (o.product_type === '现货') typeClass = 'tag-success';
                     var currentStep = '—';
                     var pct = o.progress || 0;
                     if (o.steps && o.steps.length) {

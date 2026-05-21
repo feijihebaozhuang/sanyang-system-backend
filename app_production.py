@@ -4426,7 +4426,10 @@ def production_dashboard():
 
     if shop:
         orders = [o for o in orders if o.get("shop") == shop]
-    if ptype:
+    if ptype == "现货":
+        # 现货 = 子单尺寸匹配成品库存且数量足够（非属性里含「现货」字样）
+        orders = [o for o in orders if o.get("has_stock")]
+    elif ptype:
         orders = [o for o in orders if o.get("product_type") == ptype]
     if print_status == "printed":
         orders = [o for o in orders if o.get("printed")]
