@@ -111,6 +111,30 @@ def build_dim_match_index(
     return index
 
 
+def _inventory_item_dims(item: dict[str, Any]) -> tuple[float | None, float | None, float | None]:
+    """库存行有效尺寸：优先库字段，否则从 name/spec 解析。"""
+    try:
+        l, w, h = item.get("length"), item.get("width"), item.get("height")
+        if l and w and h:
+            return float(l), float(w), float(h)
+    except (TypeError, ValueError):
+        pass
+    blob = " ".join(
+        str(item.get(k) or "")
+        for k in ("name", "spec", "material")
+    )
+    dl, dw, dh = _parse_dims_from_text(blob)
+    if dl and dw and dh:
+        return dl, dw, dh
+    nums = re.findall(r"\d+\.?\d*", blob.replace("×", "*").replace("x", "*"))
+    if len(nums) >= 3:
+        try:
+            return float(nums[0]), float(nums[1]), float(nums[2])
+        except ValueError:
+            pass
+    return None, None, None
+
+
 def match_dimoldb_for_inventory_item(
     item: dict[str, Any],
     dm_index: dict[tuple[str, float, float, float], list[dict[str, Any]]],
@@ -118,10 +142,10 @@ def match_dimoldb_for_inventory_item(
     infer_fn,
 ) -> list[dict[str, Any]]:
     """库存行匹配刀模（与 get_inventory 原逻辑一致，走索引）。"""
-    l, w, h = item.get("length"), item.get("width"), item.get("height")
+    l, w, h = _inventory_item_dims(item)
     itype = item.get("product_type") or ""
     idim = item.get("dim_type") or ""
-    if not (l and w and h and itype):
+    if not (l and w and h):
         return []
     try:
         lk = (
@@ -132,7 +156,21 @@ def match_dimoldb_for_inventory_item(
         )
     except (TypeError, ValueError):
         return []
-    candidates = list(dm_index.get(lk, []))
+    candidates: list[dict[str, Any]] = []
+    for pt in {itype, _INV_TYPE_MAP.get(itype, itype), "zhengsquare", "changfang"}:
+        if not pt:
+            continue
+        candidates.extend(dm_index.get((pt, lk[1], lk[2], lk[3]), []))
+    seen: set[str] = set()
+    uniq: list[dict[str, Any]] = []
+    for d in candidates:
+        did = str(d.get("id") or "")
+        if did and did in seen:
+            continue
+        if did:
+            seen.add(did)
+        uniq.append(d)
+    candidates = uniq
     if idim == "outer":
         candidates = [
             d

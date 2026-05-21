@@ -208,16 +208,33 @@
 
     window.prodDisplayAttrs = function (item) {
         if (!item) return '—';
-        var d = item.production_spec_detail;
-        var raw =
-            (d && d.line1) ||
-            (d && d.platform_spec_raw) ||
-            item.platform_spec_raw ||
+        var line =
+            item.production_spec ||
+            (item.production_spec_detail && item.production_spec_detail.line2) ||
+            (item.production_spec_detail && item.production_spec_detail.formatted) ||
             item.display ||
-            item.platform_attrs ||
-            item.spec ||
             '';
-        return String(raw).trim() || '—';
+        return String(line).trim() || '—';
+    };
+
+    window.renderProductionSpecHtml = function (item, compact) {
+        if (!item) return '';
+        var fs = compact ? '12px' : '13px';
+        var line = prodDisplayAttrs(item);
+        if (!line || line === '—') {
+            return (
+                '<div style="font-size:' +
+                fs +
+                ';color:#999;">规格未识别</div>'
+            );
+        }
+        return (
+            '<div style="font-size:' +
+            fs +
+            ';font-weight:600;color:#262626;line-height:1.5;">' +
+            prodEscHtml(line) +
+            '</div>'
+        );
     };
 
     window.prodEscHtml = function (s) {
@@ -288,8 +305,6 @@
     window.renderProdItemSpecBlock = function (item, opts) {
         opts = opts || {};
         var compact = !!opts.compact;
-        var line1 =
-            typeof prodDisplayAttrs === 'function' ? prodDisplayAttrs(item) : '—';
         var line2 =
             typeof renderProductionSpecHtml === 'function'
                 ? renderProductionSpecHtml(item, compact)
@@ -305,11 +320,6 @@
         var extra = opts.calcBtnHtml || '';
         return (
             '<div style="line-height:1.45;white-space:normal;word-break:break-word;">' +
-            '<div style="color:#595959;font-size:' +
-            (compact ? '11px' : '12px') +
-            ';">' +
-            prodEscHtml(line1) +
-            '</div>' +
             line2 +
             line3 +
             line4 +

@@ -1697,11 +1697,15 @@ def save_quote_config():
         if not my_perm.get('权限管理', False):
             return jsonify({"success": False, "error": "无权限修改报价配置"})
         
-        new_data = request.get_json()
-        if not new_data:
+        patch = request.get_json()
+        if not patch:
             return jsonify({"success": False, "error": "数据为空"})
-        
-        if save_quote_data(new_data):
+
+        from quote_config_merge import merge_quote_config
+
+        existing = load_quote_data() or {}
+        merged = merge_quote_config(existing, patch)
+        if save_quote_data(merged):
             return jsonify({"success": True, "message": "报价配置已保存"})
         else:
             return jsonify({"success": False, "error": "保存失败"})

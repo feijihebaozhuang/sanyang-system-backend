@@ -128,6 +128,15 @@ def format_size_display_cm(dims: dict[str, float]) -> str:
     )
 
 
+def format_size_compact(dims: dict[str, float]) -> str:
+    """打单/报价展示：19×19×6（全齐用×连接数字，否则回退缺维提示）。"""
+    if not dims:
+        return ""
+    if all(dims.get(k) is not None for k in ("l", "w", "h")):
+        return "×".join(_fmt_num(float(dims[k])) for k in ("l", "w", "h"))
+    return format_size_display_cm(dims)
+
+
 def missing_dimension_labels(dims: dict[str, float]) -> list[str]:
     labels = {"l": "长", "w": "宽", "h": "高"}
     return [labels[k] for k in ("l", "w", "h") if dims.get(k) is None]
@@ -505,7 +514,9 @@ def parse_quantity_info(text: str, platform_qty: int = 0) -> dict[str, Any]:
         total = groups * per_group
         label = bundle_label
         if plat > 1:
-            label = f"{bundle_label} ×{plat}"
+            label = f"×{total}个（{total}={per_group}个×{groups}组）"
+        else:
+            label = f"×{total}个" if total else bundle_label
         return {
             "total_qty": total,
             "order_qty": groups,
@@ -611,15 +622,17 @@ def _build_formatted_line(
     material: str,
     color: str,
 ) -> str:
+    """打单主行：19×19×6 特硬 内径 ×300个（可带颜色，不含平台零售噪声）。"""
     parts: list[str] = []
-    if diameter_type:
-        parts.append(diameter_type)
     if size:
-        parts.append(size)
-    if qty_label:
-        parts.append(qty_label)
+        parts.append(size.replace("cm", "").replace("x", "×"))
     if material:
         parts.append(material)
+    if diameter_type:
+        parts.append(diameter_type)
+    if qty_label:
+        q = qty_label if qty_label.startswith("×") else f"×{qty_label}"
+        parts.append(q)
     if color:
         parts.append(color)
     return "  ".join(parts)
@@ -638,7 +651,7 @@ def build_production_spec(
     """
     raw = platform_spec_raw(attrs)
     dims = _parse_dimensions(raw)
-    size = format_size_display_cm(dims)
+    size = format_size_compact(dims)
     dim_missing = missing_dimension_labels(dims)
     dims_ok = dimensions_ready_for_calc(dims)
 

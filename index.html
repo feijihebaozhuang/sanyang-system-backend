@@ -421,6 +421,7 @@
         <a onclick="switchTopPage('inventory', this)">📦 成品</a>
         <a onclick="switchTopPage('raw', this)">🧱 原材料</a>
         <a onclick="switchTopPage('employee', this)">👥 员工</a>
+        <a class="nav-erp" onclick="switchTopPage('erp', this)" style="display:none;">🔗 快麦ERP</a>
     </div>
     <div class="user" id="userInfo" onclick="showUserMenu()">🔑 登录</div>
 </div>
@@ -847,7 +848,19 @@
         </div>
     </div>
 
-    <!-- ===== 快麦ERP页 ===== -->
+    <!-- ===== 快麦 ERP 嵌入 ===== -->
+    <div id="page-erp" class="page-section">
+        <div class="overview-header">
+            <h3>🔗 快麦 ERP</h3>
+            <span style="font-size:12px;color:#888;">系统内嵌入，需登录快麦账号</span>
+        </div>
+        <iframe class="iframe-container" data-src="https://erp.superboss.cc"
+            allow="clipboard-read; clipboard-write"
+            sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+            style="width:100%;height:calc(100vh - 160px);border:none;border-radius:8px;"></iframe>
+    </div>
+
+    <!-- ===== 首页（生产概览 + 查单） ===== -->
     <div id="page-main" class="page-section active">
 
         <!-- 搜索框 -->
@@ -1235,6 +1248,11 @@
 
 <!-- ===== 底部功能栏 ===== -->
 <div class="footer-bar">
+    <div class="footer-card" onclick="switchTopPage('erp', null)" data-perm="快麦ERP">
+        <div class="icon">🔗</div>
+        <div class="f-title">快麦 ERP</div>
+        <div class="f-desc">嵌入快麦后台查单</div>
+    </div>
     <div class="footer-card" onclick="openWpsKdocsEmbed()" data-perm="刀模库">
         <div class="icon">🔩</div>
         <div class="f-title">WPS刀模嵌入</div>
@@ -1396,7 +1414,7 @@
         topLinks.forEach(a => {
             const onclick = a.getAttribute('onclick') || '';
             const text = a.textContent.trim();
-            if (false && onclick.includes('jst')) {
+            if (onclick.includes("'erp'") || text.includes('快麦')) {
                 a.style.display = hasPerm('快麦ERP') ? '' : 'none';
             } else if (onclick.includes('diemold')) {
                 a.style.display = hasPerm('刀模') ? '' : 'none';
@@ -1435,7 +1453,7 @@
             const hasOrderSearch = hasPerm('快麦ERP');
             const isKeFu = role === '客服';
             const hasProd = hasPerm('订单生产进度');
-            const showSearch = hasJST || isKeFu || hasProd;
+            const showSearch = hasOrderSearch || isKeFu || hasProd;
             searchBar.style.display = showSearch ? '' : 'none';
         }
 
@@ -1498,7 +1516,7 @@
             'dimoldb': '刀模库',
             'inventory': '库存',
             'raw': '库存',
-            '__removed__': '快麦ERP',
+            'erp': '快麦ERP',
             'production': '订单生产进度',
             'scan': '扫码报工',
             'report': '日报表',
@@ -2290,144 +2308,6 @@
     let _prodDashboardIdxMap = {}; // so_id -> index in raw array
     let _prodMappingData = []; // 材料关键词映射
     
-    async function loadProdDashboard() {
-        const shop = document.getElementById('prodFilterShop').value;
-        const type = document.getElementById('prodFilterType').value;
-        const printStatus = document.getElementById('prodFilterPrint').value;
-        const dateFrom = document.getElementById('prodFilterDateFrom').value;
-        const dateTo = document.getElementById('prodFilterDateTo').value;
-        const search = document.getElementById('prodFilterSearch').value.trim().toLowerCase();
-        
-        try {
-            const res = await fetch('/api/production/dashboard');
-            const data = await res.json();
-            if (!data.success) throw new Error(data.error);
-            
-            // 保存材料映射
-            _prodMappingData = data.material_mapping || [];
-            
-            // 填充店铺筛选
-            const shopSel = document.getElementById('prodFilterShop');
-            if (shopSel.options.length <= 1) {
-                (data.filters.shops || []).forEach(s => {
-                    const opt = document.createElement('option');
-                    opt.value = s; opt.textContent = s;
-                    shopSel.appendChild(opt);
-                });
-            }
-            
-            _prodDashboardOrders = data.orders || [];
-            window._prodDashboardOrders = _prodDashboardOrders;
-            
-            // 前端筛选
-            let filtered = _prodDashboardOrders;
-            if (shop) filtered = filtered.filter(o => o.shop === shop);
-            if (type) filtered = filtered.filter(o => o.product_type === type);
-            if (printStatus === 'printed') filtered = filtered.filter(o => o.printed);
-            if (printStatus === 'unprinted') filtered = filtered.filter(o => !o.printed);
-            if (dateFrom) filtered = filtered.filter(o => o.created >= dateFrom);
-            if (dateTo) filtered = filtered.filter(o => o.created <= dateTo);
-            if (search) filtered = filtered.filter(o =>
-                o.so_id.toLowerCase().includes(search) ||
-                o.product_name.toLowerCase().includes(search) ||
-                o.shop.toLowerCase().includes(search)
-            );
-            
-            // 重建索引映射
-            _prodDashboardIdxMap = {};
-            _prodDashboardOrders.forEach((o, i) => { _prodDashboardIdxMap[o.so_id] = i; });
-            
-            renderProdDashboard(filtered);
-        } catch(e) {
-            document.getElementById('prodTable').innerHTML = '<tr><td colspan="11" style="color:#e94560;text-align:center;padding:30px;">❌ 加载失败: ' + e.message + '</td></tr>';
-        }
-    }
-    
-    function renderProdDashboard(orders) {
-        const total = _prodDashboardOrders.length;
-        const printed = _prodDashboardOrders.filter(o => o.printed).length;
-        const unprinted = total - printed;
-        document.getElementById('prodStats').textContent = `共 ${total} 单 ｜ 已打印 ${printed} 单 ｜ 未打印 ${unprinted} 单`;
-        
-        if (!orders.length) {
-            document.getElementById('prodTable').innerHTML = '<tr><td colspan="11" style="text-align:center;padding:30px;color:#999;">暂无匹配的订单</td></tr>';
-            return;
-        }
-        
-        try {
-            const html = orders.map(function(o, idx) {
-                var printBadge = o.printed
-                    ? '<span style="color:#52c41a;font-weight:bold;">✅ 已打印</span>'
-                    : '<span style="color:#e94560;font-weight:bold;">⭕ 未打印</span>';
-                
-                // 构建规格展示 —— 每个规格一行，显示完整属性
-                var itemsHtml = '';
-                var specs = o.full_items || [];
-                if (!specs.length) {
-                    itemsHtml = '<span style="color:#999;font-size:11px;">—</span>';
-                } else {
-                    var lines = [];
-                    specs.forEach(function(item, idx) {
-                        var attrs = (item.display || item.platform_attrs || item.spec || '').trim();
-                        var _escProd = function(s) {
-                            return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-                        };
-                        lines.push('<div style="font-size:11px;line-height:1.5;padding:2px 0;border-bottom:' + (idx < specs.length-1 ? '1px dashed #eee' : 'none') + ';white-space:normal;word-break:break-word;">' +
-                            '<span style="color:#333;">' + _escProd(attrs || '—') + '</span> ' +
-                            '<strong style="color:#e94560;">×' + (item.qty || 0) + '</strong> ' +
-                            '<span style="font-size:10px;' + (item.has_stock ? 'color:#52c41a;' : 'color:#e94560;') + 'font-weight:500;">' + (item.has_stock ? '✅现货' : '📦需生产') + '</span>' +
-                            '</div>');
-                    });
-                    itemsHtml = lines.join('');
-                }
-                
-                var typeClass = 'tag-default';
-                if (o.product_type === '纸箱') typeClass = 'tag-warning';
-                else if (o.product_type === '扣底盒') typeClass = 'tag-info';
-                else if (o.product_type === '现货') typeClass = 'tag-success';
-                
-                // 当前工序
-                var currentStep = '—';
-                var pct = o.progress || 0;
-                if (o.steps && o.steps.length) {
-                    var activeStep = o.steps.find(function(s) { return s.active; });
-                    var doneAll = o.steps.every(function(s) { return s.done; });
-                    currentStep = doneAll ? '✅ 已完成' : (activeStep ? activeStep.name : '—');
-                }
-                
-                // 进度条HTML
-                var barColor = (pct >= 100) ? '#52c41a' : '#1677ff';
-                var progressHtml = '<div style="display:flex;align-items:center;gap:4px;min-width:80px;">' +
-                    '<div style="flex:1;height:5px;background:#f0f0f0;border-radius:3px;overflow:hidden;">' +
-                    '<div style="height:100%;width:' + pct + '%;background:' + barColor + ';border-radius:3px;"></div>' +
-                    '</div><span style="font-size:10px;color:#888;white-space:nowrap;">' + pct + '%</span></div>';
-                
-                return '<tr onclick="showProdDetailBySoId(\'' + o.so_id + '\')" style="cursor:pointer;">' +
-                    '<td style="width:36px;" onclick="event.stopPropagation()">' +
-                    '<input type="checkbox" class="prod-checkbox" value="' + o.so_id + '" onchange="updateBatchPrintBtn()">' +
-                    '</td>' +
-                    '<td style="font-size:11px;">' + printBadge + '</td>' +
-                    '<td style="font-family:monospace;font-size:12px;color:#1677ff;font-weight:600;">' + (o.so_id || '') + '</td>' +
-                    '<td style="font-size:12px;">' + (o.shop || '') + '</td>' +
-                    '<td><span class="tag ' + typeClass + '">' + (o.product_type || '') + '</span></td>' +
-                    '<td style="font-size:12px;max-width:200px;overflow-wrap:break-word;word-break:break-word;">' + itemsHtml + '</td>' +
-                    '<td><strong>' + (o.qty || 0) + '</strong></td>' +
-                    '<td style="font-size:11px;color:#1677ff;">' + currentStep + '</td>' +
-                    '<td style="min-width:80px;">' + progressHtml + '</td>' +
-                    '<td style="font-size:11px;color:#666;">' + (o.created || '') + '</td>' +
-                    '<td style="font-size:11px;">' +
-                    '<button onclick="event.stopPropagation();printSingleProd(\'' + o.so_id + '\')" style="padding:2px 8px;background:#52c41a;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:11px;">🖨️</button> ' +
-                    '<button onclick="event.stopPropagation();initSingleFlow(\'' + o.so_id + '\')" style="padding:2px 8px;background:#1677ff;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:11px;">📋</button>' +
-                    '</td></tr>';
-            }).join('');
-            
-            document.getElementById('prodTable').innerHTML = html;
-        } catch(e) {
-            document.getElementById('prodTable').innerHTML = '<tr><td colspan="10" style="color:#e94560;">渲染错误: ' + e.message + '</td></tr>';
-        }
-        updateBatchPrintBtn();
-    }
-    
     function showProdDetailBySoId(soId) {
         const orders = window._prodDashboardOrders || _prodDashboardOrders || [];
         const o = orders.find(item => String(item.so_id) === String(soId));
@@ -2460,7 +2340,7 @@
         if (fullItems.length) {
             var itemRows = [];
             fullItems.forEach(function(item, idx) {
-                var attrs = (item.display || item.platform_attrs || item.spec || '').trim();
+                var specLine = (item.production_spec || (item.production_spec_detail && item.production_spec_detail.line2) || item.display || '').trim();
                 var escA = function(s) {
                     return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
                 };
@@ -2471,7 +2351,7 @@
                     '<div style="display:flex;align-items:center;justify-content:space-between;">' +
                     '<div style="flex:1;">' +
                     '<span style="font-size:12px;color:#888;">#'+(idx+1)+'</span> ' +
-                    '<span style="font-size:12px;color:#333;line-height:1.5;white-space:normal;word-break:break-word;">'+escA(attrs || '—')+'</span> ' +
+                    '<span style="font-size:13px;color:#262626;font-weight:600;line-height:1.5;white-space:normal;word-break:break-word;">'+escA(specLine || '—')+'</span> ' +
                     '<span style="font-size:12px;color:#e94560;font-weight:bold;">×'+item.qty+'</span>' +
                     ' '+stockBadge +
                     '</div>' +
@@ -4326,31 +4206,27 @@
             const res = await fetch('/api/quote_data');
             const data = await res.json();
             if (!data.success) { throw new Error('加载配置失败'); }
-            const qd = data.data;
+            const patch = { profit: {}, materials: {} };
 
-            // 更新零售倍率
             const retailMult = parseFloat(document.getElementById('cfgRetailMult').value) || 2.0;
-            if (!qd.profit) qd.profit = {};
-            qd.profit.retail_multiplier = retailMult;
+            patch.profit.retail_multiplier = retailMult;
 
-            // 更新所有材料单价
             document.querySelectorAll('.cfg-price').forEach(input => {
                 const group = input.dataset.group;
                 const key = input.dataset.key;
                 const price = parseFloat(input.value) || 0;
-                if (qd.materials?.[group]?.materials?.[key]) {
-                    qd.materials[group].materials[key].price = price;
-                }
+                if (!patch.materials[group]) patch.materials[group] = { materials: {} };
+                if (!patch.materials[group].materials[key]) patch.materials[group].materials[key] = {};
+                patch.materials[group].materials[key].price = price;
             });
 
-            // 读取映射数据
-            var mappingData = [];
+            const mappingRows = [];
             document.querySelectorAll('#matMappingBody tr').forEach(function(tr) {
                 var mat = tr.querySelector('.map-material');
                 var grp = tr.querySelector('.map-group');
                 var kw = tr.querySelector('.map-keywords');
                 if (mat && grp && kw) {
-                    mappingData.push({
+                    mappingRows.push({
                         material_key: mat.dataset.key || '',
                         material_name: mat.value || '',
                         group: grp.value || '',
@@ -4358,12 +4234,12 @@
                     });
                 }
             });
-            if (mappingData.length) qd.material_mapping = mappingData;
+            if (mappingRows.length) patch.material_mapping = mappingRows;
 
             const saveRes = await fetch('/api/quote/save_config', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(qd)
+                body: JSON.stringify(patch)
             });
             const saveData = await saveRes.json();
 
@@ -4476,17 +4352,25 @@
                 
             let html = '<div style="display:flex;flex-direction:column;gap:2px;">';
             items.forEach(item => {
-                const tlabel = _dmTypeLabels[item.product_type] || item.product_type;
+                const scope = _dmDimScopeText(item, '');
+                const scopeTag = scope
+                    ? `<span style="font-size:11px;color:#fff;background:#1677ff;padding:2px 8px;border-radius:4px;margin-right:6px;">${scope}</span>`
+                    : '';
+                const tc = item.type_class || '固定';
+                const tcColor = tc === '组合' ? '#722ed1' : '#52c41a';
+                const code = _dmDimCode(item);
                 html += `
                 <div onclick="fillDimoldbQuick('${item.id}')" style="display:flex;align-items:center;padding:8px 10px;border-bottom:1px solid #f0f0f0;cursor:pointer;" title="点击填充查询">
                     <div style="flex:1;min-width:0;">
-                        <div style="font-weight:600;font-size:14px;">${item.name}</div>
-                        <div style="font-size:12px;color:#666;margin-top:2px;">
-                            ${tlabel} ｜ ${item.length}×${item.width}×${item.height} cm
-                            ${item.code ? ' ｜ 编码 ' + item.code : ''}
-                            ${item.remark ? ' ｜ 📍' + item.remark : ''}
-                            <span style="color:#52c41a;font-weight:600;"> ｜ 📦${item.stock ?? 0}个</span>
-                            <span style="color:#1677ff;font-weight:500;"> ｜ ${item.type_class || '固定'}${(item.opens && item.opens > 1) ? ' 开'+item.opens : ''}</span>
+                        <div style="font-weight:600;font-size:14px;display:flex;align-items:center;flex-wrap:wrap;gap:4px;">
+                            ${scopeTag}<span>${item.name}</span>
+                            <span style="font-size:11px;color:#fff;background:${tcColor};padding:1px 8px;border-radius:4px;">${tc}</span>
+                        </div>
+                        <div style="font-size:12px;color:#666;margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+                            <span>📐 ${item.length}×${item.width}×${item.height} cm</span>
+                            <span style="color:#fa8c16;font-weight:600;background:#fff7e6;padding:1px 6px;border-radius:4px;">🔖编码 ${code}</span>
+                            <span style="color:#52c41a;font-weight:600;">📦${item.stock ?? 0}个</span>
+                            ${item.remark ? '<span style="color:#999;">📍' + item.remark + '</span>' : ''}
                         </div>
                     </div>
                     <div style="font-size:11px;color:#999;white-space:nowrap;">${item.created_at || ''}</div>

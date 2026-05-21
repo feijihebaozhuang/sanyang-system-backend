@@ -14,6 +14,7 @@ import pymysql
 
 from settings import DB_CONFIG, FLASK_SECRET_KEY
 import production_helpers as ph
+from quote_config_merge import merge_quote_config
 
 
 def _auth_token_for(username: str) -> str:
@@ -1605,6 +1606,7 @@ def save_quote_data(qd):
     except:
         return False
 
+
 def ceil_to_half(val):
     """向上取整到0.5：23.32→23.5, 23.62→24"""
     import math
@@ -2014,11 +2016,13 @@ def save_quote_config():
         if not my_perm.get('权限管理', False):
             return jsonify({"success": False, "error": "无权限修改报价配置"})
         
-        new_data = request.get_json()
-        if not new_data:
+        patch = request.get_json()
+        if not patch:
             return jsonify({"success": False, "error": "数据为空"})
-        
-        if save_quote_data(new_data):
+
+        existing = load_quote_data() or {}
+        merged = merge_quote_config(existing, patch)
+        if save_quote_data(merged):
             return jsonify({"success": True, "message": "报价配置已保存"})
         else:
             return jsonify({"success": False, "error": "保存失败"})

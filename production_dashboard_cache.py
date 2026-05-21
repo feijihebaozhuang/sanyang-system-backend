@@ -252,7 +252,7 @@ def rebuild_dashboard_cache(
                 {
                     "name": item.get("name", "") or "",
                     "spec": raw_attrs,
-                    "display": raw_attrs,
+                    "display": ps.get("line2") or ps.get("formatted") or ps.get("line") or "",
                     "platform_attrs": raw_attrs,
                     "platform_spec_raw": ps.get("platform_spec_raw") or raw_attrs,
                     "production_spec": ps.get("line2") or ps.get("formatted") or "",
