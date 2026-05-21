@@ -430,6 +430,9 @@
             if (options.forceRefresh || options.paging || window._prodPage > 1) {
                 qs += (qs ? '&' : '') + 'refresh=1';
             }
+            if (options.paging) {
+                qs += (qs ? '&' : '') + '_ts=' + Date.now();
+            }
             var fetchFn =
                 typeof SY_AUTH !== 'undefined' && SY_AUTH.apiFetch
                     ? SY_AUTH.apiFetch
@@ -438,7 +441,9 @@
             if (reqId !== window._prodDashReqSeq) return;
             var data = await res.json();
             if (!data.success) throw new Error(data.error || '加载失败');
-            if ((data.page || 1) !== pageWanted) return;
+            var respPage = parseInt(data.page, 10);
+            if (isNaN(respPage)) respPage = pageWanted;
+            if (respPage !== pageWanted) return;
             window._prodMappingData =
                 data.material_mapping || data.production_material_mapping || [];
             window._prodDashboardOrders = data.orders || [];
@@ -724,14 +729,25 @@
             return '';
         }
         if (st === 'shortage') {
-            var err = (mc.error || '').trim();
+            var err = (mc.shortage_detail || mc.error || '').trim();
             var msg =
                 err.indexOf('缺料') === 0
                     ? err
                     : '缺料：' + (err || '未找到合适纸板规格，请员工自行决定');
+            var pl = mc.paper_l_inch;
+            var pw = mc.paper_w_inch;
+            var extra =
+                pl && pw
+                    ? '（需纸长' +
+                      prodEscHtml(String(pl)) +
+                      '×纸度' +
+                      prodEscHtml(String(pw)) +
+                      '英寸）'
+                    : '';
             return (
                 '<div style="font-size:10px;color:#cf1322;font-weight:600;margin-top:2px;line-height:1.45;">⚠️' +
-                msg +
+                prodEscHtml(msg) +
+                extra +
                 '</div>'
             );
         }

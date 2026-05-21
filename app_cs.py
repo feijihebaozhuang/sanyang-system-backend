@@ -1691,10 +1691,17 @@ def save_quote_config():
         user = USERS.get(session['username'])
         if not user:
             return jsonify({"success": False, "error": "用户不存在"})
-        name = user['employee_name']
-        _sync_all_employees_perms()
-        my_perm = _permission_data.get("permissions", {}).get(name, {})
-        if not my_perm.get('权限管理', False):
+        import permission_resolve as _perm_resolve
+
+        username = session.get("username") or ""
+        if not _perm_resolve.user_has_permission(
+            user,
+            username,
+            "权限管理",
+            _permission_data,
+            sync_fn=_sync_all_employees_perms,
+            get_db_fn=get_db,
+        ):
             return jsonify({"success": False, "error": "无权限修改报价配置"})
         
         patch = request.get_json()

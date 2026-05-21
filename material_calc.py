@@ -135,6 +135,57 @@ def row_matches_material(
     )
 
 
+def _nearest_paper_shortage_detail(
+    need_l: float,
+    need_w: float,
+    material_text: str,
+    raw_rows: list[dict],
+    *,
+    product_type: str = "",
+    attrs: str = "",
+) -> dict[str, Any]:
+    """无库存可开料时，找材料匹配且尺寸最接近的纸板，生成缺料说明。"""
+    best: dict[str, Any] | None = None
+    best_gap = 1e9
+    for row in raw_rows or []:
+        blob = _row_blob(row)
+        if _is_carton_product(product_type, attrs) and _row_excluded_for_carton(blob):
+            continue
+        if not row_matches_material(
+            row, material_text, product_type=product_type, attrs=attrs
+        ):
+            continue
+        pw, pl = _paper_dims_inch(row)
+        if pw <= 0 or pl <= 0:
+            continue
+        gap_w = max(0.0, need_w - pw)
+        gap_l = max(0.0, need_l - pl)
+        gap = gap_w + gap_l
+        if gap < best_gap:
+            best_gap = gap
+            best = {
+                "row": row,
+                "paper_width_inch": pw,
+                "paper_length_inch": pl,
+                "gap_w": gap_w,
+                "gap_l": gap_l,
+            }
+    if not best:
+        return {"error": "缺料：未找到合适纸板规格，请员工自行决定"}
+    r = best["row"]
+    supplier = (r.get("supplier") or "").strip()
+    name = (r.get("name") or "").strip()
+    pw = best["paper_width_inch"]
+    pl = best["paper_length_inch"]
+    label = "".join(x for x in (supplier, name) if x) or "未知"
+    gap_cm = round(max(best["gap_w"], best["gap_l"]) * 2.54, 1)
+    err = (
+        f"缺料：最近纸板{label} {pw}×{pl}英寸"
+        + (f"，纸度差{gap_cm}cm" if gap_cm > 0 else "")
+    )
+    return {"error": err, "row": r}
+
+
 def _leftover_inch(stock: float, need: float) -> float | None:
     if need <= 0 or stock < need:
         return None
@@ -204,10 +255,21 @@ def match_paper(
         candidates = _scan(raw_rows)
 
     if not candidates:
+        near = _nearest_paper_shortage_detail(
+            need_l,
+            need_w,
+            material_text,
+            raw_rows,
+            product_type=product_type,
+            attrs=attrs,
+        )
         return {
             "success": False,
             "shortage": True,
-            "error": "缺料：未找到合适纸板规格，请员工自行决定",
+            "error": near.get("error")
+            or "缺料：未找到合适纸板规格，请员工自行决定",
+            "shortage_detail": near.get("error"),
+            "nearest_paper": near.get("row"),
             "paper_l_inch": need_l,
             "paper_w_inch": need_w,
             "material": material_text,
@@ -435,15 +497,18 @@ def calc_material_line(
     )
     if not paper.get("success"):
         st = "shortage" if paper.get("shortage") else "error"
+        err = paper.get("error", "纸板匹配失败")
         return {
             "status": st,
             "material_status": st,
-            "error": paper.get("error", "纸板匹配失败"),
+            "error": err,
+            "shortage_detail": paper.get("shortage_detail") or err,
             "paper_l_inch": paper_l_inch,
             "paper_w_inch": paper_w_inch,
             "inches": inches,
             "material": material_text,
             "attrs": attrs,
+            "nearest_paper": paper.get("nearest_paper"),
         }
 
     per_board = paper.get("sheets_per_board") or calc_sheets_per_board(

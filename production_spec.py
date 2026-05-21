@@ -22,7 +22,7 @@ _LENGTH_DASH_RE = re.compile(
     re.I,
 )
 _HEIGHT_BRACKET_RE = re.compile(
-    r"(?:高度|高)\s*【\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?\s*"
+    r"(?:高度|高)\s*【\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)"
     + _BRACKET_INNER_TAIL,
     re.I,
 )
@@ -559,7 +559,43 @@ def _parse_dimensions(text: str) -> dict[str, float]:
                 dims["h"] = _val_to_cm(float(m_wh.group(2)), "cm")
                 dims.pop("l", None)
 
+    dims = _apply_mm_size_heuristic(dims, text)
     return _normalize_parsed_dims_units(dims, text)
+
+
+def _apply_mm_size_heuristic(dims: dict[str, float], text: str) -> dict[str, float]:
+    """原文含 mm/毫米 时，把未换算的大尺寸三连（如 130×130×4mm）统一为 cm。"""
+    if not dims or not text or not re.search(r"(?:mm|毫米)", text, re.I):
+        return dims
+    out = dict(dims)
+    m3 = re.search(
+        r"(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*(?:mm|毫米)",
+        text,
+        re.I,
+    )
+    if m3:
+        out["l"] = _val_to_cm(float(m3.group(1)), "mm")
+        out["w"] = _val_to_cm(float(m3.group(2)), "mm")
+        out["h"] = _val_to_cm(float(m3.group(3)), "mm")
+        return out
+    m3b = re.search(
+        r"(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)(?:mm|毫米)",
+        text,
+        re.I,
+    )
+    if m3b:
+        out["l"] = _val_to_cm(float(m3b.group(1)), "mm")
+        out["w"] = _val_to_cm(float(m3b.group(2)), "mm")
+        out["h"] = _val_to_cm(float(m3b.group(3)), "mm")
+        return out
+    if max(out.get("l") or 0, out.get("w") or 0) >= 50:
+        for key in ("l", "w"):
+            if key in out and (out[key] or 0) >= 50:
+                out[key] = out[key] / 10.0
+        h_raw = out.get("h")
+        if h_raw is not None and h_raw >= 10:
+            out["h"] = h_raw / 10.0
+    return out
 
 
 def _has_size_digits(text: str) -> bool:

@@ -1364,8 +1364,28 @@ def _sync_all_employees_perms():
             del base[name]
     _permission_data["permissions"] = base
 
+
+import permission_resolve as _perm_resolve
+
+
+def _merge_employee_permissions_from_db() -> None:
+    _perm_resolve.merge_employee_permissions_from_db(_permission_data, get_db)
+
+
+def _user_has_permission(user: dict | None, username: str, feature: str) -> bool:
+    return _perm_resolve.user_has_permission(
+        user,
+        username,
+        feature,
+        _permission_data,
+        sync_fn=_sync_all_employees_perms,
+        get_db_fn=get_db,
+    )
+
+
 # 初始化时执行一次
 _sync_all_employees_perms()
+_merge_employee_permissions_from_db()
 
 DEFAULT_PRODUCTION_MATERIAL_MAPPING = [
     {"keywords": "特硬,外径特硬,内径特硬,D6D,国产,加硬", "label": "特硬"},
@@ -2010,10 +2030,8 @@ def save_quote_config():
         user = USERS.get(session['username'])
         if not user:
             return jsonify({"success": False, "error": "用户不存在"})
-        name = user['employee_name']
-        _sync_all_employees_perms()
-        my_perm = _permission_data.get("permissions", {}).get(name, {})
-        if not my_perm.get('权限管理', False):
+        username = session.get("username") or ""
+        if not _user_has_permission(user, username, "权限管理"):
             return jsonify({"success": False, "error": "无权限修改报价配置"})
         
         patch = request.get_json()
