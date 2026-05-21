@@ -6185,8 +6185,17 @@ async function filterProdOrders(keyword) {
     loadProdDashboard();
 }
 </script>
+<script>
+async function batchCalcMaterialOrders() {
+    const ids = getSelectedProdIds();
+    if (!ids.length) { alert('请先勾选要打单的订单'); return; }
+    if (typeof window.batchCalcMaterialOrdersImpl === 'function') {
+        return window.batchCalcMaterialOrdersImpl(ids);
+    }
+    alert('算料模块未加载，请刷新页面');
+}
+</script>
 <script src="/static/prod_ui.js?v=20260521b"></script>
-
 </body>
 </html>
 
