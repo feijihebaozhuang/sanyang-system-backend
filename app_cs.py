@@ -1352,13 +1352,10 @@ def calc_airbox(length, width, height, qty, material_key, quote_data, is_buckle=
     retail_mult = quote_data.get("profit", {}).get("retail_multiplier", 2.0)
     sell_price_per_unit = material_cost_per_unit * retail_mult
     
-    # 批量建议
-    suggestions = quote_data.get("profit", {}).get("suggestions", {}).get("airbox", [])
-    suggested_rate = None
-    for s in sorted(suggestions, key=lambda x: -x["qty"]):
-        if qty >= s["qty"]:
-            suggested_rate = s["multiplier"]
-            break
+    import quote_calc_core as qcc
+
+    redline_mult = qcc.redline_multiplier(quote_data)
+    batch_mult = qcc.batch_multiplier_for_qty(qty, quote_data)
 
     # ====== 重量计算 ======
     # 展开面积(平方英寸) = 纸长×纸度
@@ -1405,8 +1402,12 @@ def calc_airbox(length, width, height, qty, material_key, quote_data, is_buckle=
         "total_cost": round(material_cost_per_unit * qty, 2),
         "total_price": round(sell_price_per_unit * qty, 2),
         "qty": qty,
-        "suggested_multiplier": suggested_rate,
-        "suggested_price": round(material_cost_per_unit * suggested_rate, 4) if suggested_rate else None,
+        "suggested_multiplier": redline_mult,
+        "suggested_price": round(material_cost_per_unit * redline_mult, 4),
+        "batch_multiplier": batch_mult,
+        "batch_suggested_price": (
+            round(material_cost_per_unit * batch_mult, 4) if batch_mult else None
+        ),
         "weight_per_unit_g": round(weight_per_unit_g, 2),
         "weight_per_unit_kg": round(weight_per_unit_kg, 4),
         "weight_total_kg": round(total_weight_kg, 2),

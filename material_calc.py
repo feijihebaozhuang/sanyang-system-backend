@@ -166,7 +166,7 @@ def format_paper_shortage_message(
     pl = _inch_disp(paper_l_inch)
     pw = _inch_disp(paper_w_inch)
     return (
-        f"缺料：{pt}[{size}]cm，展开需纸长{pl}英寸×纸度{pw}英寸"
+        f"缺料：{pt} {size}cm，展开需纸长{pl}英寸×纸度{pw}英寸"
     )
 
 
@@ -546,6 +546,10 @@ def calc_material_line(
             "material": material_text,
             "attrs": attrs,
             "nearest_paper": paper.get("nearest_paper"),
+            "product_label": calc_pt,
+            "box_l_cm": l,
+            "box_w_cm": w,
+            "box_h_cm": h,
         }
 
     per_board = paper.get("sheets_per_board") or calc_sheets_per_board(
@@ -794,8 +798,53 @@ def cache_key(so_id: str, line_index: int) -> str:
     return f"{so_id}#{line_index}"
 
 
+def _normalize_cached_shortage(entry: dict | None) -> dict | None:
+    """旧算料缓存可能仍是「最近纸板…」文案，读缓存时统一成新格式。"""
+    if not entry or entry.get("status") != "shortage":
+        return entry
+    err = str(entry.get("error") or entry.get("shortage_detail") or "")
+    if "展开需纸长" in err and "最近纸板" not in err:
+        return entry
+    pl = float(entry.get("paper_l_inch") or 0)
+    pw = float(entry.get("paper_w_inch") or 0)
+    if pl <= 0 or pw <= 0:
+        return entry
+    l = float(entry.get("box_l_cm") or 0)
+    w = float(entry.get("box_w_cm") or 0)
+    h = float(entry.get("box_h_cm") or 0)
+    if l <= 0 or w <= 0 or h <= 0:
+        import production_spec as pspec
+
+        attrs = (entry.get("attrs") or "").strip()
+        ps = pspec.build_production_spec(attrs, 1)
+        if ps.get("dimensions_ok"):
+            l = float(ps.get("length") or 0)
+            w = float(ps.get("width") or 0)
+            h = float(ps.get("height") or 0)
+    if l <= 0 or w <= 0:
+        return entry
+    pt = (
+        entry.get("product_label")
+        or entry.get("product_type")
+        or "产品"
+    )
+    msg = format_paper_shortage_message(
+        product_label=str(pt),
+        length_cm=l,
+        width_cm=w,
+        height_cm=h or 0,
+        paper_l_inch=pl,
+        paper_w_inch=pw,
+    )
+    out = dict(entry)
+    out["error"] = msg
+    out["shortage_detail"] = msg
+    return out
+
+
 def get_cached_line(so_id: str, line_index: int) -> dict | None:
-    return load_calc_cache().get(cache_key(so_id, line_index))
+    raw = load_calc_cache().get(cache_key(so_id, line_index))
+    return _normalize_cached_shortage(raw)
 
 
 def set_cached_line(so_id: str, line_index: int, result: dict) -> None:

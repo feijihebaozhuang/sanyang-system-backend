@@ -128,6 +128,7 @@
   },
   "profit": {
     "retail_multiplier": 2,
+    "redline_multiplier": 1.35,
     "suggestions": {
       "airbox": [
         {
@@ -290,19 +291,19 @@
       "material_key": "b_keng",
       "material_name": "三层B坑 K7K",
       "group": "carton",
-      "keywords": "普通,B坑,K7K"
+      "keywords": "B坑,B瓦,三层,3层,K7K,普通"
     },
     {
       "material_key": "eb_keng",
       "material_name": "五层EB坑 K636K",
       "group": "carton",
-      "keywords": "五层EB,EB坑,K636K"
+      "keywords": "五层,EB,EB坑,五层EB,K636K"
     },
     {
       "material_key": "bc_keng",
       "material_name": "五层BC坑 K737K",
       "group": "carton",
-      "keywords": "五层BC,BC坑,K737K"
+      "keywords": "五层,BC,BC坑,五层BC,K737K"
     }
   ]
 }

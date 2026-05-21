@@ -101,6 +101,35 @@ def calc_paper_inches(
     }
 
 
+def redline_multiplier(quote_data: dict | None) -> float:
+    """
+    红线底价倍率：固定值，不随订单数量阶梯变化。
+    批量建议倍率见 batch_multiplier_for_qty，仅用于展示批量利润参考。
+    """
+    profit = (quote_data or {}).get("profit") or {}
+    v = profit.get("redline_multiplier")
+    if v is not None:
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            pass
+    return 1.35
+
+
+def batch_multiplier_for_qty(qty: int, quote_data: dict | None) -> float | None:
+    """数量阶梯倍率（仅供批量建议展示，不参与红线价）。"""
+    suggestions = (quote_data or {}).get("profit", {}).get("suggestions", {}).get(
+        "airbox", []
+    )
+    for s in sorted(suggestions, key=lambda x: -int(x.get("qty") or 0)):
+        if qty >= int(s.get("qty") or 0):
+            try:
+                return float(s["multiplier"])
+            except (TypeError, ValueError, KeyError):
+                return None
+    return None
+
+
 def expand_dimensions(
     product_type: str,
     length: float,

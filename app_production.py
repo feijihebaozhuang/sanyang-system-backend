@@ -1631,18 +1631,25 @@ def load_quote_data():
                     pass
             result[key] = val
         if result:
-            return result
+            from quote_material_defaults import enrich_quote_data
+
+            return enrich_quote_data(result)
     except Exception as e:
         print(f"[load_quote_data] MySQL: {e}")
     try:
         with open(QUOTE_DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            from quote_material_defaults import enrich_quote_data
+
+            return enrich_quote_data(json.load(f))
     except Exception:
         return None
 
 
 def save_quote_data(qd):
     """写入 MySQL quote_config，并同步 quote_data.json 备份。"""
+    from quote_material_defaults import enrich_quote_data
+
+    qd = enrich_quote_data(qd or {})
     ok_mysql = False
     try:
         db = get_db()
@@ -1753,13 +1760,10 @@ def calc_airbox(length, width, height, qty, material_key, quote_data, is_buckle=
     retail_mult = quote_data.get("profit", {}).get("retail_multiplier", 2.0)
     sell_price_per_unit = material_cost_per_unit * retail_mult
     
-    # 批量建议
-    suggestions = quote_data.get("profit", {}).get("suggestions", {}).get("airbox", [])
-    suggested_rate = None
-    for s in sorted(suggestions, key=lambda x: -x["qty"]):
-        if qty >= s["qty"]:
-            suggested_rate = s["multiplier"]
-            break
+    import quote_calc_core as qcc
+
+    redline_mult = qcc.redline_multiplier(quote_data)
+    batch_mult = qcc.batch_multiplier_for_qty(qty, quote_data)
 
     # ====== 重量计算 ======
     # 展开面积(平方英寸) = 纸长×纸度
@@ -1806,8 +1810,12 @@ def calc_airbox(length, width, height, qty, material_key, quote_data, is_buckle=
         "total_cost": round(material_cost_per_unit * qty, 2),
         "total_price": round(sell_price_per_unit * qty, 2),
         "qty": qty,
-        "suggested_multiplier": suggested_rate,
-        "suggested_price": round(material_cost_per_unit * suggested_rate, 4) if suggested_rate else None,
+        "suggested_multiplier": redline_mult,
+        "suggested_price": round(material_cost_per_unit * redline_mult, 4),
+        "batch_multiplier": batch_mult,
+        "batch_suggested_price": (
+            round(material_cost_per_unit * batch_mult, 4) if batch_mult else None
+        ),
         "weight_per_unit_g": round(weight_per_unit_g, 2),
         "weight_per_unit_kg": round(weight_per_unit_kg, 4),
         "weight_total_kg": round(total_weight_kg, 2),
@@ -2014,6 +2022,9 @@ def calc_carton(length, width, height, qty, material_key, quote_data):
     material_cost_per_unit = paper_l_inch * paper_w_inch * unit_price / 1000
     retail_mult = quote_data.get("profit", {}).get("retail_multiplier", 2.0)
     sell_price_per_unit = material_cost_per_unit * retail_mult
+    import quote_calc_core as qcc
+
+    redline_mult = qcc.redline_multiplier(quote_data)
 
     # ====== 重量计算 ======
     gram_weight = mat_info.get("gram_weight", 380)
@@ -2059,8 +2070,8 @@ def calc_carton(length, width, height, qty, material_key, quote_data):
         "total_price": round(sell_price_per_unit * qty, 2),
         "qty": qty,
         "is_double_buckle": is_double,
-        "suggested_multiplier": None,
-        "suggested_price": None,
+        "suggested_multiplier": redline_mult,
+        "suggested_price": round(material_cost_per_unit * redline_mult, 4),
         "weight_per_unit_g": round(weight_per_unit_g, 2),
         "weight_per_unit_kg": round(weight_per_unit_kg, 4),
         "weight_total_kg": round(total_weight_kg, 2),

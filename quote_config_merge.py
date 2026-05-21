@@ -5,6 +5,8 @@ from __future__ import annotations
 import copy
 from typing import Any
 
+from quote_material_defaults import enrich_material_mapping
+
 
 def _deep_merge(target: dict, patch: dict) -> dict:
     """只更新 patch 里出现的键，保留 target 其余字段（避免 price patch 清掉 name/gram_weight）。"""
@@ -36,11 +38,13 @@ def merge_quote_config(existing: dict | None, patch: dict | None) -> dict:
         if key == "material_mapping" and isinstance(val, list):
             if not val:
                 continue
-            base["material_mapping"] = [
-                _normalize_material_row(row)
-                for row in val
-                if isinstance(row, dict)
-            ]
+            base["material_mapping"] = enrich_material_mapping(
+                [
+                    _normalize_material_row(row)
+                    for row in val
+                    if isinstance(row, dict)
+                ]
+            )
         elif isinstance(val, dict):
             if isinstance(base.get(key), dict):
                 _deep_merge(base[key], val)
