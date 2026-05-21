@@ -2662,12 +2662,12 @@ def search_dimoldb():
                     matches = [d for d in matches if _dimoldb_infer_inner_outer(d) == 'inner']
                 elif dim_type == 'outer':
                     matches = [d for d in matches if _dimoldb_infer_inner_outer(d) == 'outer']
-        if len(matches) > 100:
-            matches = matches[:100]
         for d in matches:
             d['type_class'] = _dimoldb_store.infer_type_class(d)
             if not d.get('dim_type'):
                 d['dim_type'] = _dimoldb_infer_inner_outer(d)
+        if len(matches) > 100:
+            matches = matches[:100]
         return jsonify({"success": True, "matches": matches})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})

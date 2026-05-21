@@ -187,11 +187,17 @@ def main() -> None:
     mark = "    // ===== 固定刀模库 ====="
     text = text.replace(mark, dm_helpers + mark, 1)
 
-    for sig in (
+    text = replace_js_function(
+        text,
         "    async function quickSearchDimoldb()",
+        extract_js_function(cs, "    async function quickSearchDimoldb()"),
+    )
+    # 首页刀模查询以生产模板为准（内外径横幅、dim_type、固定/组合展示）
+    text = replace_js_function(
+        text,
         "    async function homeQuickSearchDimoldb()",
-    ):
-        text = replace_js_function(text, sig, extract_js_function(cs, sig))
+        extract_js_function(PROD.read_text(encoding="utf-8"), "    async function homeQuickSearchDimoldb()"),
+    )
 
     # 删除重复的 fillDimoldbQuick（全量列表版）
     bad_dup = extract_js_function(

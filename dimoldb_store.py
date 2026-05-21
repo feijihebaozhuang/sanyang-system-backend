@@ -313,11 +313,14 @@ LEGACY_IMPORT_HEADERS = (
 
 
 def infer_type_class(dm: dict) -> str:
-    """刀模分类：编码以「组」开头为组合；有固定编码为固定；其余默认固定。"""
+    """刀模分类：编码/remark 以「组」「组合」开头为组合；有其它编码为固定；其余默认固定。"""
+    for field in ("code", "remark", "production_spec", "name"):
+        s = str(dm.get(field) or "").strip()
+        if not s:
+            continue
+        if s.startswith("组") or s.startswith("组合"):
+            return "组合"
     code = str(dm.get("code") or "").strip()
-    name = str(dm.get("name") or "").strip()
-    if code.startswith("组") or name.startswith("组"):
-        return "组合"
     if code:
         return "固定"
     stored = str(dm.get("type_class") or "").strip()

@@ -217,6 +217,16 @@ def _parse_dimensions(text: str) -> dict[str, float]:
     if not text:
         return dims
 
+    # 宽*高【13*2】、宽高【13*2】：优先于散落的 n*n，避免把 13 当成宽、2 当成高以外的维度
+    m_wh_br = re.search(
+        r"宽\s*[*×xX]?\s*高\s*【\s*(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*】",
+        text,
+        re.I,
+    )
+    if m_wh_br:
+        dims["w"] = float(m_wh_br.group(1))
+        dims["h"] = float(m_wh_br.group(2))
+
     m = _LW_IN_BRACKET_RE.search(text) or _LW_SPLIT_BRACKET_RE.search(text)
     if m:
         dims["l"] = float(m.group(1))
@@ -325,7 +335,9 @@ def _parse_dimensions(text: str) -> dict[str, float]:
         if m:
             dims.setdefault("l", float(m.group(1)))
             dims.setdefault("w", float(m.group(2)))
-    if "l" not in dims or "w" not in dims:
+    if ("l" not in dims or "w" not in dims) and not (
+        dims.get("w") is not None and dims.get("h") is not None
+    ):
         m = re.search(
             r"(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?",
             text,

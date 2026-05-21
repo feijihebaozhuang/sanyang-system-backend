@@ -4733,15 +4733,9 @@
                 for (const m of matches) {
                     // 每个刀模对应的库存（按 spec = 尺寸匹配）
                     const specKey = m.length + 'x' + m.width + 'x' + m.height;
-                    // 根据刀模的 dim_type 过滤对应的库存（内外径分开）
-                    // 刀模dim_type字段为空，用name判断
-                    let dmDimType = '';
-                    if (m.name.includes('(内)') || m.name.includes('内径')) dmDimType = 'inner';
-                    else if (m.name.includes('(外)') || m.name.includes('外径')) dmDimType = 'outer';
+                    const dmDimType = _dmInferInnerOuter(m) || dimType;
                     let relatedInv = invBySpec[specKey] || invBySpec[m.name] || [];
-                    if (dmDimType) {
-                        relatedInv = relatedInv.filter(ri => ri.dim_type === dmDimType);
-                    }
+                    relatedInv = relatedInv.filter(ri => _dmInvDimMatch(dmDimType, ri.dim_type));
                     // 汇总库存数量
                     let totalStock = 0;
                     let invDetailsHtml = '';
@@ -4762,14 +4756,17 @@
                     const scopeHtml = scopeTag
                         ? '<span style="font-size:11px;color:#fff;background:#1677ff;padding:1px 8px;border-radius:4px;margin-left:6px;">' + scopeTag + '</span>'
                         : '';
+                    const typeClass = m.type_class || '固定';
+                    const typeClassHtml = '<span style="font-size:11px;color:#fff;background:' + (typeClass === '组合' ? '#722ed1' : '#52c41a') + ';padding:1px 8px;border-radius:4px;margin-left:6px;">' + typeClass + '</span>';
                     html += '<div style="background:#f6ffed;border:1px solid #b7eb8f;border-radius:8px;padding:10px;margin-bottom:6px;text-align:left;">'
-                        + '<div style="display:flex;justify-content:space-between;align-items:center;">'
-                        + '<div style="font-weight:600;font-size:15px;color:#333;">' + (m.name || specKey) + scopeHtml + '</div>'
+                        + '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px;">'
+                        + '<div style="font-weight:600;font-size:15px;color:#333;">' + (m.name || specKey) + scopeHtml + typeClassHtml + '</div>'
                         + stockBadge
                         + '</div>'
                         + '<div style="display:flex;gap:16px;margin-top:6px;font-size:13px;flex-wrap:wrap;">'
                         + '<span style="color:#666;">📐 ' + m.length + '×' + m.width + '×' + m.height + ' cm</span>'
-                        + '<span style="color:#1677ff;">📍 ' + (m.remark || '未标注位置') + '</span>'
+                        + '<span style="color:#1677ff;">编码 ' + _dmDimCode(m) + '</span>'
+                        + '<span style="color:#999;">📍 ' + (m.remark || '未标注位置') + '</span>'
                         + '</div>'
                         + (invDetailsHtml ? '<div style="margin-top:6px;font-size:12px;display:flex;flex-wrap:wrap;gap:3px;">' + invDetailsHtml + '</div>' : '')
                         + '</div>';
@@ -4793,8 +4790,8 @@
                     html += '</div>';
                     resultEl.innerHTML = html;
                 } else {
-                    resultEl.innerHTML = `
-                    <div style="padding:8px 0;">
+                    resultEl.innerHTML = _dimSearchScopeBanner(dimType, l, w, h)
+                        + `<div style="padding:8px 0;">
                         <span style="color:#faad14;font-weight:600;">⚠️ 未找到匹配刀模</span>
                         <span style="color:#999;margin-left:8px;">${l}×${w}×${h} cm 暂无固定刀模</span>
                     </div>`;
