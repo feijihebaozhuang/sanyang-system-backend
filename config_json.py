@@ -71,7 +71,19 @@ def read_json_file(path: str | Path, default: Any) -> Any:
 
 
 def read_permission_overlay(base_dir: str | Path | None = None) -> dict[str, Any]:
-    """从 data.json 读取 permission_data 片段（只读）。"""
+    """读取 permission_data：优先独立配置服务器，否则 data.json。"""
+    try:
+        import permission_vault as pv
+
+        if pv.vault_enabled():
+            try:
+                remote = pv.fetch_permission_overlay()
+                if remote:
+                    return remote
+            except Exception as e:
+                print(f"[config_json] 保险库拉取失败，回退 data.json: {e}")
+    except ImportError:
+        pass
     raw = read_json_file(data_json_path(base_dir), {})
     pd = raw.get("permission_data")
     return pd if isinstance(pd, dict) else {}
@@ -102,7 +114,20 @@ def write_permission_overlay(
     base_dir: str | Path | None = None,
     keys: frozenset[str] = PERMISSION_JSON_KEYS,
 ) -> bool:
-    """Admin 保存：合并写入 data.json（保留 JSON 中其它顶层字段）。"""
+    """Admin 保存：保险库模式仅允许 POST 到配置机；否则写本机 data.json。"""
+    try:
+        import permission_vault as pv
+
+        if pv.vault_enabled():
+            if pv.vault_readonly_on_app():
+                print(
+                    "[config_json] permission_data 已锁定在独立配置服务器，"
+                    "本机禁止写入（未配置 PERMISSION_VAULT_WRITE_URL）"
+                )
+                return False
+            return pv.push_permission_overlay(permission_data, keys=keys)
+    except ImportError:
+        pass
     path = data_json_path(base_dir)
     existing: dict[str, Any] = {}
     if path.is_file():

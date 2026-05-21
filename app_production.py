@@ -284,6 +284,7 @@ if isinstance(_employee_today_status, dict):
 def persist():
     """持久化当前数据到文件（data.json，不覆盖 admin 未改动的其它键）。"""
     global _employee_today_status, _permission_data, USERS, _resigned_employees
+    import permission_vault as _pv
     # 把USERS的密码也存到文件（用户改密码后重启不丢）
     users_data = {}
     for uid, u in USERS.items():
@@ -301,8 +302,18 @@ def persist():
         "employee_status": _employee_today_status,
         "order_extra": _order_extra,
         "permission_data": _permission_data,
-        "resigned_employees": _resigned_employees
+        "resigned_employees": _resigned_employees,
     }
+    if _pv.vault_readonly_on_app():
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                kept = json.load(f)
+            if isinstance(kept, dict) and isinstance(
+                kept.get("permission_data"), dict
+            ):
+                data["permission_data"] = kept["permission_data"]
+        except Exception:
+            pass
     save_data(data)
     _cfg_json.write_permission_overlay(_permission_data)
 
@@ -1479,6 +1490,15 @@ def get_permissions_data():
 @app.route('/api/permissions/save', methods=['POST'])
 def save_permissions_data():
     global _permission_data
+    import permission_vault as _pv
+
+    if _pv.vault_readonly_on_app():
+        return jsonify(
+            {
+                "success": False,
+                "error": "权限结构已锁定在独立配置服务器，请在配置机修改后重启业务服务",
+            }
+        ), 403
     data = request.get_json()
     if data:
         for key in (

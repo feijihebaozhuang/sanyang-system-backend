@@ -377,6 +377,10 @@ _order_extra = persistent_data.get("order_extra", {})
 _permission_data = persistent_data.get("permission_data", {})
 _resigned_employees = persistent_data.get("resigned_employees", [])  # 离职员工列表[{name, position, group, dept, phone, resigned_time}]
 
+import config_json as _cfg_json_cs
+
+_cfg_json_cs.apply_permission_overlay(_permission_data)
+
 # 将员工状态变更为按日期存储格式（兼容旧格式）
 if isinstance(_employee_today_status, dict):
     # 检查是 "date -> name -> status" 还是老格式
@@ -3703,7 +3707,7 @@ def api_employee_delete_resigned():
 
 @app.route('/api/permissions/save', methods=['POST'])
 def api_permissions_save():
-    """保存权限配置"""
+    """保存权限配置（员工勾选 → MySQL；工序/映射结构走保险库）"""
     global _permission_data
     data = request.get_json()
     if 'permissions' in data:
