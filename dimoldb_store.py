@@ -111,6 +111,14 @@ def build_dim_match_index(
     return index
 
 
+def _strip_inv_name_dim_prefix(name: str) -> str:
+    """去掉「内径」「外径」前缀，避免尺寸解析失败。"""
+    s = (name or "").strip()
+    if s.startswith("内径") or s.startswith("外径"):
+        s = re.sub(r"^(?:内径|外径)\s*", "", s, count=1)
+    return s.strip()
+
+
 def _inventory_item_dims(item: dict[str, Any]) -> tuple[float | None, float | None, float | None]:
     """库存行有效尺寸：优先库字段，否则从 name/spec 解析。"""
     try:
@@ -119,9 +127,11 @@ def _inventory_item_dims(item: dict[str, Any]) -> tuple[float | None, float | No
             return float(l), float(w), float(h)
     except (TypeError, ValueError):
         pass
+    name_part = _strip_inv_name_dim_prefix(str(item.get("name") or ""))
     blob = " ".join(
-        str(item.get(k) or "")
-        for k in ("name", "spec", "material")
+        x
+        for x in (name_part, str(item.get("spec") or ""), str(item.get("material") or ""))
+        if x
     )
     dl, dw, dh = _parse_dims_from_text(blob)
     if dl and dw and dh:
@@ -186,7 +196,7 @@ def match_dimoldb_for_inventory_item(
             or "内" in (d.get("remark") or "")
         ]
     elif not idim:
-        iname = item.get("name", "")
+        iname = str(item.get("name") or "")
         if iname.startswith("内径"):
             candidates = [
                 d

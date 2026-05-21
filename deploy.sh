@@ -75,6 +75,20 @@ rsync -a \
   "$REPO_DIR/" "$TARGET_DIR/"
 log "  Code synced (.py only; JSON 保留在 stable 目录)"
 
+if [ -d "$REPO_DIR/static" ]; then
+  rsync -a "$REPO_DIR/static/" "$TARGET_DIR/static/"
+  log "  static/ synced (auth_session.js, prod_ui.js, …)"
+fi
+for html in index.html index_cs.html; do
+  if [ -f "$REPO_DIR/$html" ]; then
+    cp -f "$REPO_DIR/$html" "$TARGET_DIR/$html"
+    log "  $html copied"
+  fi
+done
+if [ -f "$REPO_DIR/index_production.html" ]; then
+  cp -f "$REPO_DIR/index_production.html" "$TARGET_DIR/index_production.html"
+fi
+
 log "[2/5] pip install..."
 VENV_DIR="$TARGET_DIR/venv"
 [ ! -f "$VENV_DIR/bin/activate" ] && python3 -m venv "$VENV_DIR"

@@ -129,12 +129,12 @@ def format_size_display_cm(dims: dict[str, float]) -> str:
 
 
 def format_size_compact(dims: dict[str, float]) -> str:
-    """打单/报价展示：19×19×6（全齐用×连接数字，否则回退缺维提示）。"""
+    """打单/报价展示：19×19×6（三维齐全）；不全则返回空串，由上层回退原文。"""
     if not dims:
         return ""
     if all(dims.get(k) is not None for k in ("l", "w", "h")):
         return "×".join(_fmt_num(float(dims[k])) for k in ("l", "w", "h"))
-    return format_size_display_cm(dims)
+    return ""
 
 
 def missing_dimension_labels(dims: dict[str, float]) -> list[str]:
@@ -642,6 +642,7 @@ def build_production_spec(
     attrs: str,
     qty: int = 0,
     *,
+    title: str = "",
     material_mapping: list[dict] | None = None,  # 已废弃，仅保留参数兼容
 ) -> dict[str, Any]:
     """
@@ -650,25 +651,35 @@ def build_production_spec(
     line3/4 — 刀模库存、算料由前端 + production_dashboard_cache 渲染。
     """
     raw = platform_spec_raw(attrs)
-    dims = _parse_dimensions(raw)
-    size = format_size_compact(dims)
+    line1 = raw
+    parse_text = raw
+    t = (title or "").strip()
+    if t and t not in parse_text:
+        parse_text = f"{t} {parse_text}".strip()
+
+    dims = _parse_dimensions(parse_text)
     dim_missing = missing_dimension_labels(dims)
     dims_ok = dimensions_ready_for_calc(dims)
 
-    qinfo = parse_quantity_info(raw, qty)
-    diam = _parse_diameter_type(raw)
-    material = match_production_material(raw)
-    color = _parse_color(raw, material)
+    qinfo = parse_quantity_info(parse_text, qty)
+    diam = _parse_diameter_type(parse_text)
+    material = match_production_material(parse_text)
+    color = _parse_color(parse_text, material)
 
-    formatted = _build_formatted_line(
-        diameter_type=diam,
-        size=size,
-        qty_label=qinfo.get("qty_label") or "",
-        material=material,
-        color=color,
-    )
-    line2 = formatted or ""
-    line1 = raw
+    if not dims_ok:
+        formatted = raw.strip() or t or ""
+        line2 = formatted
+        size = ""
+    else:
+        size = format_size_compact(dims)
+        formatted = _build_formatted_line(
+            diameter_type=diam,
+            size=size,
+            qty_label=qinfo.get("qty_label") or "",
+            material=material,
+            color=color,
+        )
+        line2 = formatted or ""
 
     per_group = int(qinfo.get("per_group_qty") or 0)
     order_qty = int(qinfo.get("order_qty") or 0)

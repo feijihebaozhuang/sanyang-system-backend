@@ -230,7 +230,10 @@ def rebuild_dashboard_cache(
                 except Exception:
                     pass
             order_qty = int(item.get("qty", 0) or 0)
-            ps = pspec.build_production_spec(raw_attrs, order_qty)
+            item_name = (item.get("name") or "").strip()
+            ps = pspec.build_production_spec(
+                raw_attrs, order_qty, title=item_name
+            )
             real_qty = int(ps.get("qty") or order_qty)
             has_stock, stock_qty, stock_info = _match_inventory(raw_attrs, real_qty, inv_rows)
             dm_info = _match_dimoldb_for_line(ps, order_type, dimoldb_rows)

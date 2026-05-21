@@ -397,7 +397,6 @@
         <a onclick="switchTopPage('inventory', this)">📦 成品</a>
         <a onclick="switchTopPage('raw', this)">🧱 原材料</a>
         <a onclick="switchTopPage('employee', this)">👥 员工</a>
-        <a class="nav-erp" onclick="switchTopPage('erp', this)" style="display:none;">🔗 快麦ERP</a>
     </div>
     <div class="user" id="userInfo" onclick="showUserMenu()">🔑 登录</div>
 </div>
@@ -824,18 +823,6 @@
         </div>
     </div>
 
-    <!-- ===== 快麦 ERP 嵌入 ===== -->
-    <div id="page-erp" class="page-section">
-        <div class="overview-header">
-            <h3>🔗 快麦 ERP</h3>
-            <span style="font-size:12px;color:#888;">系统内嵌入，需登录快麦账号</span>
-        </div>
-        <iframe class="iframe-container" data-src="https://erp.superboss.cc"
-            allow="clipboard-read; clipboard-write"
-            sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-            style="width:100%;height:calc(100vh - 160px);border:none;border-radius:8px;"></iframe>
-    </div>
-
     <!-- ===== 首页（生产概览 + 查单） ===== -->
     <div id="page-main" class="page-section active">
 
@@ -885,6 +872,7 @@
                 <span style="color:#999;font-weight:600;">×</span>
                 <input type="number" id="dmQuickH" placeholder="高 cm" step="0.1" style="flex:1;min-width:80px;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;" onfocus="this.select()">
                 <select id="dmQuickDimType" style="flex:0 0 auto;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;background:#fff;">
+                    <option value="">全部</option>
                     <option value="outer">外径</option>
                     <option value="inner">内径</option>
                 </select>
@@ -1166,11 +1154,11 @@
         <!-- 权限内容（登录后自动显示） -->
         <div id="permContent">
             <!-- 顶部工具栏 -->
-            <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
+            <div id="permToolbar" style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;position:sticky;top:0;z-index:20;background:#f5f5f5;padding:8px 0;border-bottom:1px solid #eee;">
                 <button onclick="loadFullEmployeeEditor()" style="padding:6px 16px;background:#722ed1;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">👥 管理全部员工</button>
                 <button onclick="loadPermissionTable()" style="padding:6px 16px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">🔐 功能权限管理</button>
                 <button onclick="loadResignedEmployees()" style="padding:6px 16px;background:#333;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">🗑️ 回收站</button>
-                <button onclick="loadQuoteConfigEditor()" style="padding:6px 16px;background:#fa8c16;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">📋 报价参数</button>
+                <button id="permQuoteBtn" onclick="loadQuoteConfigEditor()" style="padding:6px 16px;background:#fa8c16;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;">📋 报价参数</button>
                 <span id="permStat" style="font-size:12px;color:#888;"></span>
             </div>
             <div id="permMainContent" style="min-height:200px;">
@@ -1194,11 +1182,6 @@
 
 <!-- ===== 底部功能栏 ===== -->
 <div class="footer-bar">
-    <div class="footer-card" onclick="switchTopPage('erp', null)" data-perm="快麦ERP">
-        <div class="icon">🔗</div>
-        <div class="f-title">快麦 ERP</div>
-        <div class="f-desc">嵌入快麦后台查单</div>
-    </div>
     <div class="footer-card" onclick="switchSubPage('dimoldb', null)" data-perm="刀模库">
         <div class="icon">🔩</div>
         <div class="f-title">WPS刀模嵌入</div>
@@ -1244,7 +1227,8 @@
     </div>
 </div>
 
-<script src="/static/auth_session.js"></script>
+<script>window.SY_APP_SIDE = 'production';</script>
+<script src="/static/auth_session.js?v=20260519"></script>
 <script>
     // ===== 当前登录用户 =====
     let _currentUser = null;
@@ -1358,7 +1342,7 @@
             const onclick = a.getAttribute('onclick') || '';
             const text = a.textContent.trim();
             if (onclick.includes("'erp'") || text.includes('快麦')) {
-                a.style.display = hasPerm('快麦ERP') ? '' : 'none';
+                a.style.display = 'none';
             } else if (onclick.includes('diemold')) {
                 a.style.display = hasPerm('刀模') ? '' : 'none';
             } else if (onclick.includes('dimoldb')) {
@@ -1396,7 +1380,7 @@
             const hasOrderSearch = hasPerm('快麦ERP');
             const isKeFu = role === '客服';
             const hasProd = hasPerm('订单生产进度');
-            const showSearch = hasOrderSearch || isKeFu || hasProd;
+            const showSearch = hasProd || isKeFu || hasOrderSearch;
             searchBar.style.display = showSearch ? '' : 'none';
         }
 
@@ -1404,7 +1388,7 @@
         document.querySelectorAll('.search-result-card').forEach(card => {
             const onclick = card.getAttribute('onclick') || '';
             if (onclick.includes('showOrderDetailModal')) {
-                card.style.display = hasPerm('快麦ERP') ? '' : 'none';
+                card.style.display = (hasPerm('快麦ERP') || hasPerm('订单生产进度')) ? '' : 'none';
             }
         });
 
@@ -1801,7 +1785,10 @@
 
     // ===== 从底部功能栏进入订单搜索（跳到首页聚焦搜索框）=====
     function focusSearchBar() {
-        if (!hasPerm('快麦ERP')) { switchTopPage('main', null); return; }
+        if (!hasPerm('订单生产进度') && !hasPerm('快麦ERP') && _currentUser.role !== '客服') {
+            switchTopPage('main', null);
+            return;
+        }
         switchTopPage('main', null);
         setTimeout(() => {
             const input = document.getElementById('searchInput');
@@ -3085,8 +3072,14 @@
         }
         content.style.display = 'block';
         hint.style.display = 'none';
-        
-        // 默认加载员工管理
+        const quoteBtn = document.getElementById('permQuoteBtn');
+        if (quoteBtn) quoteBtn.style.display = '';
+        const adminHint = document.getElementById('permAdminHint');
+        if (adminHint) {
+            adminHint.textContent = _currentUser.role === '超级管理员'
+                ? '超级管理员：可管理员工、权限与报价参数'
+                : '需「权限管理」功能权限';
+        }
         loadFullEmployeeEditor();
     }
 
@@ -3928,8 +3921,8 @@
 
     function _searchSizeDimType() {
         var el = document.getElementById('searchSizeDimType');
-        if (el && el.value) return el.value;
-        return _quoteTypeToDimType((document.getElementById('quoteType') || {}).value || '') || 'outer';
+        if (el) return el.value;
+        return _quoteTypeToDimType((document.getElementById('quoteType') || {}).value || '') || '';
     }
 
     async function quickSearchSize() {
@@ -3950,18 +3943,17 @@
         resultEl.style.color = '#666';
 
         try {
-            const dmBody = {length: l, width: w, height: h, dim_type: dimType, type: 'zhengsquare'};
+            const dmBody = {length: l, width: w, height: h, type: 'zhengsquare'};
+            if (dimType) dmBody.dim_type = dimType;
             if (quoteType) dmBody.type = quoteType.replace('-outer', '').replace('-inner', '');
-            // 1. 查刀模
-            const dmRes = await fetch('/api/dimoldb/search', {
+            const dmRes = await SY_AUTH.apiFetch('/api/dimoldb/search', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(dmBody)
             });
             const dmData = await dmRes.json();
 
-            // 2. 查库存（全量）
-            const invRes = await fetch(`/api/inventory?search=${encodeURIComponent(`${l}×${w}×${h}`)}&page=1&page_size=50`);
+            const invRes = await SY_AUTH.apiFetch(`/api/inventory?search=${encodeURIComponent(`${l}×${w}×${h}`)}&page=1&page_size=50`);
             const invData = await invRes.json();
             const invItems = (invData.success && invData.data) ? invData.data : [];
 
@@ -4582,7 +4574,7 @@
         const l = document.getElementById('dmQuickL').value.trim();
         const w = document.getElementById('dmQuickW').value.trim();
         const h = document.getElementById('dmQuickH').value.trim();
-        const dimType = (document.getElementById('dmQuickDimType') || {}).value || 'outer';
+        const dimType = (document.getElementById('dmQuickDimType') || {}).value || '';
         const resultEl = document.getElementById('dmQuickResult');
 
         if (!l || !w || !h) {
@@ -4597,17 +4589,16 @@
                 length: parseFloat(l),
                 width: parseFloat(w),
                 height: parseFloat(h),
-                dim_type: dimType,
                 type: 'zhengsquare'
             };
-            // 同时查刀模库和库存
+            if (dimType) params.dim_type = dimType;
             const [dmRes, invRes] = await Promise.all([
-                fetch('/api/dimoldb/search', {
+                SY_AUTH.apiFetch('/api/dimoldb/search', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(params)
                 }),
-                fetch('/api/inventory?length=' + encodeURIComponent(l) + '&width=' + encodeURIComponent(w) + '&height=' + encodeURIComponent(h))
+                SY_AUTH.apiFetch('/api/inventory?length=' + encodeURIComponent(l) + '&width=' + encodeURIComponent(w) + '&height=' + encodeURIComponent(h))
             ]);
             const dmData = await dmRes.json();
             const invData = await invRes.json();
@@ -6041,7 +6032,7 @@ async function filterProdOrders(keyword) {
     loadProdDashboard();
 }
 </script>
-<script src="/static/prod_ui.js"></script>
+<script src="/static/prod_ui.js?v=20260519"></script>
 
 </body>
 </html>

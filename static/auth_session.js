@@ -7,6 +7,25 @@
     const AUTH_USER_KEY = 'sanyang_auth_user';
     const AUTH_TOKEN_KEY = 'sanyang_auth_token';
 
+    function readAuthCredentials() {
+        try {
+            const u = sessionStorage.getItem(AUTH_USER_KEY);
+            const t = sessionStorage.getItem(AUTH_TOKEN_KEY);
+            if (u && t) return { user: u, token: t };
+        } catch (e) { /* ignore */ }
+        return null;
+    }
+
+    function applyAuthHeaders(headers) {
+        const h = Object.assign({}, headers || {});
+        const cred = readAuthCredentials();
+        if (cred) {
+            h['X-Sanyang-User'] = cred.user;
+            h['X-Sanyang-Token'] = cred.token;
+        }
+        return h;
+    }
+
     function saveAuthCredentials(user, token) {
         if (!user) return;
         try {
@@ -61,24 +80,22 @@
         }
     }
 
+    function isApiPath(path) {
+        if (!path) return false;
+        if (path.startsWith('/api/')) return true;
+        if (global.location && path.startsWith(global.location.origin + '/api/')) return true;
+        return false;
+    }
+
     function apiFetch(url, options) {
         const opts = Object.assign({ credentials: 'same-origin' }, options || {});
-        const headers = Object.assign({}, opts.headers || {});
-        try {
-            const u = sessionStorage.getItem(AUTH_USER_KEY);
-            const t = sessionStorage.getItem(AUTH_TOKEN_KEY);
-            if (u && t) {
-                headers['X-Sanyang-User'] = u;
-                headers['X-Sanyang-Token'] = t;
-            }
-        } catch (e) { /* ignore */ }
-        if (!headers['Content-Type'] && opts.method && opts.method.toUpperCase() === 'POST') {
-            headers['Content-Type'] = 'application/json';
+        opts.headers = applyAuthHeaders(opts.headers);
+        if (!opts.headers['Content-Type'] && opts.method && opts.method.toUpperCase() === 'POST') {
+            opts.headers['Content-Type'] = 'application/json';
         }
         if (opts.body === undefined && opts.method && opts.method.toUpperCase() === 'POST') {
             opts.body = '{}';
         }
-        opts.headers = headers;
         return fetch(url, opts);
     }
 
@@ -93,11 +110,9 @@
             } else if (url && url.url) {
                 path = url.url;
             }
-            if (
-                path.startsWith('/api/') ||
-                (global.location && path.startsWith(global.location.origin + '/api/'))
-            ) {
+            if (isApiPath(path)) {
                 opts.credentials = opts.credentials || 'same-origin';
+                opts.headers = applyAuthHeaders(opts.headers);
             }
             return nativeFetch(url, opts);
         };
@@ -110,5 +125,6 @@
         apiFetch,
         saveAuthCredentials,
         clearAuthCredentials,
+        readAuthCredentials,
     };
 })(window);

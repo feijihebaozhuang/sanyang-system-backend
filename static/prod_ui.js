@@ -208,10 +208,23 @@
 
     window.prodDisplayAttrs = function (item) {
         if (!item) return '—';
+        var det = item.production_spec_detail || {};
+        var missing = det.dimensions_missing || [];
+        if (missing.length) {
+            var raw =
+                det.platform_spec_raw ||
+                det.line1 ||
+                item.platform_attrs ||
+                item.spec ||
+                item.display ||
+                '';
+            raw = String(raw).trim();
+            if (raw) return raw;
+        }
         var line =
             item.production_spec ||
-            (item.production_spec_detail && item.production_spec_detail.line2) ||
-            (item.production_spec_detail && item.production_spec_detail.formatted) ||
+            det.line2 ||
+            det.formatted ||
             item.display ||
             '';
         return String(line).trim() || '—';
