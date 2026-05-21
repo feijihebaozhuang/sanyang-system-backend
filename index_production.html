@@ -4044,12 +4044,18 @@
         }
     }
 
+    function _searchSizeDimType() {
+        var el = document.getElementById('searchSizeDimType');
+        if (el && el.value) return el.value;
+        return _quoteTypeToDimType((document.getElementById('quoteType') || {}).value || '') || 'outer';
+    }
+
     async function quickSearchSize() {
         const l = parseFloat(document.getElementById('searchSizeL').value);
         const w = parseFloat(document.getElementById('searchSizeW').value);
         const h = parseFloat(document.getElementById('searchSizeH').value);
         const quoteType = (document.getElementById('quoteType') || {}).value || '';
-        const dimType = _quoteTypeToDimType(quoteType);
+        const dimType = _searchSizeDimType();
         const resultEl = document.getElementById('sizeSearchResult');
 
         if (!l || !w || !h) {
@@ -4062,8 +4068,7 @@
         resultEl.style.color = '#666';
 
         try {
-            const dmBody = {length: l, width: w, height: h};
-            if (dimType) dmBody.dim_type = dimType;
+            const dmBody = {length: l, width: w, height: h, dim_type: dimType, type: 'zhengsquare'};
             if (quoteType) dmBody.type = quoteType.replace('-outer', '').replace('-inner', '');
             // 1. 查刀模
             const dmRes = await fetch('/api/dimoldb/search', {
@@ -4090,8 +4095,12 @@
             if (dmData.success && dmData.matches && dmData.matches.length > 0) {
                 for (const m of dmData.matches) {
                     const scopeTag = _dmDimScopeText(m, dimType);
-                    const scopeHtml = scopeTag ? ` <span style="color:#1677ff;font-weight:600;">[${scopeTag}]</span>` : '';
-                    const items = `${m.name}${scopeHtml} 📍${m.remark || ''}`;
+                    const scopeHtml = scopeTag
+                        ? `<span style="font-size:11px;color:#fff;background:#1677ff;padding:1px 6px;border-radius:4px;margin-left:4px;">${scopeTag}</span>`
+                        : '';
+                    const typeClass = m.type_class || '固定';
+                    const typeHtml = `<span style="font-size:11px;color:#fff;background:${typeClass === '组合' ? '#722ed1' : '#52c41a'};padding:1px 6px;border-radius:4px;margin-left:4px;">${typeClass}</span>`;
+                    const items = `${m.name || ''} · ${_dmDimCode(m)}${scopeHtml}${typeHtml}`;
                     // 找对应库存
                     let relInv = [];
                     let dmDimType = _dmInferInnerOuter(m) || dimType;

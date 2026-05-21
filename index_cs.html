@@ -1432,6 +1432,10 @@
                     <input type="number" id="searchSizeW" placeholder="宽" step="0.1" style="width:70px;padding:6px 8px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;" onfocus="this.select()">
                     <span style="line-height:34px;color:#999;">×</span>
                     <input type="number" id="searchSizeH" placeholder="高" step="0.1" style="width:70px;padding:6px 8px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;" onfocus="this.select()">
+                    <select id="searchSizeDimType" style="padding:6px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;background:#fff;">
+                        <option value="outer">外径</option>
+                        <option value="inner">内径</option>
+                    </select>
                     <button onclick="quickSearchSize()" style="padding:6px 14px;background:#1677ff;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;">🔍 查找</button>
                     <div id="sizeSearchResult" style="font-size:12px;color:#666;line-height:34px;width:100%;margin-top:4px;"></div>
                 </div>
@@ -4361,6 +4365,8 @@
         const l = parseFloat(document.getElementById('searchSizeL').value);
         const w = parseFloat(document.getElementById('searchSizeW').value);
         const h = parseFloat(document.getElementById('searchSizeH').value);
+        const dimType = _searchSizeDimType();
+        const quoteType = (document.getElementById('quoteType') || {}).value || '';
         const resultEl = document.getElementById('sizeSearchResult');
 
         if (!l || !w || !h) {
@@ -4373,56 +4379,61 @@
         resultEl.style.color = '#666';
 
         try {
-            // 1. 查刀模
+            const dmBody = {length: l, width: w, height: h, dim_type: dimType, type: 'zhengsquare'};
+            if (quoteType) {
+                dmBody.type = quoteType.replace('-outer', '').replace('-inner', '');
+            }
             const dmRes = await fetch('/api/dimoldb/search', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({length: l, width: w, height: h})
+                body: JSON.stringify(dmBody)
             });
             const dmData = await dmRes.json();
 
-            // 2. 查库存（全量）
-            const invRes = await fetch(`/api/inventory?search=${encodeURIComponent(`${l}×${w}×${h}`)}&page=1&page_size=50`);
+            let invUrl = `/api/inventory?search=${encodeURIComponent(`${l}×${w}×${h}`)}&page=1&page_size=50`;
+            if (quoteType === 'zhengsquare-outer' || quoteType === 'zhengsquare-inner') {
+                invUrl += `&type=${quoteType}`;
+            }
+            const invRes = await fetch(invUrl);
             const invData = await invRes.json();
             const invItems = (invData.success && invData.data) ? invData.data : [];
 
-            // 3. 如果没有刀模也没有库存
             if ((!dmData.success || !dmData.matches || dmData.matches.length === 0) && invItems.length === 0) {
-                resultEl.innerHTML = `⚠️ 未找到 ${l}×${w}×${h} 的相关记录`;
+                resultEl.innerHTML = _dimSearchScopeBanner(dimType, l, w, h)
+                    + `<div style="color:#e94560;">⚠️ 未找到 ${l}×${w}×${h} 的相关记录</div>`;
                 resultEl.style.color = '#e94560';
                 return;
             }
 
-            // 4. 构建结果
-            let html = '';
+            let html = _dimSearchScopeBanner(dimType, l, w, h);
             if (dmData.success && dmData.matches && dmData.matches.length > 0) {
                 for (const m of dmData.matches) {
-                    const items = `${m.name} · ${_dmDimCode(m)}`;
-                    let relInv = [];
-                    const dmDimType = _dmInferInnerOuter(m);
-                    relInv = invItems.filter(x => _dmInvDimMatch(dmDimType, x.dim_type));
+                    const scopeTag = _dmDimScopeText(m, dimType);
+                    const scopeHtml = scopeTag
+                        ? `<span style="font-size:11px;color:#fff;background:#1677ff;padding:1px 6px;border-radius:4px;margin-left:4px;">${scopeTag}</span>`
+                        : '';
+                    const typeClass = m.type_class || '固定';
+                    const typeHtml = `<span style="font-size:11px;color:#fff;background:${typeClass === '组合' ? '#722ed1' : '#52c41a'};padding:1px 6px;border-radius:4px;margin-left:4px;">${typeClass}</span>`;
+                    const title = `${m.name || ''} · ${_dmDimCode(m)}${scopeHtml}${typeHtml}`;
+                    const dmDimType = _dmInferInnerOuter(m) || dimType;
+                    const relInv = invItems.filter(x => _dmInvDimMatch(dmDimType, x.dim_type));
                     let totalQty = 0;
-                    let matParts = [];
+                    const matParts = [];
                     for (const ri of relInv) {
                         const q = ri.qty || ri.stock || 0;
                         totalQty += q;
                         matParts.push(`${ri.material} ${q}个`);
                     }
                     if (matParts.length > 0) {
-                        html += `<div style="margin-bottom:4px;"><span style="color:#1677ff;">🔧 ${items}</span> 合计 <strong>${totalQty}</strong>个</div>`;
+                        html += `<div style="margin-bottom:4px;"><span style="color:#1677ff;">🔧 ${title}</span> 合计 <strong>${totalQty}</strong>个</div>`;
                         html += `<div style="font-size:12px;color:#d4380d;padding-left:16px;margin-bottom:6px;">📦 ${matParts.join(' ｜ ')}</div>`;
                     } else {
-                        html += `<div style="margin-bottom:4px;"><span style="color:#1677ff;">🔧 ${items}</span> <span style="color:#999;">无对应库存</span></div>`;
+                        html += `<div style="margin-bottom:4px;"><span style="color:#1677ff;">🔧 ${title}</span> <span style="color:#999;">无对应库存</span></div>`;
                     }
                 }
             } else if (invItems.length > 0) {
-                // 无刀模但库存有
-                let matParts = [];
-                for (const ri of invItems) {
-                    const q = ri.qty || ri.stock || 0;
-                    matParts.push(`${ri.name || ri.material} ${q}个`);
-                }
-                html += `<div style="margin-bottom:4px;">⚠️ 无固定刀模 <span style="color:#999;font-size:12px;margin-left:4px;">但库存有记录</span></div>`;
+                const matParts = invItems.map(ri => `${ri.name || ri.material} ${ri.qty || ri.stock || 0}个`);
+                html += `<div style="margin-bottom:4px;">⚠️ 无固定刀模 <span style="color:#999;font-size:12px;">但库存有记录</span></div>`;
                 html += `<div style="font-size:12px;color:#d4380d;padding-left:16px;">📦 ${matParts.join(' ｜ ')}</div>`;
             }
 
@@ -4567,6 +4578,30 @@
         if (!dmDt) return true;
         if (!riDt) return true;
         return dmDt === riDt;
+    }
+    function _dmDimScopeText(m, fallbackDimType) {
+        var dt = _dmInferInnerOuter(m) || fallbackDimType || '';
+        if (dt === 'inner') return '内径';
+        if (dt === 'outer') return '外径';
+        return '';
+    }
+    function _dimSearchScopeBanner(dimType, l, w, h) {
+        var scope = dimType === 'inner' ? '内径' : (dimType === 'outer' ? '外径' : '');
+        var parts = [l, w, h].filter(function(x) { return x !== '' && x != null && x !== undefined; });
+        var size = parts.length ? parts.join('×') + ' cm' : '';
+        if (!scope && !size) return '';
+        return '<div style="font-size:12px;color:#595959;margin-bottom:6px;padding:6px 10px;background:#e6f4ff;border-radius:6px;width:100%;">'
+            + '<strong>当前查询：</strong>' + (scope || '未区分内外径') + (size ? ' · ' + size : '') + '</div>';
+    }
+    function _quoteTypeToDimType(qt) {
+        if (qt === 'zhengsquare-inner' || qt === 'changfang-inner') return 'inner';
+        if (qt === 'zhengsquare-outer' || qt === 'changfang-outer') return 'outer';
+        return '';
+    }
+    function _searchSizeDimType() {
+        var el = document.getElementById('searchSizeDimType');
+        if (el && el.value) return el.value;
+        return _quoteTypeToDimType((document.getElementById('quoteType') || {}).value || '') || 'outer';
     }
 
     // ===== 固定刀模库 =====

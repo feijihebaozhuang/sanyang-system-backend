@@ -198,6 +198,12 @@ def main() -> None:
         "    async function homeQuickSearchDimoldb()",
         extract_js_function(PROD.read_text(encoding="utf-8"), "    async function homeQuickSearchDimoldb()"),
     )
+    if "    async function quickSearchSize()" in cs:
+        text = replace_js_function(
+            text,
+            "    async function quickSearchSize()",
+            extract_js_function(cs, "    async function quickSearchSize()"),
+        )
 
     # 删除重复的 fillDimoldbQuick（全量列表版）
     bad_dup = extract_js_function(

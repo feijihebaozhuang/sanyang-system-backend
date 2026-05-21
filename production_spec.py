@@ -212,10 +212,50 @@ def parse_dimensions_cm(text: str) -> dict[str, float]:
     return _parse_dimensions(platform_spec_raw(text))
 
 
+def _apply_merged_dimension_tags(dims: dict[str, float], text: str) -> None:
+    """长宽/宽高/长高 合并标签：长宽13x13、宽高10cm、长高25cm 等。"""
+    unit = r"(?P<unit>cm|CM|厘米|mm|MM|毫米)?"
+    for label, k1, k2 in (
+        ("长宽", "l", "w"),
+        ("宽高", "w", "h"),
+        ("长高", "l", "h"),
+    ):
+        m_pair = re.search(
+            rf"{label}\s*(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*{unit}",
+            text,
+            re.I,
+        )
+        if m_pair:
+            u = m_pair.groupdict().get("unit")
+            dims[k1] = _val_to_cm(float(m_pair.group(1)), u)
+            dims[k2] = _val_to_cm(float(m_pair.group(2)), u)
+            continue
+        m_pair2 = re.search(
+            rf"{label}\s*(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)",
+            text,
+            re.I,
+        )
+        if m_pair2:
+            dims[k1] = float(m_pair2.group(1))
+            dims[k2] = float(m_pair2.group(2))
+            continue
+        m_same = re.search(
+            rf"{label}\s*(\d+(?:\.\d+)?)\s*{unit}(?!\s*[*×xX])",
+            text,
+            re.I,
+        )
+        if m_same:
+            v = _val_to_cm(float(m_same.group(1)), m_same.groupdict().get("unit"))
+            dims[k1] = v
+            dims[k2] = v
+
+
 def _parse_dimensions(text: str) -> dict[str, float]:
     dims: dict[str, float] = {}
     if not text:
         return dims
+
+    _apply_merged_dimension_tags(dims, text)
 
     # 宽*高【13*2】、宽高【13*2】：优先于散落的 n*n，避免把 13 当成宽、2 当成高以外的维度
     m_wh_br = re.search(
@@ -338,14 +378,17 @@ def _parse_dimensions(text: str) -> dict[str, float]:
     if ("l" not in dims or "w" not in dims) and not (
         dims.get("w") is not None and dims.get("h") is not None
     ):
-        m = re.search(
+        for m in re.finditer(
             r"(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|mm|MM|毫米)?",
             text,
             re.I,
-        )
-        if m:
+        ):
+            prefix = text[max(0, m.start() - 4) : m.start()]
+            if re.search(r"(?:长宽|宽高|长高)$", prefix):
+                continue
             dims.setdefault("l", float(m.group(1)))
             dims.setdefault("w", float(m.group(2)))
+            break
 
     if len(dims) < 3:
         m3 = _NUM3_RE.search(text)
