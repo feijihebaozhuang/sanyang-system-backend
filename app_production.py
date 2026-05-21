@@ -347,6 +347,7 @@ def login():
     return jsonify({
         "success": True,
         "message": "登录成功",
+        "auth_token": _auth_token_for(username),
         "user": {
             "username": username,
             "name": user['name'],
@@ -424,13 +425,15 @@ def admin_reset_password():
 
 @app.route('/api/me')
 def get_current_user():
-    if 'username' in session:
-        user = USERS.get(session['username'])
+    un = resolve_login_user()
+    if un:
+        user = USERS.get(un)
         if user:
             return jsonify({
                 "logged_in": True,
+                "auth_token": _auth_token_for(un),
                 "user": {
-                    "username": session['username'],
+                    "username": un,
                     "name": user['name'],
                     "role": user['role'],
                     "employee_name": user['employee_name']
@@ -2292,6 +2295,7 @@ def get_dimoldb():
     inv_items = inv_all.get('finished', inv_all if isinstance(inv_all, list) else [])
     for d in page_data:
         d['stock'] = _dimoldb_store.calc_dimoldb_stock(d, inv_items)
+        d['type_class'] = _dimoldb_store.infer_type_class(d)
     return jsonify({
         "success": True,
         "data": page_data,
@@ -2660,6 +2664,10 @@ def search_dimoldb():
                     matches = [d for d in matches if _dimoldb_infer_inner_outer(d) == 'outer']
         if len(matches) > 100:
             matches = matches[:100]
+        for d in matches:
+            d['type_class'] = _dimoldb_store.infer_type_class(d)
+            if not d.get('dim_type'):
+                d['dim_type'] = _dimoldb_infer_inner_outer(d)
         return jsonify({"success": True, "matches": matches})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
@@ -2799,6 +2807,10 @@ def get_inventory():
         items = [d for d in items if d.get('product_type') == 'zhengsquare' and d.get('dim_type') == 'outer']
     elif ptype == 'zhengsquare-inner':
         items = [d for d in items if d.get('product_type') == 'zhengsquare' and d.get('dim_type') == 'inner']
+    elif ptype == 'changfang-outer':
+        items = [d for d in items if d.get('product_type') == 'changfang' and d.get('dim_type') == 'outer']
+    elif ptype == 'changfang-inner':
+        items = [d for d in items if d.get('product_type') == 'changfang' and d.get('dim_type') == 'inner']
     elif ptype:
         # 库存只有 changfang 和 zhengsquare，刀模type需要映射
         _type_to_inv = {'juxing':'changfang', 'daikou':'changfang', 'koudi':'changfang', 'shuangcha':'changfang', 'qita':'changfang', 'changfang':'changfang', 'zhengsquare':'zhengsquare'}

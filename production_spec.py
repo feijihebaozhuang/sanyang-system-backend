@@ -348,6 +348,27 @@ def _parse_dimensions(text: str) -> dict[str, float]:
             dims.setdefault("l", float(m2.group(1)))
             dims.setdefault("w", float(m2.group(2)))
 
+    # 宽×高（如 7*3cm）：无「长」语境时按宽、高，避免误为长×宽导致缺高
+    if dims.get("l") is not None and dims.get("w") is not None and dims.get("h") is None:
+        m_wh = re.search(
+            r"(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米)(?!\s*[*×xX])",
+            text,
+            re.I,
+        )
+        if m_wh:
+            has_long = bool(
+                re.search(
+                    r"(?:长度|长)\s*[:：【\d]|【\s*(?:长度|长)",
+                    text,
+                    re.I,
+                )
+            )
+            has_wh = bool(re.search(r"宽|高", text, re.I))
+            if has_wh or not has_long:
+                dims["w"] = _val_to_cm(float(m_wh.group(1)), "cm")
+                dims["h"] = _val_to_cm(float(m_wh.group(2)), "cm")
+                dims.pop("l", None)
+
     return _normalize_parsed_dims_units(dims, text)
 
 

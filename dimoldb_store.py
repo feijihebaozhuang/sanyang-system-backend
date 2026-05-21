@@ -312,6 +312,18 @@ LEGACY_IMPORT_HEADERS = (
 )
 
 
+def infer_type_class(dm: dict) -> str:
+    """刀模分类：编码以「组」开头为组合；有固定编码为固定；其余默认固定。"""
+    code = str(dm.get("code") or "").strip()
+    name = str(dm.get("name") or "").strip()
+    if code.startswith("组") or name.startswith("组"):
+        return "组合"
+    if code:
+        return "固定"
+    stored = str(dm.get("type_class") or "").strip()
+    return stored if stored in ("固定", "组合") else "固定"
+
+
 def infer_inner_outer(dm: dict) -> str:
     """
     内外径推断：dim_type > production_spec/remark 内外径关键词 > name 中 (内)/(外)。

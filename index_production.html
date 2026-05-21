@@ -623,10 +623,12 @@
                 <div style="display:flex;gap:8px;margin-bottom:12px;">
                     <select id="invFilterType" onchange="loadInventory(1, true)" style="flex:1;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;">
                         <option value="">全部类型</option>
-                        <option value="zhengsquare-outer">正方形飞机盒 · 外径</option>
-                        <option value="zhengsquare-inner">正方形飞机盒 · 内径</option>
-                        <option value="juxing">长方形飞机盒</option>
+                        <option value="zhengsquare-outer">正方形外径</option>
+                        <option value="zhengsquare-inner">正方形内径</option>
+                        <option value="changfang-outer">长方形外径</option>
+                        <option value="changfang-inner">长方形内径</option>
                         <option value="daikou">带扣飞机盒</option>
+                        <option value="juxing">长方形飞机盒</option>
                         <option value="koudi">扣底盒</option>
                         <option value="shuangcha">双插盒</option>
                         <option value="qita">其他</option>
@@ -869,6 +871,10 @@
                 <input type="number" id="dmQuickW" placeholder="宽 cm" step="0.1" style="flex:1;min-width:80px;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;" onfocus="this.select()">
                 <span style="color:#999;font-weight:600;">×</span>
                 <input type="number" id="dmQuickH" placeholder="高 cm" step="0.1" style="flex:1;min-width:80px;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;" onfocus="this.select()">
+                <select id="dmQuickDimType" style="flex:0 0 auto;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;background:#fff;">
+                    <option value="outer">外径</option>
+                    <option value="inner">内径</option>
+                </select>
                 <button onclick="homeQuickSearchDimoldb()" style="padding:8px 20px;background:#1677ff;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:500;white-space:nowrap;">查询</button>
             </div>
             <div id="dmQuickResult" style="margin-top:10px;padding:10px;border-radius:8px;font-size:13px;color:#999;min-height:36px;text-align:center;">
@@ -1253,6 +1259,9 @@
             
             if (data.success) {
                 _currentUser = data.user;
+                if (data.auth_token && data.user && data.user.username) {
+                    SY_AUTH.saveAuthCredentials(data.user.username, data.auth_token);
+                }
                 document.getElementById('loginOverlay').style.display = 'none';
                 try {
                     await loadPermissions();
@@ -1282,6 +1291,7 @@
         if (!confirm('确认退出登录？')) return;
         await SY_AUTH.apiFetch('/api/logout');
         SY_AUTH.clearRoute();
+        SY_AUTH.clearAuthCredentials();
         _currentUser = null;
         document.getElementById('loginOverlay').style.display = 'flex';
         document.getElementById('loginUser').value = '';
@@ -1548,7 +1558,22 @@
     // ===== 刷新后恢复当前页 =====
     function restorePageAfterLogin() {
         const route = SY_AUTH.readRoute();
-        initPages();
+        const fullPages = ['production', 'scan', 'report', 'databoard', 'quote', 'permission'];
+        const hasSaved =
+            (route.top && route.top !== 'main' && document.getElementById('page-' + route.top)) ||
+            (route.sub && document.getElementById('page-' + route.sub));
+        if (!hasSaved) {
+            initPages();
+            return;
+        }
+        updateNavByRole();
+        if (route.top && route.top !== 'main' && fullPages.indexOf(route.top) >= 0) {
+            const subEl = document.querySelector(
+                ".subnav a[onclick*=\"switchSubPage('" + route.top + "'\"]"
+            );
+            switchSubPage(route.top, subEl);
+            return;
+        }
         if (route.sub && document.getElementById('page-' + route.sub)) {
             const subEl = document.querySelector(
                 ".subnav a[onclick*=\"switchSubPage('" + route.sub + "'\"]"
@@ -1561,7 +1586,9 @@
                 "#topNav a[onclick*=\"switchTopPage('" + route.top + "'\"]"
             );
             switchTopPage(route.top, topEl);
+            return;
         }
+        initPages();
     }
 
     // ===== 检查登录状态并初始化 =====
@@ -1571,6 +1598,9 @@
             const data = await res.json();
             if (data.logged_in) {
                 _currentUser = data.user;
+                if (data.auth_token && data.user && data.user.username) {
+                    SY_AUTH.saveAuthCredentials(data.user.username, data.auth_token);
+                }
                 document.getElementById('loginOverlay').style.display = 'none';
                 updateUserInfo();
                 await loadPermissions();
@@ -1674,7 +1704,12 @@
 
     function switchSubPage(name, el) {
         if (!checkPagePerm(name)) return;
-        SY_AUTH.saveRoute('main', name);
+        const fullPages = ['production', 'scan', 'report', 'databoard', 'quote', 'permission'];
+        if (fullPages.indexOf(name) >= 0) {
+            SY_AUTH.saveRoute(name, null);
+        } else {
+            SY_AUTH.saveRoute('main', name);
+        }
 
         document.querySelectorAll('.subnav a').forEach(a => a.classList.remove('active'));
         if (el) el.classList.add('active');
@@ -2222,6 +2257,7 @@
             }
             
             _prodDashboardOrders = data.orders || [];
+            window._prodDashboardOrders = _prodDashboardOrders;
             
             // 前端筛选
             let filtered = _prodDashboardOrders;
@@ -2333,7 +2369,8 @@
     }
     
     function showProdDetailBySoId(soId) {
-        const o = _prodDashboardOrders.find(item => item.so_id === soId);
+        const orders = window._prodDashboardOrders || _prodDashboardOrders || [];
+        const o = orders.find(item => String(item.so_id) === String(soId));
         if (!o) return;
         
         // 工序进度条
@@ -4011,6 +4048,8 @@
         const l = parseFloat(document.getElementById('searchSizeL').value);
         const w = parseFloat(document.getElementById('searchSizeW').value);
         const h = parseFloat(document.getElementById('searchSizeH').value);
+        const quoteType = (document.getElementById('quoteType') || {}).value || '';
+        const dimType = _quoteTypeToDimType(quoteType);
         const resultEl = document.getElementById('sizeSearchResult');
 
         if (!l || !w || !h) {
@@ -4023,11 +4062,14 @@
         resultEl.style.color = '#666';
 
         try {
+            const dmBody = {length: l, width: w, height: h};
+            if (dimType) dmBody.dim_type = dimType;
+            if (quoteType) dmBody.type = quoteType.replace('-outer', '').replace('-inner', '');
             // 1. 查刀模
             const dmRes = await fetch('/api/dimoldb/search', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({length: l, width: w, height: h})
+                body: JSON.stringify(dmBody)
             });
             const dmData = await dmRes.json();
 
@@ -4044,18 +4086,15 @@
             }
 
             // 4. 构建结果
-            let html = '';
+            let html = _dimSearchScopeBanner(dimType, l, w, h);
             if (dmData.success && dmData.matches && dmData.matches.length > 0) {
                 for (const m of dmData.matches) {
-                    const items = `${m.name} 📍${m.remark || ''}`;
+                    const scopeTag = _dmDimScopeText(m, dimType);
+                    const scopeHtml = scopeTag ? ` <span style="color:#1677ff;font-weight:600;">[${scopeTag}]</span>` : '';
+                    const items = `${m.name}${scopeHtml} 📍${m.remark || ''}`;
                     // 找对应库存
                     let relInv = [];
-                    // 判断刀模是内径还是外径：name里带(内)/内径 → inner，带(外)/外径 → outer
-                    let dmInner = m.name.includes('(内)') || m.name.includes('内径') || m.name.includes('内');
-                    let dmOuter = m.name.includes('(外)') || m.name.includes('外径') || m.name.includes('外');
-                    let dmDimType = '';
-                    if (dmInner && !dmOuter) dmDimType = 'inner';
-                    else if (dmOuter && !dmInner) dmDimType = 'outer';
+                    let dmDimType = _dmInferInnerOuter(m) || dimType;
                     if (dmDimType) {
                         relInv = invItems.filter(x => x.dim_type === dmDimType);
                     } else {
@@ -4308,6 +4347,25 @@
         var name = m.name || '';
         if (blob.indexOf('内径') >= 0 || name.indexOf('(内)') >= 0 || name.indexOf('内径') >= 0) return 'inner';
         if (blob.indexOf('外径') >= 0 || name.indexOf('(外)') >= 0 || name.indexOf('外径') >= 0) return 'outer';
+        return '';
+    }
+    function _dmDimScopeText(m, fallbackDimType) {
+        var dt = _dmInferInnerOuter(m) || fallbackDimType || '';
+        if (dt === 'inner') return '内径';
+        if (dt === 'outer') return '外径';
+        return '';
+    }
+    function _dimSearchScopeBanner(dimType, l, w, h) {
+        var scope = dimType === 'inner' ? '内径' : (dimType === 'outer' ? '外径' : '');
+        var parts = [l, w, h].filter(function(x) { return x !== '' && x != null && x !== undefined; });
+        var size = parts.length ? parts.join('×') + ' cm' : '';
+        if (!scope && !size) return '';
+        return '<div style="font-size:12px;color:#595959;margin-bottom:8px;padding:6px 10px;background:#e6f4ff;border-radius:6px;">'
+            + '<strong>当前查询：</strong>' + (scope || '未区分内外径') + (size ? ' · ' + size : '') + '</div>';
+    }
+    function _quoteTypeToDimType(qt) {
+        if (qt === 'zhengsquare-inner' || qt === 'changfang-inner') return 'inner';
+        if (qt === 'zhengsquare-outer' || qt === 'changfang-outer') return 'outer';
         return '';
     }
     function _dmInvDimMatch(dmDt, riDt) {
@@ -4593,11 +4651,10 @@
                     }
                 });
                 const invResults = await Promise.all(invPromises);
-                let html = `<div style="color:#52c41a;font-weight:600;margin-bottom:8px;">✅ 找到固定刀模！</div>`;
+                let html = _dimSearchScopeBanner(dimType, l, w, h)
+                    + `<div style="color:#52c41a;font-weight:600;margin-bottom:8px;">✅ 找到固定刀模！</div>`;
                 matches.forEach((m, idx) => {
-                    const isInner = m.remark && m.remark.includes('内');
-                    const isOuter = m.remark && m.remark.includes('外');
-                    const ieLabel = isInner ? '内径' : isOuter ? '外径' : '';
+                    const ieLabel = _dmDimScopeText(m, dimType);
                     const stockText = invResults[idx];
                     const stockHtml = stockText
                         ? `<div style="font-size:12px;color:#d4380d;margin-top:4px;">📦 ${stockText}</div>`
@@ -4630,6 +4687,7 @@
         const l = document.getElementById('dmQuickL').value.trim();
         const w = document.getElementById('dmQuickW').value.trim();
         const h = document.getElementById('dmQuickH').value.trim();
+        const dimType = (document.getElementById('dmQuickDimType') || {}).value || 'outer';
         const resultEl = document.getElementById('dmQuickResult');
 
         if (!l || !w || !h) {
@@ -4643,7 +4701,9 @@
             const params = {
                 length: parseFloat(l),
                 width: parseFloat(w),
-                height: parseFloat(h)
+                height: parseFloat(h),
+                dim_type: dimType,
+                type: 'zhengsquare'
             };
             // 同时查刀模库和库存
             const [dmRes, invRes] = await Promise.all([
@@ -4669,7 +4729,7 @@
             }
 
             if (matches.length > 0) {
-                let html = '';
+                let html = _dimSearchScopeBanner(dimType, l, w, h);
                 for (const m of matches) {
                     // 每个刀模对应的库存（按 spec = 尺寸匹配）
                     const specKey = m.length + 'x' + m.width + 'x' + m.height;
@@ -4698,9 +4758,13 @@
                         ? `<span style="background:#52c41a;color:#fff;border-radius:10px;padding:1px 8px;font-size:12px;font-weight:600;">库存 ${totalStock}</span>`
                         : `<span style="background:#ff4d4f;color:#fff;border-radius:10px;padding:1px 8px;font-size:12px;">无库存</span>`;
 
+                    const scopeTag = _dmDimScopeText(m, dimType);
+                    const scopeHtml = scopeTag
+                        ? '<span style="font-size:11px;color:#fff;background:#1677ff;padding:1px 8px;border-radius:4px;margin-left:6px;">' + scopeTag + '</span>'
+                        : '';
                     html += '<div style="background:#f6ffed;border:1px solid #b7eb8f;border-radius:8px;padding:10px;margin-bottom:6px;text-align:left;">'
                         + '<div style="display:flex;justify-content:space-between;align-items:center;">'
-                        + '<div style="font-weight:600;font-size:15px;color:#333;">' + (m.name || specKey) + '</div>'
+                        + '<div style="font-weight:600;font-size:15px;color:#333;">' + (m.name || specKey) + scopeHtml + '</div>'
                         + stockBadge
                         + '</div>'
                         + '<div style="display:flex;gap:16px;margin-top:6px;font-size:13px;flex-wrap:wrap;">'
@@ -4746,15 +4810,29 @@
     let _editingInvId = null;
     let _invPage = 1;
     let _invTotalPages = 1;
-    const _invTypeLabels = {
-        'zhengsquare': '正方形飞机盒',
-        'juxing': '长方形飞机盒',
-        'daikou': '带扣飞机盒',
-        'koudi': '扣底盒',
-        'shuangcha': '双插盒',
-        'qita': '其他',
-        'pe': '珍珠棉'
-    };
+    function invProductTypeLabel(item) {
+        const pt = (item.product_type || '').trim();
+        const dt = (item.dim_type || '').trim();
+        if (pt === 'zhengsquare') {
+            if (dt === 'inner') return '正方形内径';
+            if (dt === 'outer') return '正方形外径';
+            return '正方形飞机盒';
+        }
+        if (pt === 'changfang' || pt === 'juxing') {
+            if (dt === 'inner') return '长方形内径';
+            if (dt === 'outer') return '长方形外径';
+            if (pt === 'juxing') return '长方形飞机盒';
+            return '长方形飞机盒';
+        }
+        const map = {
+            daikou: '带扣飞机盒',
+            koudi: '扣底盒',
+            shuangcha: '双插盒',
+            qita: '其他',
+            pe: '珍珠棉',
+        };
+        return map[pt] || pt || '';
+    }
 
     function switchInvTab(tab) {
         _invTab = tab;
@@ -4812,10 +4890,10 @@
                 container.innerHTML = '<div style="text-align:center;padding:40px;color:#999;">暂无数据，在右侧录入或导入Excel</div>';
                 return;
             }
-            html = '<div style="display:flex;flex-direction:column;gap:2px;">';
+            let html = '<div style="display:flex;flex-direction:column;gap:2px;">';
             items.forEach(item => {
-                const tlabel = _invTypeLabels[item.product_type] || item.product_type || '';
-                const dimLabel = item.dim_type === 'inner' ? '内径' : (item.dim_type === 'outer' ? '外径' : '');
+                const tlabel = invProductTypeLabel(item);
+                const dimLabel = '';
                 const stock = item.stock || 0;
                 const stockColor = stock <= 0 ? '#e94560' : (stock < 50 ? '#d48806' : '#52c41a');
                 var dmForRender = (item.dimoldb_info && item.dimoldb_info.length > 0)
@@ -6071,6 +6149,7 @@ async function filterProdOrders(keyword) {
     loadProdDashboard();
 }
 </script>
+<script src="/static/prod_ui.js"></script>
 
 </body>
 </html>
