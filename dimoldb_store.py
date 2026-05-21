@@ -225,10 +225,7 @@ def map_dimoldb_import_headers(headers: list[str]) -> dict[str, int]:
             col_map["product_type"] = i
         elif "编码" in h or h == "code" or hl == "code":
             col_map["code"] = i
-        elif "生产规格" in h or "production_spec" in hl:
-            col_map["production_spec"] = i
-        elif ("快麦" in h and "映射" in h) or "km_mapping" in hl or h == "快麦商品映射":
-            col_map["km_mapping_code"] = i
+        # 表头铁律：仅 7 列导入，勿在此识别「生产规格」「快麦商品映射」（改表头会牵动全系统）
         elif "备注" in h or "remark" in hl:
             col_map["remark"] = i
         elif "长" in h or "length" in hl:
@@ -277,7 +274,7 @@ def _parse_dims_from_text(text: str) -> tuple[float | None, float | None, float 
 
 
 def effective_dims(dm: dict) -> tuple[float | None, float | None, float | None]:
-    """刀模用于库存匹配的有效长宽高（库字段优先，否则解析 production_spec / remark）。"""
+    """刀模匹配用长宽高：仅读库字段 length/width/height（不从 remark 解析，避免乱匹配）。"""
     try:
         l = float(dm.get("length") or 0)
         w = float(dm.get("width") or 0)
@@ -286,11 +283,19 @@ def effective_dims(dm: dict) -> tuple[float | None, float | None, float | None]:
             return l, w, h
     except (TypeError, ValueError):
         pass
-    for field in ("production_spec", "remark"):
-        pl, pw, ph = _parse_dims_from_text(str(dm.get(field) or ""))
-        if pl and pw and ph:
-            return pl, pw, ph
     return None, None, None
+
+
+# Excel 导入/导出标准 7 列（与 5.20 凌晨改表头前一致）
+LEGACY_IMPORT_HEADERS = (
+    "产品类型",
+    "名称",
+    "编码",
+    "备注",
+    "长(cm)",
+    "宽(cm)",
+    "高(cm)",
+)
 
 
 def infer_inner_outer(dm: dict) -> str:

@@ -2372,10 +2372,10 @@ def delete_dimoldb(dm_id):
 def template_dimoldb():
     """刀模导入空模板"""
     return _send_xlsx_template(
-        ["产品类型", "名称", "编码", "生产规格", "快麦商品映射", "备注", "长(cm)", "宽(cm)", "高(cm)"],
+        list(_dimoldb_store.LEGACY_IMPORT_HEADERS),
         [
-            ["zhengsquare", "飞机盒18×14×5", "FH181405", "18×14×5", "KM_SKU_001", "外径", 18, 14, 5],
-            ["juxing", "长方形20×15×10", "", "20×15×10", "", "", 20, 15, 10],
+            ["zhengsquare", "飞机盒18×14×5", "FH181405", "外径", 18, 14, 5],
+            ["juxing", "长方形20×15×10", "", "", 20, 15, 10],
         ],
         "刀模库导入模板.xlsx",
     )
@@ -2391,7 +2391,7 @@ def export_dimoldb():
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = '刀模库'
-        headers = ['序号', '产品类型', '名称', '编码', '生产规格', '快麦商品映射', '备注', '长(cm)', '宽(cm)', '高(cm)', '创建时间']
+        headers = ['序号', '产品类型', '名称', '编码', '备注', '长(cm)', '宽(cm)', '高(cm)', '创建时间']
         thin = Border(
             left=Side(style='thin'), right=Side(style='thin'),
             top=Side(style='thin'), bottom=Side(style='thin'))
@@ -2407,8 +2407,6 @@ def export_dimoldb():
                 item.get('product_type', ''),
                 item.get('name', ''),
                 item.get('code', '') or '',
-                item.get('production_spec', '') or '',
-                item.get('km_mapping_code', '') or '',
                 item.get('remark', '') or '',
                 item.get('length', ''),
                 item.get('width', ''),
@@ -2486,8 +2484,8 @@ def import_dimoldb():
                 'name': name,
                 'product_type': _dimoldb_store.cell_str(row, col_map.get('product_type')) or 'zhengsquare',
                 'code': _dimoldb_store.cell_str(row, col_map.get('code')),
-                'production_spec': _dimoldb_store.cell_str(row, col_map.get('production_spec')),
-                'km_mapping_code': _dimoldb_store.cell_str(row, col_map.get('km_mapping_code')),
+                'production_spec': '',
+                'km_mapping_code': '',
                 'remark': _dimoldb_store.cell_str(row, col_map.get('remark')),
                 'length': _dimoldb_store.cell_float(row, col_map.get('length')),
                 'width': _dimoldb_store.cell_float(row, col_map.get('width')),

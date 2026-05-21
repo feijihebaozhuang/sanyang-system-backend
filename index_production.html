@@ -543,16 +543,12 @@
                         <div id="dimoldbFormMode" style="font-size:12px;color:#1677ff;">新增模式</div>
                     </div>
                     <div style="margin-bottom:8px;">
-                        <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">刀模名称</label>
-                        <div style="margin-bottom:8px;">
-                        <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">刀模编码</label>
-                        <input type="text" id="dmfCode" style="width:100%;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;" placeholder="必填建议：与快麦/订单一致" onfocus="this.select()">
+                        <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">名称</label>
+                        <input type="text" id="dmfName" style="width:100%;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;" placeholder="例如：飞机盒20×15×10" onfocus="this.select()">
                     </div>
                     <div style="margin-bottom:8px;">
-                        <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">生产规格</label>
-                        <input type="text" id="dmfProductionSpec" style="width:100%;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;" placeholder="可选" onfocus="this.select()">
-                    </div>
-                    <input type="text" id="dmfName" style="width:100%;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;" placeholder="例如：飞机盒20×15×10" onfocus="this.select()">
+                        <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">编码</label>
+                        <input type="text" id="dmfCode" style="width:100%;padding:8px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;" placeholder="与 Excel 编码列一致" onfocus="this.select()">
                     </div>
                     <div style="margin-bottom:8px;">
                         <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">产品类型</label>
@@ -4359,16 +4355,17 @@
                 return;
             }
                 
-            let html = '<div style=\"display:flex;flex-direction:column;gap:2px;\">';
+            let html = '<div style="display:flex;flex-direction:column;gap:2px;">';
             items.forEach(item => {
                 const tlabel = _dmTypeLabels[item.product_type] || item.product_type;
                 html += `
                 <div onclick="fillDimoldbQuick('${item.id}')" style="display:flex;align-items:center;padding:8px 10px;border-bottom:1px solid #f0f0f0;cursor:pointer;" title="点击填充查询">
                     <div style="flex:1;min-width:0;">
-                        <div style="font-weight:600;font-size:14px;">${item.code ? '<span style="color:#1677ff;margin-right:6px;">#' + item.code + '</span>' : '<span style="color:#fa8c16;margin-right:6px;">未编码</span>'}${item.name}</div>
+                        <div style="font-weight:600;font-size:14px;">${item.name}</div>
                         <div style="font-size:12px;color:#666;margin-top:2px;">
                             ${tlabel} ｜ ${item.length}×${item.width}×${item.height} cm
-                            ${item.remark ? ' ｜ <span style="color:#999;font-size:11px;" title="' + String(item.remark||'').replace(/"/g,'&quot;') + '">' + (String(item.remark||'').length>28?String(item.remark||'').slice(0,28)+'…':String(item.remark||'')) + '</span>' : ''}
+                            ${item.code ? ' ｜ 编码 ' + item.code : ''}
+                            ${item.remark ? ' ｜ 📍' + item.remark : ''}
                             <span style="color:#52c41a;font-weight:600;"> ｜ 📦${item.stock ?? 0}个</span>
                             <span style="color:#1677ff;font-weight:500;"> ｜ ${item.type_class || '固定'}${(item.opens && item.opens > 1) ? ' 开'+item.opens : ''}</span>
                         </div>
@@ -4415,7 +4412,6 @@
     function resetDimoldbForm() {
         document.getElementById('dmfName').value = '';
         if (document.getElementById('dmfCode')) document.getElementById('dmfCode').value = '';
-        if (document.getElementById('dmfProductionSpec')) document.getElementById('dmfProductionSpec').value = '';
         document.getElementById('dmfL').value = '';
         document.getElementById('dmfW').value = '';
         document.getElementById('dmfH').value = '';
@@ -4433,7 +4429,6 @@
     function fillDimoldbForm(item) {
         document.getElementById('dmfName').value = item.name || '';
         if (document.getElementById('dmfCode')) document.getElementById('dmfCode').value = item.code || '';
-        if (document.getElementById('dmfProductionSpec')) document.getElementById('dmfProductionSpec').value = item.production_spec || '';
         document.getElementById('dmfType').value = item.product_type || 'zhengsquare';
         document.getElementById('dmfL').value = item.length || '';
         document.getElementById('dmfW').value = item.width || '';
@@ -4470,8 +4465,7 @@
 
         try {
             const code = (document.getElementById('dmfCode') && document.getElementById('dmfCode').value.trim()) || '';
-            const production_spec = (document.getElementById('dmfProductionSpec') && document.getElementById('dmfProductionSpec').value.trim()) || '';
-            const body = { product_type: ptype, name, code, production_spec, length: l, width: w, height: h, remark, stock, type_class, opens };
+            const body = { product_type: ptype, name, code, length: l, width: w, height: h, remark, stock, type_class, opens };
             let url = '/api/dimoldb';
             let method = 'POST';
             if (_editingDimoldbId) {
