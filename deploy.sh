@@ -81,7 +81,7 @@ if [ -d "$REPO_DIR/static" ]; then
   rsync -a "$REPO_DIR/static/" "$TARGET_DIR/static/"
   log "  static/ synced (auth_session.js, prod_ui.js, …)"
 fi
-for html in index.html index_cs.html; do
+for html in index.html index_cs.html index_production.html; do
   if [ -f "$REPO_DIR/$html" ]; then
     cp -f "$REPO_DIR/$html" "$TARGET_DIR/$html"
     log "  $html copied"

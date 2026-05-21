@@ -1264,15 +1264,26 @@ def load_quote_data():
                 except:
                     pass
             result[key] = val
-        if not result:
-            return None
-        return result
+        if result:
+            from quote_material_defaults import enrich_quote_data
+
+            return enrich_quote_data(result)
     except Exception as e:
         print(f'[MySQL load_quote_data] 错误: {e}')
+    try:
+        with open(QUOTE_DATA_FILE, "r", encoding="utf-8") as f:
+            from quote_material_defaults import enrich_quote_data
+
+            return enrich_quote_data(json.load(f))
+    except Exception:
         return None
 
 def save_quote_data(qd):
-    """保存报价配置到MySQL"""
+    """保存报价配置到 MySQL，并同步 quote_data.json 备份。"""
+    from quote_material_defaults import enrich_quote_data
+
+    qd = enrich_quote_data(qd or {})
+    ok_mysql = False
     try:
         db = get_db()
         cur = db.cursor()
@@ -1283,10 +1294,17 @@ def save_quote_data(qd):
             )
         cur.close()
         db.close()
-        return True
+        ok_mysql = True
     except Exception as e:
         print(f'[MySQL save_quote_data] 错误: {e}')
-        return False
+    ok_file = False
+    try:
+        with open(QUOTE_DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump(qd, f, ensure_ascii=False, indent=2)
+        ok_file = True
+    except Exception as e:
+        print(f'[save_quote_data] file: {e}')
+    return ok_mysql or ok_file
 
 def ceil_to_half(val):
     """向上取整到0.5：23.32→23.5, 23.62→24"""
@@ -1674,13 +1692,11 @@ def calc_carton(length, width, height, qty, material_key, quote_data):
 
 @app.route('/api/quote_data')
 def get_quote_data():
-    """返回报价基础数据（保持JSON key顺序）"""
-    try:
-        with open(QUOTE_DATA_FILE, 'r', encoding='utf-8') as f:
-            raw = f.read()
-        return '{"success":true,"data":' + raw + '}', 200, {'Content-Type': 'application/json'}
-    except:
+    """返回报价基础数据（MySQL quote_config 优先，与 calculate/save 一致）。"""
+    qd = load_quote_data()
+    if not qd:
         return jsonify({"success": False, "error": "报价数据未加载"})
+    return jsonify({"success": True, "data": qd})
 
 @app.route('/api/quote/save_config', methods=['POST'])
 def save_quote_config():
