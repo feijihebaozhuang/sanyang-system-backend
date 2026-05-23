@@ -2303,11 +2303,35 @@ def save_dimoldb(data):
     ok = _dimoldb_store.save_dimoldb(get_db, data)
     if ok:
         _dimoldb_store.invalidate_dimoldb_cache()
+        _invalidate_dim_match_index_cache()
     return ok
 
 
 _inv_mem_cache: dict = {"data": None, "ts": 0.0}
-_INV_CACHE_TTL = 60.0
+_INV_CACHE_TTL = float(os.getenv("INV_CACHE_TTL_SEC", "120"))
+
+_dim_match_index_cache: dict = {"index": None, "ts": 0.0}
+
+
+def get_dim_match_index_cached():
+    """刀模尺寸索引（库存/刀模列表共用，避免每请求重建）。"""
+    import time as _t
+
+    now = _t.time()
+    if _dim_match_index_cache["index"] is not None and now - float(
+        _dim_match_index_cache["ts"] or 0
+    ) < 120.0:
+        return _dim_match_index_cache["index"]
+    rows = load_dimoldb()
+    idx = _dimoldb_store.build_dim_match_index(rows)
+    _dim_match_index_cache["index"] = idx
+    _dim_match_index_cache["ts"] = now
+    return idx
+
+
+def _invalidate_dim_match_index_cache() -> None:
+    _dim_match_index_cache["index"] = None
+    _dim_match_index_cache["ts"] = 0.0
 
 
 def load_inventory_cached():
@@ -2777,6 +2801,8 @@ def save_inventory(data):
             )
         cur.close()
         db.close()
+        _inv_mem_cache["data"] = None
+        _inv_mem_cache["ts"] = 0.0
         return True
     except Exception as e:
         print(f'[MySQL save_inventory] 错误: {e}')
@@ -2804,7 +2830,7 @@ def get_inventory():
     tab = request.args.get('tab', 'finished')
     data = load_inventory_cached()
     items = data.get(tab, [])
-    dm_index = _dimoldb_store.build_dim_match_index(load_dimoldb())
+    dm_index = get_dim_match_index_cached()
     _dim_inv_api.apply_inventory_material_labels(items)
     ptype = request.args.get('type', '')
     search = request.args.get('search', '').strip()
@@ -4000,7 +4026,7 @@ def _warm_prod_dashboard_cache():
                 _th.Thread(target=_run_auto_material_calc, daemon=True).start()
         except Exception as e:
             print(f"[打单缓存] 刷新失败: {e}")
-        time.sleep(90)
+        time.sleep(int(os.getenv("PROD_DASH_WARM_INTERVAL_SEC", "120")))
 
 
 _dash_warm_thread = _th.Thread(target=_warm_prod_dashboard_cache, daemon=True)
@@ -4188,8 +4214,9 @@ def _calc_material_for_request(so_id: str, line_index: int, *, mark_flow: bool =
         infer_order_type_fn=ph.infer_order_type,
         get_or_create_flow_steps_fn=ph.get_or_create_flow_steps,
         save_flow_row_fn=ph.save_flow_row,
+        fetch_km_product=True,
     )
-    _prod_dash_cache.invalidate_dashboard_cache()
+    _prod_dash_cache.patch_line_material(so_id, line_index, result)
     return {"success": True, "result": result, "so_id": so_id, "line_index": line_index}
 
 
@@ -4352,7 +4379,9 @@ def production_dashboard_order(order_id):
     """单条订单详情（从缓存取，供分页列表点详情）"""
     o = _prod_dash_cache.find_order_in_cache(order_id)
     if not o:
-        _prod_dash_cache.get_dashboard_cache(_rebuild_prod_dashboard_cache, force=True)
+        _prod_dash_cache.get_dashboard_cache(
+            _rebuild_prod_dashboard_cache, force=False
+        )
         o = _prod_dash_cache.find_order_in_cache(order_id)
     if not o:
         return jsonify({"success": False, "error": "未找到订单"})

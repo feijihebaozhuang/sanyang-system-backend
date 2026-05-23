@@ -50,7 +50,7 @@ def resolve_authoritative_product(
     item: dict[str, Any],
     *,
     km_index: dict[str, dict] | None = None,
-    fetch_if_missing: bool = True,
+    fetch_if_missing: bool = False,
 ) -> dict[str, Any] | None:
     """
     权威生产尺寸（优先级）：
@@ -81,7 +81,7 @@ def resolve_line_context(
     *,
     km_index: dict[str, dict] | None = None,
     material_mapping: list[dict] | None = None,
-    fetch_if_missing: bool = True,
+    fetch_if_missing: bool = False,
 ) -> dict[str, Any]:
     del material_mapping
     sku = item_merchant_code(item)

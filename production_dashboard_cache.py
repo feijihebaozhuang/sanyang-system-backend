@@ -19,7 +19,7 @@ _cache: dict[str, Any] = {
     "error": "",
 }
 
-_CACHE_TTL = 90
+_CACHE_TTL = float(os.getenv("PROD_DASH_CACHE_TTL_SEC", "300"))
 
 
 def _inv_index(inventory_list: list[dict]) -> list[tuple[float, float, float, int, str]]:
@@ -220,7 +220,10 @@ def rebuild_dashboard_cache(
             if not isinstance(item, dict):
                 continue
             ctx = ksr.resolve_line_context(
-                item, km_index=km_index, material_mapping=material_mapping
+                item,
+                km_index=km_index,
+                material_mapping=material_mapping,
+                fetch_if_missing=False,
             )
             raw_attrs = ctx["raw_attrs"]
             sku_code = ctx["sku"]
@@ -408,6 +411,23 @@ def get_dashboard_cache(
             return _cache
         stale = dict(_cache) if has_orders else None
 
+    if not force and not has_orders:
+        def _bg_first() -> None:
+            global _cache
+            try:
+                fresh = rebuild_fn()
+                with _cache_lock:
+                    _cache = fresh
+            except Exception as e:
+                with _cache_lock:
+                    _cache["error"] = str(e)
+
+        threading.Thread(
+            target=_bg_first, daemon=True, name="prod-dash-first-build"
+        ).start()
+        with _cache_lock:
+            return dict(_cache)
+
     if not force and stale:
         def _bg_refresh() -> None:
             global _cache
@@ -438,6 +458,30 @@ def get_dashboard_cache(
 def invalidate_dashboard_cache() -> None:
     with _cache_lock:
         _cache["ts"] = 0.0
+
+
+def patch_line_material(
+    so_id: str,
+    line_index: int,
+    mc_result: dict[str, Any],
+) -> None:
+    """算料后只更新单行，避免整表重建。"""
+    with _cache_lock:
+        for o in _cache.get("orders") or []:
+            if str(o.get("so_id") or "") != str(so_id):
+                continue
+            for fi in o.get("full_items") or []:
+                if int(fi.get("line_index", -1)) != int(line_index):
+                    continue
+                st = (mc_result or {}).get("status") or "pending"
+                fi["material_calc"] = mc_result or {}
+                fi["material_status"] = st
+                code = (mc_result or {}).get("dimoldb_code") or ""
+                if code:
+                    fi["dimoldb_code"] = code
+                    fi["dimoldb_matched"] = True
+                return
+            return
 
 
 def find_order_in_cache(so_id: str) -> dict | None:

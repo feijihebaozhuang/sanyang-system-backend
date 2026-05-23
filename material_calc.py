@@ -695,6 +695,8 @@ def calc_order_line(
     infer_order_type_fn: Callable | None = None,
     get_or_create_flow_steps_fn: Callable | None = None,
     save_flow_row_fn: Callable | None = None,
+    km_index: dict | None = None,
+    fetch_km_product: bool = False,
 ) -> dict[str, Any]:
     import production_spec as pspec
 
@@ -705,8 +707,14 @@ def calc_order_line(
     import km_sku_map_store as kms
     import km_sku_resolve as ksr
 
-    km_index = kms.load_all()
-    ctx = ksr.resolve_line_context(it, km_index=km_index, material_mapping=material_mapping)
+    if km_index is None:
+        km_index = kms.load_all()
+    ctx = ksr.resolve_line_context(
+        it,
+        km_index=km_index,
+        material_mapping=material_mapping,
+        fetch_if_missing=fetch_km_product,
+    )
     order_raw = ctx.get("order_spec_raw") or ctx["raw_attrs"]
     raw_attrs = order_raw
     try:
@@ -797,8 +805,11 @@ def auto_calc_all_orders(
     only_so_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     """订单同步后批量算料，结果写入 material_calc_cache.json。"""
+    import km_sku_map_store as kms
+
     raw_rows = load_raw_rows(load_raw_fn)
     dimoldb = load_dimoldb_fn()
+    km_index = kms.load_all()
     done = failed = 0
     errors: list[str] = []
 
@@ -822,6 +833,8 @@ def auto_calc_all_orders(
                     infer_order_type_fn=infer_order_type_fn,
                     get_or_create_flow_steps_fn=get_or_create_flow_steps_fn,
                     save_flow_row_fn=save_flow_row_fn,
+                    km_index=km_index,
+                    fetch_km_product=False,
                 )
                 if r.get("status") in ("done", "shortage"):
                     done += 1
