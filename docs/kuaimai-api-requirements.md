@@ -101,7 +101,7 @@
 
 | 模块 | 说明 |
 |------|------|
-| `km_api.py` | HMAC-MD5 签名、`open.token.refresh`、outstock 拉单、映射 |
+| `km_api.py` | HMAC-MD5 签名、`open.token.refresh`、outstock 拉单、**商品 SKU 尺寸 `erp.item.single.sku.get`** |
 | `alibaba_orders.py` | 1688 开放平台直连（可选兜底） |
 | `order_sync.py` | outstock 全平台 + 可选 1688 直连 → 缓存 |
 | `scripts/km_fetch_orders.py` | 服务器手动拉单/探测 |
@@ -110,3 +110,19 @@
 | `orders_cache.json` | 实时订单缓存 |
 
 凭证模板：`km_token.json.example` → 复制为 `km_token.json`（勿提交 Git）。
+
+## 10. 商品尺寸（生产用，不解析买家规格文本）
+
+| 接口 | 方法名 | 用途 |
+|------|--------|------|
+| 查询 SKU | `erp.item.single.sku.get` | 按 `skuOuterId`（规格商家编码）或 `sysSkuId` 取 **x/y/z** |
+| 批量商品 | `erp.item.list.get` | 主商品 `outerIds` + `returnSkus=1`，SKU 级 x/y/z |
+
+**生产链路优先级：**
+
+1. 订单子单若带 `x/y/z` → 直接用  
+2. 否则 `erp.item.single.sku.get(skuOuterId=商家编码)`  
+3. 本地 `km_sku_map` 仅作缓存/Excel 兜底  
+4. **禁止**从 `22*10 白色外径;长度26cm` 类买家文本猜长宽高  
+
+探测：`python3 scripts/km_probe_sku_dims.py 51714`

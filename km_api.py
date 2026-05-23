@@ -1509,6 +1509,7 @@ _KM_ITEM_SNAPSHOT_KEYS = (
     "sysSkuPropertiesName",
     "sysSkuPropertiesAlias",
     "propertiesName",
+    "propertiesAlias",
     "itemSpec",
     "skuSpec",
     "sysSkuRemark",
@@ -1521,6 +1522,17 @@ _KM_ITEM_SNAPSHOT_KEYS = (
     "shortTitle",
     "isCustomization",
     "isCustom",
+    "sysOuterId",
+    "outerId",
+    "skuOuterId",
+    "sysSkuId",
+    "sysItemId",
+    "x",
+    "y",
+    "z",
+    "length",
+    "width",
+    "height",
 )
 
 # 可能含买家下单规格的平台字段（按优先级尝试拼接）
@@ -1740,13 +1752,234 @@ def km_merge_line_item_spec(it: dict) -> str:
 def _ms_to_date_str(ms: Any) -> str:
     try:
         v = int(ms)
-        if v > 1_000_000_000_000:
-            v //= 1000
         if v <= 0:
             return ""
+        if v > 10_000_000_000:
+            v = v // 1000
         return datetime.fromtimestamp(v).strftime("%Y-%m-%d")
     except (TypeError, ValueError, OSError):
         return ""
+
+
+# ---------- 快麦商品档案尺寸（x/y/z），不解析买家规格文本 ----------
+
+_product_dims_cache: dict[str, dict[str, Any]] = {}
+_PRODUCT_CACHE_TTL = float(os.getenv("KM_PRODUCT_DIMS_CACHE_TTL_SEC", "3600"))
+
+
+def km_item_single_sku_get(
+    *,
+    sku_outer_id: str = "",
+    sys_sku_id: int | str | None = None,
+) -> dict[str, Any] | None:
+    """erp.item.single.sku.get — 按规格商家编码或 sysSkuId 查 SKU 档案。"""
+    biz: dict[str, Any] = {}
+    if sys_sku_id not in (None, ""):
+        biz["sysSkuId"] = int(sys_sku_id)
+    elif (sku_outer_id or "").strip():
+        biz["skuOuterId"] = str(sku_outer_id).strip()
+    else:
+        return None
+    res = km_request("erp.item.single.sku.get", biz)
+    if not res.get("success"):
+        return None
+    rows = res.get("itemSkus") or res.get("itemSku") or []
+    if isinstance(rows, dict):
+        return rows
+    if isinstance(rows, list) and rows:
+        return rows[0]
+    return None
+
+
+def km_product_dims_from_sku_record(sku: dict[str, Any] | None) -> dict[str, Any] | None:
+    """快麦 SKU 档案 x/y/z → 生产用尺寸（商品档案维护值，不再猜文本）。"""
+    if not isinstance(sku, dict):
+        return None
+    try:
+        l = float(sku.get("x") or 0)
+        w = float(sku.get("y") or 0)
+        h = float(sku.get("z") or 0)
+    except (TypeError, ValueError):
+        return None
+    if not (l and w):
+        return None
+    alias = (
+        (sku.get("propertiesAlias") or sku.get("propertiesName") or "")
+        .strip()
+    )
+    return {
+        "outer_id": str(sku.get("skuOuterId") or sku.get("outerId") or ""),
+        "length": l,
+        "width": w,
+        "height": h,
+        "material": "",
+        "material_hint": alias,
+        "km_title": (sku.get("shortTitle") or "").strip(),
+        "sysSkuId": sku.get("sysSkuId"),
+        "product_type": "zhengsquare" if abs(l - w) < 0.01 else "juxing",
+        "dim_kind": "outer",
+        "source": "km_api_sku",
+    }
+
+
+def km_extract_line_product_dims(it: dict[str, Any]) -> dict[str, Any] | None:
+    """订单子单若 API 已带 x/y/z 或 length/width/height，直接取用。"""
+    if not isinstance(it, dict):
+        return None
+    src = km_item_for_resolve(it)
+    for lk, wk, hk in (("x", "y", "z"), ("length", "width", "height")):
+        try:
+            l = float(src.get(lk) or 0)
+            w = float(src.get(wk) or 0)
+            h = float(src.get(hk) or 0)
+        except (TypeError, ValueError):
+            continue
+        if l and w:
+            alias = (
+                src.get("propertiesAlias")
+                or src.get("sysSkuPropertiesAlias")
+                or src.get("propertiesName")
+                or ""
+            )
+            return {
+                "outer_id": str(
+                    src.get("sysOuterId")
+                    or src.get("skuOuterId")
+                    or src.get("outerId")
+                    or ""
+                ),
+                "length": l,
+                "width": w,
+                "height": h,
+                "material": "",
+                "material_hint": str(alias or "").strip(),
+                "product_type": "zhengsquare" if abs(l - w) < 0.01 else "juxing",
+                "dim_kind": "outer",
+                "source": "order_line",
+            }
+    return None
+
+
+def km_fetch_sku_product_dims(
+    code: str,
+    *,
+    sys_sku_id: int | str | None = None,
+    force: bool = False,
+) -> dict[str, Any] | None:
+    """按规格商家编码调快麦商品 API；带进程内缓存。"""
+    code = (code or "").strip()
+    cache_key = f"sku:{code}" if code else f"sysSkuId:{sys_sku_id}"
+    if not cache_key or cache_key.endswith(":"):
+        return None
+    now = time.time()
+    if not force:
+        ent = _product_dims_cache.get(cache_key)
+        if ent and now - float(ent.get("ts") or 0) < _PRODUCT_CACHE_TTL:
+            return ent.get("data")
+    sku = km_item_single_sku_get(sku_outer_id=code, sys_sku_id=sys_sku_id)
+    data = km_product_dims_from_sku_record(sku)
+    _product_dims_cache[cache_key] = {"ts": now, "data": data}
+    return data
+
+
+def km_line_merchant_code(item: dict[str, Any]) -> str:
+    for key in ("sku", "skuOuterId", "sysOuterId", "outerId", "merchant_code"):
+        v = (item.get(key) or "").strip()
+        if v:
+            return v
+    snap = item.get("_km")
+    if isinstance(snap, dict):
+        for key in ("skuOuterId", "sysOuterId", "outerId"):
+            v = (snap.get(key) or "").strip()
+            if v:
+                return v
+    return ""
+
+
+def km_line_sys_sku_id(item: dict[str, Any]) -> int | str | None:
+    for key in ("sysSkuId",):
+        v = item.get(key)
+        if v not in (None, ""):
+            return v
+    snap = item.get("_km")
+    if isinstance(snap, dict):
+        v = snap.get("sysSkuId")
+        if v not in (None, ""):
+            return v
+    return None
+
+
+def km_resolve_item_product_dims(
+    item: dict[str, Any],
+    *,
+    fetch_if_missing: bool = True,
+) -> dict[str, Any] | None:
+    """
+    生产尺寸来源（优先级）：
+    1. 子单已缓存 km_product_dims
+    2. 订单子单原生 x/y/z
+    3. erp.item.single.sku.get（skuOuterId / sysSkuId）
+  不解析买家规格文本。
+    """
+    cached = item.get("km_product_dims")
+    if isinstance(cached, dict) and cached.get("length") and cached.get("width"):
+        return cached
+
+    line_dims = km_extract_line_product_dims(item)
+    if line_dims:
+        return line_dims
+
+    if not fetch_if_missing or not km_configured():
+        return None
+
+    code = km_line_merchant_code(item)
+    sys_sku_id = km_line_sys_sku_id(item)
+    if not code and not sys_sku_id:
+        return None
+    return km_fetch_sku_product_dims(code, sys_sku_id=sys_sku_id)
+
+
+def km_batch_enrich_items_product_dims(
+    items: list[dict[str, Any]],
+    *,
+    fetch_if_missing: bool = True,
+) -> int:
+    """为订单子单批量补 km_product_dims（同编码只调一次 API）。"""
+    filled = 0
+    by_code: dict[str, list[dict]] = {}
+    for it in items or []:
+        if not isinstance(it, dict):
+            continue
+        if isinstance(it.get("km_product_dims"), dict) and it["km_product_dims"].get(
+            "length"
+        ):
+            continue
+        if km_extract_line_product_dims(it):
+            it["km_product_dims"] = km_extract_line_product_dims(it)
+            filled += 1
+            continue
+        code = km_line_merchant_code(it)
+        sys_sku = km_line_sys_sku_id(it)
+        if not code and not sys_sku:
+            continue
+        key = f"{code}|{sys_sku or ''}"
+        by_code.setdefault(key, []).append(it)
+
+    if not fetch_if_missing:
+        return filled
+
+    for key, group in by_code.items():
+        code = key.split("|", 1)[0]
+        sys_sku = key.split("|", 1)[1] or None
+        dims = km_fetch_sku_product_dims(
+            code, sys_sku_id=sys_sku if sys_sku else None
+        )
+        if not dims:
+            continue
+        for it in group:
+            it["km_product_dims"] = dict(dims)
+            filled += 1
+    return filled
 
 
 def km_trade_to_cache_order(trade: dict, shops: dict[str, dict] | None = None) -> dict:
@@ -1777,10 +2010,17 @@ def km_trade_to_cache_order(trade: dict, shops: dict[str, dict] | None = None) -
         item_name = (it.get("sysTitle") or it.get("title") or it.get("shortTitle") or "")
         line_ctx = {**snap, "qty": qty}
         display = km_resolve_item_display(line_ctx)
+        sku_code = str(
+            it.get("sysOuterId") or it.get("skuOuterId") or it.get("outerId") or ""
+        ).strip()
+        line_dims = km_extract_line_product_dims({**snap, **it, "qty": qty})
         items.append(
             {
                 "name": item_name,
-                "sku": (it.get("sysOuterId") or it.get("outerId") or ""),
+                "sku": sku_code,
+                "skuOuterId": sku_code,
+                "sysSkuId": it.get("sysSkuId") or snap.get("sysSkuId"),
+                "sysItemId": it.get("sysItemId") or snap.get("sysItemId"),
                 "qty": qty,
                 "price": it.get("price") or it.get("payment") or 0,
                 "spec": display,
@@ -1788,9 +2028,12 @@ def km_trade_to_cache_order(trade: dict, shops: dict[str, dict] | None = None) -
                 "platform_attrs": display,
                 "platform_spec_raw": display,
                 "is_customization": km_item_is_customization(line_ctx),
+                "km_product_dims": line_dims,
                 "_km": snap,
             }
         )
+
+    km_batch_enrich_items_product_dims(items, fetch_if_missing=True)
 
     sys_status = km_resolve_sys_status(trade)
     created_ms = (

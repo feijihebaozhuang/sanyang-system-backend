@@ -474,6 +474,13 @@ def calc_material_line(
     raw_attrs = (attrs or "").strip()
     clean_attrs = pspec.sanitize_sku_attrs(raw_attrs) or raw_attrs
     mat_map = quote_data.get("material_mapping") or []
+    if prebuilt_ps and prebuilt_ps.get("km_dims_missing"):
+        return {
+            "status": "error",
+            "error": "快麦商品档案无尺寸（x/y/z），请 C 在快麦商品档案维护或在 km_sku_map 导入",
+            "attrs": attrs,
+            "km_dims_missing": True,
+        }
     ps = prebuilt_ps
     if not (ps and ps.get("dimensions_ok")):
         ps = pspec.build_production_spec(
@@ -487,6 +494,13 @@ def calc_material_line(
         if not material_text and ps.get("material"):
             material_text = str(ps["material"])
     else:
+        if (sku or "").strip():
+            return {
+                "status": "error",
+                "error": "快麦商品档案无尺寸（x/y/z），请 C 在快麦商品档案维护",
+                "attrs": attrs,
+                "km_dims_missing": True,
+            }
         dims = pspec.parse_dimensions_for_item(raw_attrs, title or "")
         if not pspec.dimensions_ready_for_calc(dims):
             missing = ps.get("dimensions_missing") or pspec.missing_dimension_labels(dims)
@@ -689,7 +703,8 @@ def calc_order_line(
 
     km_index = kms.load_all()
     ctx = ksr.resolve_line_context(it, km_index=km_index, material_mapping=material_mapping)
-    raw_attrs = ctx["raw_attrs"]
+    order_raw = ctx.get("order_spec_raw") or ctx["raw_attrs"]
+    raw_attrs = order_raw
     try:
         import production_helpers as ph
 
@@ -711,6 +726,8 @@ def calc_order_line(
         ctx.get("km_row"),
         material_mapping=material_mapping,
         order_spec_raw=ctx.get("order_spec_raw") or raw_attrs,
+        km_product=ctx.get("km_product"),
+        sku=ctx.get("sku") or "",
     )
     qty = int(ps.get("qty") or order_qty)
     order_type = (

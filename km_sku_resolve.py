@@ -1,21 +1,19 @@
 # -*- coding: utf-8 -*-
-"""订单子单：商家编码 → 快麦映射 → 生产规格 / 刀模。"""
+"""订单子单：快麦商品档案尺寸 → 生产规格 / 刀模（不猜买家规格文本）。"""
 from __future__ import annotations
 
 from typing import Any
 
+import km_api
 import km_sku_map_store as kms
 
 
 def item_merchant_code(item: dict[str, Any]) -> str:
-    for key in ("sku", "outerId", "sysOuterId", "merchant_code"):
-        v = (item.get(key) or "").strip()
-        if v:
-            return v
-    return ""
+    return km_api.km_line_merchant_code(item)
 
 
 def item_raw_attrs(item: dict[str, Any]) -> str:
+    """买家下单原文，仅作 line1 展示，不参与尺寸解析。"""
     for key in (
         "platform_spec_raw",
         "platform_attrs",
@@ -33,61 +31,90 @@ def item_raw_attrs(item: dict[str, Any]) -> str:
         return ""
 
 
+def _map_row_as_product(km_row: dict[str, Any]) -> dict[str, Any]:
+    l, w, h = kms.production_dims_from_map(km_row)
+    return {
+        "outer_id": km_row.get("outer_id") or "",
+        "length": l,
+        "width": w,
+        "height": h,
+        "material": (km_row.get("material") or "").strip(),
+        "material_hint": (km_row.get("spec_alias") or "").strip(),
+        "product_type": (km_row.get("product_type") or "").strip(),
+        "dim_kind": (km_row.get("dim_kind") or "outer").strip() or "outer",
+        "source": "km_map_cache",
+    }
+
+
+def resolve_authoritative_product(
+    item: dict[str, Any],
+    *,
+    km_index: dict[str, dict] | None = None,
+    fetch_if_missing: bool = True,
+) -> dict[str, Any] | None:
+    """
+    权威生产尺寸（优先级）：
+    1. 快麦订单子单 x/y/z
+    2. erp.item.single.sku.get
+    3. 本地 km_sku_map 缓存（Excel 导入的兜底，非文本解析）
+    """
+    product = km_api.km_resolve_item_product_dims(
+        item, fetch_if_missing=fetch_if_missing
+    )
+    if product and product.get("length") and product.get("width"):
+        return product
+
+    code = item_merchant_code(item)
+    if code and km_index is not None:
+        row = kms.lookup_outer_id(code, km_index)
+        if row and kms.map_has_production_dims(row):
+            return _map_row_as_product(row)
+    elif code:
+        row = kms.lookup_outer_id(code)
+        if row and kms.map_has_production_dims(row):
+            return _map_row_as_product(row)
+    return None
+
+
 def resolve_line_context(
     item: dict[str, Any],
     *,
     km_index: dict[str, dict] | None = None,
     material_mapping: list[dict] | None = None,
+    fetch_if_missing: bool = True,
 ) -> dict[str, Any]:
-    """
-    解析子单上下文。
-    - 有商家编码且 km_sku_map 含长宽高 → attrs_source=km_map_override（尺寸以映射为准）
-    - 否则保留订单买家属性；仅缺尺寸时用 spec_alias 兜底
-    """
-    del material_mapping  # 预留
+    del material_mapping
     sku = item_merchant_code(item)
     order_raw = item_raw_attrs(item)
     km_row = kms.lookup_outer_id(sku, km_index) if sku else None
-    source = "order"
-    raw = order_raw
+    product = resolve_authoritative_product(
+        item, km_index=km_index, fetch_if_missing=fetch_if_missing
+    )
 
-    if km_row and kms.map_has_production_dims(km_row):
-        source = "km_map_override"
-    elif km_row:
-        alias = (km_row.get("spec_alias") or "").strip()
-        if not raw and alias:
-            raw = alias
-            source = "km_map_alias"
-        elif raw and alias:
-            import production_spec as pspec
-
-            dims = pspec.parse_dimensions_for_item(raw)
-            if not pspec.dimensions_ready_for_calc(dims) and alias:
-                raw = alias
-                source = "km_map_fallback"
+    if product:
+        source = product.get("source") or "km_product"
+    elif sku:
+        source = "km_dims_missing"
+    else:
+        source = "order_no_sku"
 
     return {
-        "raw_attrs": raw,
+        "raw_attrs": order_raw,
         "order_spec_raw": order_raw,
         "sku": sku,
         "km_row": km_row,
+        "km_product": product,
         "attrs_source": source,
     }
 
 
-def enrich_production_spec(
+def _apply_product_dims_to_spec(
     ps: dict[str, Any],
-    km_row: dict[str, Any] | None,
+    product: dict[str, Any],
     *,
-    material_mapping: list[dict] | None = None,
     order_spec_raw: str = "",
+    material_mapping: list[dict] | None = None,
 ) -> dict[str, Any]:
-    """
-    用 km_sku_map 补全/覆盖 production_spec。
-    映射表有长宽高时 **始终覆盖** 订单文本解析结果（避免 51714 类歧义规格误解析）。
-    """
-    if not km_row:
-        return ps
     import production_spec as pspec
 
     out = dict(ps)
@@ -96,25 +123,11 @@ def enrich_production_spec(
         out["line1"] = line1
         out["platform_spec_raw"] = line1
 
-    if not kms.map_has_production_dims(km_row):
-        if out.get("dimensions_ok"):
-            return out
-        l, w, h = kms.production_dims_from_map(km_row)
-        if not (l and w):
-            alias = (km_row.get("spec_alias") or "").strip()
-            if alias:
-                dims = pspec.parse_dimensions_for_item(alias)
-                if pspec.dimensions_ready_for_calc(dims):
-                    l, w, h = float(dims["l"]), float(dims["w"]), float(dims["h"])
-        if not (l and w):
-            return out
-    else:
-        l, w, h = kms.production_dims_from_map(km_row)
+    l = float(product["length"])
+    w = float(product["width"])
+    h = float(product.get("height") or 0)
 
-    if not (l and w):
-        return out
-
-    kind = (km_row.get("dim_kind") or "").strip().lower()
+    kind = (product.get("dim_kind") or "outer").strip().lower()
     if kind == "inner":
         diam_label = "内径"
     elif kind == "outer":
@@ -122,16 +135,16 @@ def enrich_production_spec(
     else:
         diam_label = out.get("diameter_type") or ""
 
-    alias = (km_row.get("spec_alias") or "").strip()
-    mat = (km_row.get("material") or "").strip()
-    if not mat and alias:
-        mat = pspec.match_production_material(alias, material_mapping) or ""
+    mat = (product.get("material") or "").strip()
+    hint = (product.get("material_hint") or "").strip()
+    if not mat and hint:
+        mat = pspec.match_production_material(hint, material_mapping) or ""
     if not mat:
         mat = out.get("material") or ""
 
     color = out.get("color") or ""
-    if alias and not color:
-        color = pspec._parse_color(alias, mat) or color
+    if hint and not color:
+        color = pspec._parse_color(hint, mat) or color
 
     size = pspec.format_size_compact({"l": l, "w": w, "h": h or 0})
     qty_label = out.get("qty_label") or ""
@@ -143,7 +156,6 @@ def enrich_production_spec(
         color=color,
     )
 
-    override = kms.map_has_production_dims(km_row)
     out.update(
         {
             "length": l,
@@ -158,10 +170,59 @@ def enrich_production_spec(
             "formatted": line2 or out.get("formatted"),
             "line": line2 or out.get("line"),
             "km_map_applied": True,
-            "km_map_override": override,
+            "km_map_override": True,
+            "dims_source": product.get("source") or "km_product",
+            "km_dims_missing": False,
         }
     )
     return out
+
+
+def enrich_production_spec(
+    ps: dict[str, Any],
+    km_row: dict[str, Any] | None,
+    *,
+    material_mapping: list[dict] | None = None,
+    order_spec_raw: str = "",
+    km_product: dict[str, Any] | None = None,
+    sku: str = "",
+) -> dict[str, Any]:
+    """
+    生产规格：仅用快麦商品档案/映射表结构化尺寸。
+    有商家编码时 **禁止** 从买家规格文本解析长宽高。
+    """
+    if km_product and km_product.get("length") and km_product.get("width"):
+        return _apply_product_dims_to_spec(
+            ps,
+            km_product,
+            order_spec_raw=order_spec_raw,
+            material_mapping=material_mapping,
+        )
+
+    if km_row and kms.map_has_production_dims(km_row):
+        return _apply_product_dims_to_spec(
+            ps,
+            _map_row_as_product(km_row),
+            order_spec_raw=order_spec_raw,
+            material_mapping=material_mapping,
+        )
+
+    out = dict(ps)
+    line1 = (order_spec_raw or ps.get("line1") or "").strip()
+    if line1:
+        out["line1"] = line1
+        out["platform_spec_raw"] = line1
+
+    if (sku or "").strip():
+        out["dimensions_ok"] = False
+        out["dimensions_missing"] = ["长", "宽", "高"]
+        out["km_dims_missing"] = True
+        out["length"] = None
+        out["width"] = None
+        out["height"] = None
+        return out
+
+    return ps
 
 
 def _order_type_to_dimoldb_pt(order_type: str) -> str:
@@ -181,7 +242,6 @@ def _match_dimoldb_by_dimensions(
     dimoldb_rows: list[dict],
     dm_index: dict | None = None,
 ) -> dict[str, Any]:
-    """按尺寸匹配刀模库。"""
     import dimoldb_store as ds
     import material_calc as mcalc
 
@@ -242,7 +302,6 @@ def match_dimoldb_for_line(
     sku: str = "",
     km_code_index: dict[str, dict] | None = None,
 ) -> dict[str, Any]:
-    """商家编码优先匹配刀模，其次尺寸匹配。"""
     import dimoldb_store as ds
     import material_calc as mcalc
 
