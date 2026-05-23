@@ -248,10 +248,21 @@ def rebuild_dashboard_cache(
                 sku=sku_code,
             )
             real_qty = int(ps.get("qty") or order_qty)
+            line_type_blob = " ".join(
+                x
+                for x in (
+                    raw_attrs,
+                    ps.get("line2") or "",
+                    ps.get("material") or "",
+                    (ctx.get("km_product") or {}).get("material_hint") or "",
+                )
+                if x
+            )
+            line_order_type = mcalc.infer_product_type_for_calc(order_type, line_type_blob)
             has_stock, stock_qty, stock_info = _match_inventory(raw_attrs, real_qty, inv_rows)
             dm_info = _match_dimoldb_for_line(
                 ps,
-                order_type,
+                line_order_type,
                 dimoldb_rows,
                 dm_index,
                 sku=sku_code,
@@ -304,8 +315,27 @@ def rebuild_dashboard_cache(
                     "dimensions_ok": bool(ps.get("dimensions_ok")),
                     "dimensions_missing": ps.get("dimensions_missing") or [],
                     "line_index": line_idx,
+                    "product_type": line_order_type,
                 }
             )
+
+        if full_items:
+            if any(
+                (fi.get("product_type") or "") == "纸箱"
+                or pspec.attrs_indicate_carton(
+                    " ".join(
+                        x
+                        for x in (
+                            fi.get("spec") or "",
+                            fi.get("production_spec") or "",
+                            fi.get("material_name") or "",
+                        )
+                        if x
+                    )
+                )
+                for fi in full_items
+            ):
+                order_type = "纸箱"
 
         addr = o.get("receiver_address", "") or ""
         addr_parts = addr.split() if addr else []

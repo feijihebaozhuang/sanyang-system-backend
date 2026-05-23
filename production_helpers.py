@@ -175,14 +175,28 @@ def item_buyer_attrs(it: dict) -> str:
 
 def infer_order_type(o: dict) -> str:
     """按订单内各子单买家属性判断类型（飞机盒/纸箱等），不用商品标题。"""
+    import production_spec as pspec
+
     parts: list[str] = []
     for it in o.get("items") or []:
         if not isinstance(it, dict):
             continue
         attrs = item_buyer_attrs(it)
-        if attrs:
-            parts.append(attrs)
+        extra: list[str] = []
+        kmp = it.get("km_product_dims") or {}
+        if isinstance(kmp, dict) and kmp.get("material_hint"):
+            extra.append(str(kmp["material_hint"]))
+        for key in ("production_spec", "display", "spec"):
+            v = (it.get(key) or "").strip()
+            if v:
+                extra.append(v)
+                break
+        blob_part = " ".join(x for x in [attrs, *extra] if x)
+        if blob_part:
+            parts.append(blob_part)
     blob = " ".join(parts)
+    if pspec.attrs_indicate_carton(blob):
+        return "纸箱"
     if "扣底盒" in blob or "双插盒" in blob:
         return "扣底盒"
     if "飞机盒" in blob:

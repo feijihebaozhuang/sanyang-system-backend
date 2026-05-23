@@ -752,9 +752,60 @@ def is_airbox_product(attrs: str) -> bool:
     t = platform_spec_raw(attrs)
     if not t:
         return True
+    if attrs_indicate_carton(t):
+        return False
     if "纸箱" in t and "飞机盒" not in t:
         return False
     return True
+
+
+# 三层/五层 + B/EB/BC 坑 → 纸箱（即使规格未写「纸箱」二字）
+_CARTON_PIT_RE = re.compile(
+    r"EB|BC|B坑|B瓦|B楞|"
+    r"五层EB|三层B|三层BC|五层BC|"
+    r"K636K|K\d+[A-Z]\d+K",
+    re.I,
+)
+_CARTON_LAYER_PIT_RE = re.compile(
+    r"(?:三层|五层|3层|5层).{0,8}(?:EB|BC|B坑|B瓦|B楞)|"
+    r"(?:EB|BC|B坑|B瓦|B楞).{0,8}(?:三层|五层|3层|5层)",
+    re.I,
+)
+
+
+def attrs_indicate_carton(text: str) -> bool:
+    """买家属性/材料别名含 B/EB/BC 坑或三层五层坑纸 → 纸箱。"""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if "纸箱" in t and "飞机盒" not in t:
+        return True
+    if _CARTON_PIT_RE.search(t):
+        return True
+    if _CARTON_LAYER_PIT_RE.search(t):
+        return True
+    if ("3层" in t or "5层" in t) and "飞机盒" not in t:
+        return True
+    return False
+
+
+def infer_product_category(attrs: str, *, order_type_hint: str = "") -> str:
+    """从规格文本推断产品大类（纸箱 / 飞机盒 / 扣底盒等）。"""
+    a = (attrs or "").strip()
+    ot = (order_type_hint or "").strip()
+    if attrs_indicate_carton(a):
+        return "纸箱"
+    if "扣底盒" in a or "双插盒" in a:
+        return "扣底盒"
+    if "扣底" in a or "带扣" in a:
+        return "扣底盒"
+    if "双插" in a:
+        return "双插盒"
+    if "飞机盒" in a:
+        return "带扣" if "带扣" in a else "飞机盒"
+    if ot in ("纸箱", "扣底盒", "双插盒", "飞机盒", "带扣"):
+        return ot
+    return "飞机盒"
 
 
 _TITLE_SIZE_NOISE_RE = re.compile(

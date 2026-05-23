@@ -81,13 +81,13 @@ def _row_blob(row: dict) -> str:
 
 
 def _is_carton_product(product_type: str, attrs: str = "") -> bool:
+    import production_spec as pspec
+
     pt = (product_type or "").strip()
-    a = attrs or ""
-    if pt == "纸箱":
+    if pt in ("纸箱", "qita"):
         return True
-    if "纸箱" in a or "3层" in a or "5层" in a:
-        if "飞机盒" not in a:
-            return True
+    if pspec.attrs_indicate_carton(attrs or ""):
+        return True
     return False
 
 
@@ -407,8 +407,12 @@ def resolve_material_key(material_text: str, quote_data: dict) -> str:
 
 
 def infer_product_type_for_calc(order_type: str, attrs: str) -> str:
+    import production_spec as pspec
+
     ot = (order_type or "").strip()
     a = attrs or ""
+    if pspec.attrs_indicate_carton(a):
+        return "纸箱"
     if "纸箱" in a and "飞机盒" not in a:
         return "纸箱"
     if ot in ("扣底盒", "双插盒", "纸箱", "带扣", "飞机盒"):
@@ -730,12 +734,23 @@ def calc_order_line(
         sku=ctx.get("sku") or "",
     )
     qty = int(ps.get("qty") or order_qty)
-    order_type = (
-        infer_order_type_fn(order) if infer_order_type_fn else infer_product_type_for_calc("", raw_attrs)
-    )
     material_text = ps.get("material") or pspec.match_production_material(
         raw_attrs, material_mapping
     ) or ""
+    type_blob = " ".join(
+        x
+        for x in (
+            raw_attrs,
+            material_text,
+            (ctx.get("km_product") or {}).get("material_hint") or "",
+            ps.get("line2") or "",
+        )
+        if x
+    )
+    order_type = infer_product_type_for_calc(
+        infer_order_type_fn(order) if infer_order_type_fn else "",
+        type_blob,
+    )
 
     result = calc_material_line(
         attrs=raw_attrs or ps.get("line2") or ps.get("formatted") or "",
