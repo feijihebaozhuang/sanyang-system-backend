@@ -132,6 +132,18 @@
         .tag-urgent { background: #fff2f0; color: #e94560; }
         .urgent-badge { color: #e94560; margin-left: 4px; font-weight: bold; }
 
+        /* 打单分页 / 手机卡片 */
+        #page-production .prod-cards-mobile { display: none; }
+        #page-production .prod-pager-wrap { display: block; margin: 8px 0; }
+        .prod-pager { display: flex; align-items: center; gap: 10px; padding: 10px 0; flex-wrap: wrap; }
+        .prod-pager button { padding: 6px 12px; border: 1px solid #d9d9d9; background: #fff; border-radius: 4px; cursor: pointer; }
+        .prod-pager button:disabled { opacity: 0.4; cursor: not-allowed; }
+        .prod-cards-mobile { display: none; padding: 0 0 8px; }
+        .prod-card {
+            width: 100%; max-width: 100%; background: #fff; border: 1px solid #e8e8e8;
+            border-radius: 8px; padding: 10px; margin-bottom: 10px; box-sizing: border-box;
+        }
+
         /* ===== 底部功能栏 ===== */
         .footer-bar {
             display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;

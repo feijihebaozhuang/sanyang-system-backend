@@ -219,6 +219,25 @@
         });
     };
 
+    window.prodFormatStatsText = function (st, page, totalPages) {
+        st = st || {};
+        page = parseInt(page, 10) || 1;
+        totalPages = parseInt(totalPages, 10) || 1;
+        return (
+            '共 ' +
+            (st.total || 0) +
+            ' 单 ｜ 第 ' +
+            page +
+            '/' +
+            totalPages +
+            ' 页 ｜ 已打印 ' +
+            (st.printed || 0) +
+            ' ｜ 未打印 ' +
+            (st.unprinted || 0) +
+            ' 单'
+        );
+    };
+
     window.prodApplyCachedDashboard = function () {
         try {
             var raw = sessionStorage.getItem(PROD_CACHE_KEY);
@@ -242,13 +261,10 @@
             }
             var st = data.stats || {};
             document.getElementById('prodStats').textContent =
-                '共 ' +
-                (st.total || 0) +
-                ' 单 ｜ 已打印 ' +
-                (st.printed || 0) +
-                ' ｜ 未打印 ' +
-                (st.unprinted || 0) +
-                ' 单（缓存，后台更新中…）';
+                window.prodFormatStatsText(st, data.page, data.total_pages) +
+                '（缓存，后台更新中…）';
+            window.renderProdDashboard(window._prodDashboardOrders);
+            window.prodRenderPagination();
             return true;
         } catch (e) {
             return false;
@@ -514,14 +530,11 @@
                 })
             );
             var st = data.stats || {};
-            document.getElementById('prodStats').textContent =
-                '共 ' +
-                (st.total || 0) +
-                ' 单 ｜ 已打印 ' +
-                (st.printed || 0) +
-                ' ｜ 未打印 ' +
-                (st.unprinted || 0) +
-                ' 单';
+            document.getElementById('prodStats').textContent = window.prodFormatStatsText(
+                st,
+                data.page,
+                data.total_pages
+            );
             window.renderProdDashboard(data.orders);
             window.prodRenderPagination();
             var tbl = document.getElementById('prodTable');
