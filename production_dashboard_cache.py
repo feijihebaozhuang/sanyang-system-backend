@@ -240,7 +240,8 @@ def rebuild_dashboard_cache(
                 material_mapping=material_mapping,
             )
             ps = ksr.enrich_production_spec(
-                ps, ctx.get("km_row"), material_mapping=material_mapping
+                ps, ctx.get("km_row"), material_mapping=material_mapping,
+                order_spec_raw=ctx.get("order_spec_raw") or raw_attrs,
             )
             real_qty = int(ps.get("qty") or order_qty)
             has_stock, stock_qty, stock_info = _match_inventory(raw_attrs, real_qty, inv_rows)
@@ -282,6 +283,7 @@ def rebuild_dashboard_cache(
                     "merchant_code": sku_code,
                     "attrs_source": ctx.get("attrs_source") or "order",
                     "km_map_applied": bool(ps.get("km_map_applied")),
+                    "km_map_override": bool(ps.get("km_map_override")),
                     "skuId": item.get("skuId", "") or "",
                     "has_stock": has_stock,
                     "stock_qty": stock_qty,

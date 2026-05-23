@@ -40,16 +40,20 @@ def resolve_line_context(
     material_mapping: list[dict] | None = None,
 ) -> dict[str, Any]:
     """
-    解析子单上下文：优先订单买家属性；缺尺寸时用快麦映射补。
-    返回 raw_attrs, sku, km_row, attrs_source。
+    解析子单上下文。
+    - 有商家编码且 km_sku_map 含长宽高 → attrs_source=km_map_override（尺寸以映射为准）
+    - 否则保留订单买家属性；仅缺尺寸时用 spec_alias 兜底
     """
     del material_mapping  # 预留
     sku = item_merchant_code(item)
-    raw = item_raw_attrs(item)
+    order_raw = item_raw_attrs(item)
     km_row = kms.lookup_outer_id(sku, km_index) if sku else None
     source = "order"
+    raw = order_raw
 
-    if km_row:
+    if km_row and kms.map_has_production_dims(km_row):
+        source = "km_map_override"
+    elif km_row:
         alias = (km_row.get("spec_alias") or "").strip()
         if not raw and alias:
             raw = alias
@@ -64,6 +68,7 @@ def resolve_line_context(
 
     return {
         "raw_attrs": raw,
+        "order_spec_raw": order_raw,
         "sku": sku,
         "km_row": km_row,
         "attrs_source": source,
@@ -75,39 +80,61 @@ def enrich_production_spec(
     km_row: dict[str, Any] | None,
     *,
     material_mapping: list[dict] | None = None,
+    order_spec_raw: str = "",
 ) -> dict[str, Any]:
-    """映射表补全 production_spec 中缺失的长宽高/材料。"""
+    """
+    用 km_sku_map 补全/覆盖 production_spec。
+    映射表有长宽高时 **始终覆盖** 订单文本解析结果（避免 51714 类歧义规格误解析）。
+    """
     if not km_row:
         return ps
     import production_spec as pspec
 
     out = dict(ps)
-    if out.get("dimensions_ok"):
-        return out
+    line1 = (order_spec_raw or ps.get("line1") or ps.get("platform_spec_raw") or "").strip()
+    if line1:
+        out["line1"] = line1
+        out["platform_spec_raw"] = line1
 
-    l, w, h = kms.production_dims_from_map(km_row)
+    if not kms.map_has_production_dims(km_row):
+        if out.get("dimensions_ok"):
+            return out
+        l, w, h = kms.production_dims_from_map(km_row)
+        if not (l and w):
+            alias = (km_row.get("spec_alias") or "").strip()
+            if alias:
+                dims = pspec.parse_dimensions_for_item(alias)
+                if pspec.dimensions_ready_for_calc(dims):
+                    l, w, h = float(dims["l"]), float(dims["w"]), float(dims["h"])
+        if not (l and w):
+            return out
+    else:
+        l, w, h = kms.production_dims_from_map(km_row)
+
     if not (l and w):
         return out
 
-    diam = (km_row.get("dim_kind") or "").strip()
-    if diam == "inner":
+    kind = (km_row.get("dim_kind") or "").strip().lower()
+    if kind == "inner":
         diam_label = "内径"
-    elif diam == "outer":
+    elif kind == "outer":
         diam_label = "外径"
     else:
         diam_label = out.get("diameter_type") or ""
 
+    alias = (km_row.get("spec_alias") or "").strip()
     mat = (km_row.get("material") or "").strip()
+    if not mat and alias:
+        mat = pspec.match_production_material(alias, material_mapping) or ""
     if not mat:
         mat = out.get("material") or ""
-    if not mat and km_row.get("spec_alias"):
-        mat = pspec.match_production_material(
-            km_row["spec_alias"], material_mapping
-        ) or ""
+
+    color = out.get("color") or ""
+    if alias and not color:
+        color = pspec._parse_color(alias, mat) or color
 
     size = pspec.format_size_compact({"l": l, "w": w, "h": h or 0})
     qty_label = out.get("qty_label") or ""
-    color = out.get("color") or ""
     line2 = pspec._build_formatted_line(
         diameter_type=diam_label,
         size=size,
@@ -116,6 +143,7 @@ def enrich_production_spec(
         color=color,
     )
 
+    override = kms.map_has_production_dims(km_row)
     out.update(
         {
             "length": l,
@@ -130,6 +158,7 @@ def enrich_production_spec(
             "formatted": line2 or out.get("formatted"),
             "line": line2 or out.get("line"),
             "km_map_applied": True,
+            "km_map_override": override,
         }
     )
     return out

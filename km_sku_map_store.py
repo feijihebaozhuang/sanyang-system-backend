@@ -156,6 +156,14 @@ def production_dims_from_map(row: dict[str, Any]) -> tuple[float, float, float]:
     return l, w, h
 
 
+def map_has_production_dims(row: dict[str, Any] | None) -> bool:
+    """映射表是否含可用于覆盖订单解析的长宽（已按 dim_kind 转外径）。"""
+    if not row:
+        return False
+    l, w, _h = production_dims_from_map(row)
+    return bool(l and w)
+
+
 def upsert_rows(rows: list[dict[str, Any]], *, batch_size: int = 500) -> int:
     if not rows:
         return 0

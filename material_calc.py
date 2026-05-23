@@ -707,7 +707,10 @@ def calc_order_line(
         material_mapping=material_mapping or [],
     )
     ps = ksr.enrich_production_spec(
-        ps, ctx.get("km_row"), material_mapping=material_mapping
+        ps,
+        ctx.get("km_row"),
+        material_mapping=material_mapping,
+        order_spec_raw=ctx.get("order_spec_raw") or raw_attrs,
     )
     qty = int(ps.get("qty") or order_qty)
     order_type = (
