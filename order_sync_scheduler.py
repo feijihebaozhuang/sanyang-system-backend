@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""快麦/1688 订单后台同步调度：启动即全量、周期增量、失败自动重试。"""
+"""快麦 ERP 订单后台同步调度：启动即全量、周期增量、失败自动重试。"""
 from __future__ import annotations
 
 import threading
@@ -15,7 +15,7 @@ def start_background_order_sync(
     cache_file: str | Path,
     *,
     memo_getter: Callable[[str], str] | None = None,
-    include_1688_direct: bool = True,
+    include_1688_direct: bool = False,
     full_days_back: int = 30,
     incremental_days_back: int = 7,
     interval_sec: int = 180,

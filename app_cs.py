@@ -3229,13 +3229,13 @@ ORDERS_CACHE_FILE = os.path.join(
 )
 
 def _km_sync_orders_to_cache(days_back=14):
-    """快麦(1688无需奇门) + 1688直连 → orders_cache.json"""
+    """快麦 ERP → order_cache（MySQL）"""
     import order_sync as _osync
     r = _osync.sync_orders_to_cache(
         ORDERS_CACHE_FILE,
         days_back=days_back,
         memo_getter=get_order_memo,
-        include_1688_direct=True,
+        include_1688_direct=False,
     )
     return r.get('pending_count', 0)
 
@@ -3250,7 +3250,7 @@ def api_sync_force():
         ORDERS_CACHE_FILE,
         days_back=30,
         memo_getter=get_order_memo,
-        include_1688_direct=True,
+        include_1688_direct=False,
     )
     if not ok:
         return jsonify({'success': False, 'error': msg}), 409
@@ -3299,7 +3299,7 @@ import order_sync_scheduler as _order_sched
 _order_sched.start_background_order_sync(
     ORDERS_CACHE_FILE,
     memo_getter=get_order_memo,
-    include_1688_direct=True,
+    include_1688_direct=False,
     full_days_back=30,
     incremental_days_back=7,
     interval_sec=180,

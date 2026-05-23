@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-订单同步：快麦 erp.trade.outstock.simple.query（全平台待发货）+ 1688 开放平台直连兜底。
+订单同步：快麦 erp.trade.outstock.simple.query（全平台待发货）。
 写入 MySQL order_cache 表（不再写 orders_cache.json）。
 """
 from __future__ import annotations
@@ -136,7 +136,7 @@ def _write_mysql_snapshot(
         pending,
         report=dict(report),
         shops_count=len(shops),
-        source="kuaimai+1688",
+        source="kuaimai",
         partial=partial,
         allow_empty=allow_empty,
     )
@@ -156,7 +156,7 @@ def sync_orders_to_cache(
     *,
     days_back: int = 30,
     memo_getter: Callable[[str], str] | None = None,
-    include_1688_direct: bool = True,
+    include_1688_direct: bool = False,
 ) -> dict[str, Any]:
     del cache_file  # 仅 MySQL
     report: dict[str, Any] = {
@@ -227,7 +227,7 @@ def sync_orders_to_cache(
         report["pending_count"] = n_pending
         print(
             f"[订单同步] 完成: 待发货 {n_pending} 条 "
-            f"(快麦={report['km_outstock_count']} 1688={report['direct_1688_count']})"
+            f"(快麦={report['km_outstock_count']})"
         )
         return report
 
@@ -399,7 +399,7 @@ def start_force_sync_async(
     *,
     days_back: int = 30,
     memo_getter: Callable | None = None,
-    include_1688_direct: bool = True,
+    include_1688_direct: bool = False,
 ) -> tuple[bool, str]:
     with _force_sync_lock:
         if _force_sync_state["running"]:

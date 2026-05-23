@@ -466,20 +466,26 @@ def calc_material_line(
     raw_rows: list[dict],
     dimoldb: list[dict],
     title: str = "",
+    prebuilt_ps: dict[str, Any] | None = None,
+    sku: str = "",
 ) -> dict[str, Any]:
     import production_spec as pspec
 
     raw_attrs = (attrs or "").strip()
     clean_attrs = pspec.sanitize_sku_attrs(raw_attrs) or raw_attrs
     mat_map = quote_data.get("material_mapping") or []
-    ps = pspec.build_production_spec(
-        raw_attrs,
-        max(qty, 1),
-        title=title or "",
-        material_mapping=mat_map,
-    )
+    ps = prebuilt_ps
+    if not (ps and ps.get("dimensions_ok")):
+        ps = pspec.build_production_spec(
+            raw_attrs,
+            max(qty, 1),
+            title=title or "",
+            material_mapping=mat_map,
+        )
     if ps.get("dimensions_ok") and all(ps.get(k) is not None for k in ("length", "width", "height")):
         l, w, h = float(ps["length"]), float(ps["width"]), float(ps["height"])
+        if not material_text and ps.get("material"):
+            material_text = str(ps["material"])
     else:
         dims = pspec.parse_dimensions_for_item(raw_attrs, title or "")
         if not pspec.dimensions_ready_for_calc(dims):
@@ -568,7 +574,33 @@ def calc_material_line(
         }
 
     need_boards = int(math.ceil(qty / per_board * 1.02)) if qty else 0
-    dm = match_dimoldb(l, w, h, dimoldb, pt)
+
+    import dimoldb_store as ds
+    import km_sku_resolve as ksr
+
+    ps_for_dm = ps if isinstance(ps, dict) else {}
+    if not ps_for_dm.get("platform_spec_raw"):
+        ps_for_dm = {**ps_for_dm, "platform_spec_raw": raw_attrs}
+    dm_index = ds.build_dim_match_index(dimoldb) if dimoldb else None
+    dm_info = ksr.match_dimoldb_for_line(
+        ps_for_dm,
+        order_type,
+        dimoldb,
+        dm_index,
+        sku=sku,
+    )
+    if dm_info.get("skip"):
+        dm = {"success": False, "skip": True}
+    elif dm_info.get("matched"):
+        dm = {
+            "success": True,
+            "dimoldb_id": dm_info.get("dimoldb_id") or "",
+            "code": dm_info.get("dimoldb_code") or "",
+            "display_code": dm_info.get("dimoldb_code") or "",
+            "name": "",
+        }
+    else:
+        dm = match_dimoldb(l, w, h, dimoldb, pt)
     if dm.get("skip"):
         dimoldb_id = ""
         dimoldb_label = "无刀模"
@@ -652,13 +684,12 @@ def calc_order_line(
     if line_index < 0 or line_index >= len(items):
         return {"status": "error", "error": "子单行号无效"}
     it = items[line_index]
-    raw_attrs = (
-        it.get("platform_spec_raw")
-        or it.get("platform_attrs")
-        or it.get("display")
-        or it.get("spec")
-        or ""
-    ).strip()
+    import km_sku_map_store as kms
+    import km_sku_resolve as ksr
+
+    km_index = kms.load_all()
+    ctx = ksr.resolve_line_context(it, km_index=km_index, material_mapping=material_mapping)
+    raw_attrs = ctx["raw_attrs"]
     try:
         import production_helpers as ph
 
@@ -675,6 +706,9 @@ def calc_order_line(
         title=item_name,
         material_mapping=material_mapping or [],
     )
+    ps = ksr.enrich_production_spec(
+        ps, ctx.get("km_row"), material_mapping=material_mapping
+    )
     qty = int(ps.get("qty") or order_qty)
     order_type = (
         infer_order_type_fn(order) if infer_order_type_fn else infer_product_type_for_calc("", raw_attrs)
@@ -684,7 +718,7 @@ def calc_order_line(
     ) or ""
 
     result = calc_material_line(
-        attrs=raw_attrs,
+        attrs=raw_attrs or ps.get("line2") or ps.get("formatted") or "",
         qty=qty,
         order_type=order_type,
         material_text=material_text,
@@ -692,6 +726,8 @@ def calc_order_line(
         raw_rows=raw_rows,
         dimoldb=dimoldb,
         title=item_name,
+        prebuilt_ps=ps,
+        sku=ctx.get("sku") or "",
     )
     so_id = str(order.get("so_id") or order.get("sid") or "")
     set_cached_line(so_id, line_index, result)

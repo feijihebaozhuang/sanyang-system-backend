@@ -81,57 +81,21 @@ def _match_dimoldb_for_line(
     order_type: str,
     dimoldb_rows: list[dict],
     dm_index: dict | None = None,
+    *,
+    sku: str = "",
+    km_code_index: dict | None = None,
 ) -> dict[str, Any]:
-    """按尺寸匹配刀模库，返回展示用 dimoldb_code（code/id，非尺寸 name）。"""
-    import dimoldb_store as ds
-    import material_calc as mcalc
+    """按商家编码或尺寸匹配刀模库。"""
+    import km_sku_resolve as ksr
 
-    attrs = ps.get("platform_spec_raw") or ""
-    if mcalc._is_carton_product(order_type, attrs):
-        return {"skip": True, "matched": False, "dimoldb_id": "", "dimoldb_code": ""}
-    l, w, h = ps.get("length"), ps.get("width"), ps.get("height")
-    if not l or not w:
-        return {"skip": False, "matched": False, "dimoldb_id": "", "dimoldb_code": ""}
-    best_row: dict[str, Any] | None = None
-    if dimoldb_rows:
-        if dm_index is None:
-            dm_index = ds.build_dim_match_index(dimoldb_rows)
-        fake_item = {
-            "length": l,
-            "width": w,
-            "height": h or 0,
-            "product_type": _order_type_to_dimoldb_pt(order_type),
-        }
-        hits = ds.match_dimoldb_for_inventory_item(
-            fake_item, dm_index, infer_fn=ds.infer_type_class
-        )
-        if hits:
-            best_row = hits[0]
-    if not best_row:
-        dm = mcalc.match_dimoldb(
-            float(l),
-            float(w),
-            float(h or 0),
-            dimoldb_rows or [],
-            order_type,
-        )
-        if dm.get("success"):
-            best_row = dm.get("row") or {}
-            code = (dm.get("code") or dm.get("display_code") or "").strip()
-            return {
-                "skip": False,
-                "matched": True,
-                "dimoldb_id": dm.get("dimoldb_id") or "",
-                "dimoldb_code": code or str(dm.get("dimoldb_id") or ""),
-            }
-        return {"skip": False, "matched": False, "dimoldb_id": "", "dimoldb_code": ""}
-    code = (best_row.get("code") or "").strip() or str(best_row.get("id") or "")
-    return {
-        "skip": False,
-        "matched": True,
-        "dimoldb_id": str(best_row.get("id") or ""),
-        "dimoldb_code": code,
-    }
+    return ksr.match_dimoldb_for_line(
+        ps,
+        order_type,
+        dimoldb_rows,
+        dm_index,
+        sku=sku,
+        km_code_index=km_code_index,
+    )
 
 
 def rebuild_dashboard_cache(
@@ -185,8 +149,12 @@ def rebuild_dashboard_cache(
         except Exception:
             dimoldb_rows = []
     import dimoldb_store as ds
+    import km_sku_map_store as kms
+    import km_sku_resolve as ksr
 
     dm_index = ds.build_dim_match_index(dimoldb_rows) if dimoldb_rows else {}
+    km_code_index = ds.build_km_code_index(dimoldb_rows) if dimoldb_rows else {}
+    km_index = kms.load_all()
 
     all_orders: list[dict] = []
     try:
@@ -251,13 +219,11 @@ def rebuild_dashboard_cache(
         for line_idx, item in enumerate(o.get("items") or []):
             if not isinstance(item, dict):
                 continue
-            raw_attrs = (
-                item.get("platform_spec_raw")
-                or item.get("display")
-                or item.get("platform_attrs")
-                or item.get("spec")
-                or ""
-            ).strip()
+            ctx = ksr.resolve_line_context(
+                item, km_index=km_index, material_mapping=material_mapping
+            )
+            raw_attrs = ctx["raw_attrs"]
+            sku_code = ctx["sku"]
             if not raw_attrs:
                 try:
                     import production_helpers as ph
@@ -273,10 +239,18 @@ def rebuild_dashboard_cache(
                 title=item_name,
                 material_mapping=material_mapping,
             )
+            ps = ksr.enrich_production_spec(
+                ps, ctx.get("km_row"), material_mapping=material_mapping
+            )
             real_qty = int(ps.get("qty") or order_qty)
             has_stock, stock_qty, stock_info = _match_inventory(raw_attrs, real_qty, inv_rows)
             dm_info = _match_dimoldb_for_line(
-                ps, order_type, dimoldb_rows, dm_index
+                ps,
+                order_type,
+                dimoldb_rows,
+                dm_index,
+                sku=sku_code,
+                km_code_index=km_code_index,
             )
             cached_mc = mcalc.get_cached_line(so_id, line_idx)
             mc_status = (cached_mc or {}).get("status") or "pending"
@@ -304,7 +278,10 @@ def rebuild_dashboard_cache(
                     "qty": real_qty,
                     "order_qty": ps.get("order_qty", order_qty),
                     "per_group_qty": ps.get("per_group_qty", 0),
-                    "sku": item.get("sku", "") or "",
+                    "sku": sku_code or item.get("sku", "") or "",
+                    "merchant_code": sku_code,
+                    "attrs_source": ctx.get("attrs_source") or "order",
+                    "km_map_applied": bool(ps.get("km_map_applied")),
                     "skuId": item.get("skuId", "") or "",
                     "has_stock": has_stock,
                     "stock_qty": stock_qty,

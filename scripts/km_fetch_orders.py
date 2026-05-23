@@ -7,8 +7,8 @@
 
 本脚本用途：
   --probe          连通性探测
-  --sync-cache     与线上一致：order_sync（outstock 全平台 + 可选 1688 直连）
-  --no-1688-direct  sync-cache 时跳过 1688 开放平台直连
+  --sync-cache     与线上一致：order_sync（快麦 outstock 全平台）
+  --with-1688-direct  sync-cache 时启用 1688 直连（默认关闭）
 
 Token：km_token.json 或 KM_APP_KEY / KM_APP_SECRET / KM_SESSION
 """
@@ -50,9 +50,10 @@ def main() -> int:
         help="缓存路径，默认项目根 orders_cache.json",
     )
     parser.add_argument(
-        "--no-1688-direct",
+        "--with-1688-direct",
+        dest="include_1688_direct",
         action="store_true",
-        help="sync-cache 时跳过 1688 开放平台直连",
+        help="sync-cache 时启用 1688 开放平台直连（默认仅快麦）",
     )
     parser.add_argument("--out", type=str, default="", help="探测/拉单结果写入 JSON")
     args = parser.parse_args()
@@ -75,7 +76,7 @@ def main() -> int:
         report = osync.sync_orders_to_cache(
             cache,
             days_back=args.days,
-            include_1688_direct=not args.no_1688_direct,
+            include_1688_direct=bool(getattr(args, "include_1688_direct", False)),
         )
         print(json.dumps(report, ensure_ascii=False, indent=2))
         print(f"完成，耗时 {time.time() - t0:.1f}s，待发货 {report.get('pending_count', 0)} 条")

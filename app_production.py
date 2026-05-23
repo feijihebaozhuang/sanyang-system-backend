@@ -3871,7 +3871,7 @@ def _km_sync_orders_to_cache(days_back=14):
         ORDERS_CACHE_FILE,
         days_back=days_back,
         memo_getter=get_order_memo,
-        include_1688_direct=True,
+        include_1688_direct=False,
     )
     _prod_dash_cache.invalidate_dashboard_cache()
     return r
@@ -3924,7 +3924,7 @@ def api_sync_force():
         ORDERS_CACHE_FILE,
         days_back=30,
         memo_getter=get_order_memo,
-        include_1688_direct=True,
+        include_1688_direct=False,
     )
     if not ok:
         return jsonify({'success': False, 'error': msg}), 409
@@ -4024,7 +4024,7 @@ import order_sync_scheduler as _order_sched
 _order_sched.start_background_order_sync(
     ORDERS_CACHE_FILE,
     memo_getter=get_order_memo,
-    include_1688_direct=True,
+    include_1688_direct=False,
     full_days_back=30,
     incremental_days_back=7,
     interval_sec=int(os.getenv("ORDER_SYNC_INTERVAL_SEC", "60")),

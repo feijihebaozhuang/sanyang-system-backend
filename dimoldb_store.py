@@ -96,6 +96,20 @@ def load_dimoldb_cached(get_db: Callable, *, force: bool = False) -> list[dict[s
     return load_dimoldb(get_db, force=force)
 
 
+def build_km_code_index(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """km_mapping_code → 刀模行（大小写各存一份便于 lookup）。"""
+    index: dict[str, dict[str, Any]] = {}
+    for d in rows:
+        code = str(d.get("km_mapping_code") or "").strip()
+        if not code:
+            continue
+        index[code] = d
+        low = code.lower()
+        if low not in index:
+            index[low] = d
+    return index
+
+
 def build_dim_match_index(
     rows: list[dict[str, Any]], *, tol: float = 0.1
 ) -> dict[tuple[str, float, float, float], list[dict[str, Any]]]:
