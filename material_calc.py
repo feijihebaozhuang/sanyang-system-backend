@@ -342,7 +342,10 @@ def match_dimoldb(
     dimoldb: list[dict],
     product_type: str = "",
     tol: float | None = None,
+    *,
+    diameter_type: str = "",
 ) -> dict[str, Any]:
+    import dimoldb_store as ds
     import hardcoded_config as hc
 
     if tol is None:
@@ -357,20 +360,15 @@ def match_dimoldb(
             "code": "",
             "name": "",
         }
-    best = None
-    for dm in dimoldb:
-        try:
-            dl = float(dm.get("length") or 0)
-            dw = float(dm.get("width") or 0)
-            dh = float(dm.get("height") or 0)
-        except (TypeError, ValueError):
-            continue
-        if abs(dl - length) > tol or abs(dw - width) > tol:
-            continue
-        if height > 0 and dh > 0 and abs(dh - height) > tol:
-            continue
-        best = dm
-        break
+    best = ds.find_best_dimoldb_match(
+        float(length),
+        float(width),
+        float(height or 0),
+        dimoldb or [],
+        product_type=pt,
+        diameter_type=diameter_type or "",
+        tol=tol,
+    )
     if not best:
         return {"success": False, "error": "未匹配到刀模"}
     display_code = dimoldb_display_code(best)
@@ -618,7 +616,14 @@ def calc_material_line(
             "name": "",
         }
     else:
-        dm = match_dimoldb(l, w, h, dimoldb, pt)
+        dm = match_dimoldb(
+            l,
+            w,
+            h,
+            dimoldb,
+            pt,
+            diameter_type=str((ps_for_dm or {}).get("diameter_type") or ""),
+        )
     if dm.get("skip"):
         dimoldb_id = ""
         dimoldb_label = "无刀模"

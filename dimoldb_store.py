@@ -350,7 +350,7 @@ def _parse_dims_from_text(text: str) -> tuple[float | None, float | None, float 
 
 
 def effective_dims(dm: dict) -> tuple[float | None, float | None, float | None]:
-    """刀模匹配用长宽高：仅读库字段 length/width/height（不从 remark 解析，避免乱匹配）。"""
+    """刀模内径长宽高：库字段 length/width/height。"""
     try:
         l = float(dm.get("length") or 0)
         w = float(dm.get("width") or 0)
@@ -360,6 +360,98 @@ def effective_dims(dm: dict) -> tuple[float | None, float | None, float | None]:
     except (TypeError, ValueError):
         pass
     return None, None, None
+
+
+def production_dims(dm: dict) -> tuple[float | None, float | None, float | None]:
+    """刀模生产规格（通常对应订单外径）。"""
+    return _parse_dims_from_text(str(dm.get("production_spec") or ""))
+
+
+def dims_to_km_mapping_code(
+    length: float, width: float, height: float
+) -> str:
+    """26.5×15.5×2.5 → 26515525（与刀模 km_mapping_code 编码一致）。"""
+
+    def _seg(v: float) -> str:
+        return str(int(round(float(v) * 10)))
+
+    return _seg(length) + _seg(width) + _seg(height)
+
+
+def _order_diameter_kind(diameter_type: str) -> str:
+    dt = (diameter_type or "").strip().lower()
+    if dt in ("外径", "outer"):
+        return "outer"
+    if dt in ("内径", "inner"):
+        return "inner"
+    return ""
+
+
+def _dimoldb_match_dims(
+    dm: dict, *, diameter_kind: str
+) -> tuple[float | None, float | None, float | None]:
+    """外径订单对 production_spec；内径订单对库字段内径。"""
+    if diameter_kind == "outer":
+        pl, pw, ph = production_dims(dm)
+        if pl and pw and ph:
+            return pl, pw, ph
+    inner = effective_dims(dm)
+    if diameter_kind == "inner":
+        return inner
+    if diameter_kind == "outer":
+        return inner
+    pl, pw, ph = production_dims(dm)
+    if pl and pw and ph:
+        return pl, pw, ph
+    return inner
+
+
+def _product_type_candidates(product_type: str) -> set[str]:
+    pt = (product_type or "").strip()
+    out = {pt, _INV_TYPE_MAP.get(pt, pt), "zhengsquare", "changfang", "juxing"}
+    return {x for x in out if x}
+
+
+def find_best_dimoldb_match(
+    order_l: float,
+    order_w: float,
+    order_h: float,
+    rows: list[dict[str, Any]],
+    *,
+    product_type: str = "",
+    diameter_type: str = "",
+    tol: float = 0.6,
+) -> dict[str, Any] | None:
+    """
+    按订单内外径选择刀模比对尺寸，取得分最小（最接近）的一条。
+    外径 26.5×15.5×2.5 应对 production_spec，而非内径 27×15×2。
+    """
+    kind = _order_diameter_kind(diameter_type)
+    pt_set = _product_type_candidates(product_type)
+    best_row: dict[str, Any] | None = None
+    best_score = 1e9
+    for dm in rows or []:
+        dpt = str(dm.get("product_type") or "")
+        if pt_set and dpt and dpt not in pt_set:
+            continue
+        dl, dw, dh = _dimoldb_match_dims(dm, diameter_kind=kind)
+        if not (dl and dw and dh):
+            continue
+        if abs(float(dl) - order_l) > tol:
+            continue
+        if abs(float(dw) - order_w) > tol:
+            continue
+        if abs(float(dh) - order_h) > tol:
+            continue
+        score = (
+            abs(float(dl) - order_l)
+            + abs(float(dw) - order_w)
+            + abs(float(dh) - order_h)
+        )
+        if score < best_score:
+            best_score = score
+            best_row = dm
+    return best_row
 
 
 # Excel 导入/导出标准 7 列（与 5.20 凌晨改表头前一致）

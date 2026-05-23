@@ -243,6 +243,7 @@ def _match_dimoldb_by_dimensions(
     dm_index: dict | None = None,
 ) -> dict[str, Any]:
     import dimoldb_store as ds
+    import hardcoded_config as hc
     import material_calc as mcalc
 
     attrs = ps.get("platform_spec_raw") or ""
@@ -251,28 +252,27 @@ def _match_dimoldb_by_dimensions(
     l, w, h = ps.get("length"), ps.get("width"), ps.get("height")
     if not l or not w:
         return {"skip": False, "matched": False, "dimoldb_id": "", "dimoldb_code": ""}
-    best_row: dict[str, Any] | None = None
-    if dimoldb_rows:
-        if dm_index is None:
-            dm_index = ds.build_dim_match_index(dimoldb_rows)
-        fake_item = {
-            "length": l,
-            "width": w,
-            "height": h or 0,
-            "product_type": _order_type_to_dimoldb_pt(order_type),
-        }
-        hits = ds.match_dimoldb_for_inventory_item(
-            fake_item, dm_index, infer_fn=ds.infer_type_class
-        )
-        if hits:
-            best_row = hits[0]
+    ol, ow, oh = float(l), float(w), float(h or 0)
+    diam = ps.get("diameter_type") or ""
+    pt = _order_type_to_dimoldb_pt(order_type)
+    tol = hc.DIMOLD_MATCH_TOLERANCE_CM
+    best_row = ds.find_best_dimoldb_match(
+        ol,
+        ow,
+        oh,
+        dimoldb_rows or [],
+        product_type=pt,
+        diameter_type=str(diam),
+        tol=tol,
+    )
     if not best_row:
         dm = mcalc.match_dimoldb(
-            float(l),
-            float(w),
-            float(h or 0),
+            ol,
+            ow,
+            oh,
             dimoldb_rows or [],
             order_type,
+            diameter_type=str(diam),
         )
         if dm.get("success"):
             best_row = dm.get("row") or {}
@@ -306,19 +306,28 @@ def match_dimoldb_for_line(
     import material_calc as mcalc
 
     code = (sku or "").strip()
-    if code and km_code_index is None and dimoldb_rows:
+    if km_code_index is None and dimoldb_rows:
         km_code_index = ds.build_km_code_index(dimoldb_rows)
-    if code and km_code_index:
-        dm = km_code_index.get(code) or km_code_index.get(code.lower())
-        if dm:
-            display = mcalc.dimoldb_display_code(dm)
-            return {
-                "skip": False,
-                "matched": True,
-                "dimoldb_id": str(dm.get("id") or ""),
-                "dimoldb_code": display or str(dm.get("id") or ""),
-                "match_source": "km_mapping_code",
-            }
+    if km_code_index:
+        lookup_keys = []
+        if code:
+            lookup_keys.extend([code, code.lower()])
+        l, w, h = ps.get("length"), ps.get("width"), ps.get("height")
+        if l and w and h:
+            lookup_keys.append(ds.dims_to_km_mapping_code(l, w, h))
+        for key in lookup_keys:
+            if not key:
+                continue
+            dm = km_code_index.get(key) or km_code_index.get(str(key).lower())
+            if dm:
+                display = mcalc.dimoldb_display_code(dm)
+                return {
+                    "skip": False,
+                    "matched": True,
+                    "dimoldb_id": str(dm.get("id") or ""),
+                    "dimoldb_code": display or str(dm.get("id") or ""),
+                    "match_source": "km_mapping_code",
+                }
 
     info = _match_dimoldb_by_dimensions(ps, order_type, dimoldb_rows, dm_index)
     if info.get("matched"):
