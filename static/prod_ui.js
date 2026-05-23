@@ -301,10 +301,31 @@
         return line || '—';
     };
 
+    window.prodCartonLayerBadge = function (item) {
+        if (!item) return '';
+        var mc = item.material_calc || {};
+        var psd = item.production_spec_detail || {};
+        var layer =
+            item.carton_layer_label ||
+            mc.carton_layer_label ||
+            psd.carton_layer ||
+            '';
+        if (!layer) return '';
+        return (
+            '<span style="display:inline-block;margin:0 4px 0 0;padding:0 6px;background:#fff7e6;color:#d46b08;border:1px solid #ffd591;border-radius:4px;font-size:11px;font-weight:700;vertical-align:middle;">' +
+            prodEscHtml(layer) +
+            '</span>'
+        );
+    };
+
     window.renderProductionSpecHtml = function (item, compact) {
         if (!item) return '';
         var fs = compact ? '12px' : '13px';
         var line = prodDisplayAttrs(item);
+        var layerBadge =
+            typeof prodCartonLayerBadge === 'function'
+                ? prodCartonLayerBadge(item)
+                : '';
         if (!line || line === '—') {
             return (
                 '<div style="font-size:' +
@@ -316,6 +337,7 @@
             '<div style="font-size:' +
             fs +
             ';font-weight:600;color:#262626;line-height:1.5;">' +
+            (layerBadge && line.indexOf('层') < 0 ? layerBadge : '') +
             prodEscHtml(line) +
             '</div>'
         );
@@ -779,11 +801,16 @@
             );
         }
         var paper = mc.paper_display || mc.paper_spec || (mc.paper && mc.paper.paper_spec) || '—';
+        var layer = mc.carton_layer_label || '';
         var boards = mc.boards_needed != null ? mc.boards_needed : '—';
         var per = mc.sheets_per_board != null ? mc.sheets_per_board : '—';
+        var paperText = paper;
+        if (layer && paper.indexOf('层') < 0 && paper.indexOf('【') < 0) {
+            paperText = '【' + layer + '】' + paper;
+        }
         return (
             '<div style="font-size:10px;color:#389e0d;font-weight:500;margin-top:2px;line-height:1.45;">✅ 纸板：' +
-            prodEscHtml(paper) +
+            prodEscHtml(paperText) +
             '；' +
             boards +
             '张；开' +

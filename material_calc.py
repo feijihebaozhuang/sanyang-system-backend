@@ -629,7 +629,11 @@ def calc_material_line(
         dimoldb_id = ""
         dimoldb_label = "未匹配"
 
-    spec_label = f"{paper.get('supplier')} - {paper.get('name')} - {paper.get('paper_spec')}"
+    spec_label, carton_layer = _format_carton_paper_display(
+        paper,
+        mat_key=mat_key,
+        material_text=material_text,
+    )
 
     return {
         "status": "done",
@@ -638,6 +642,7 @@ def calc_material_line(
         "qty": qty,
         "material": material_text or mat_key,
         "material_key": mat_key,
+        "carton_layer_label": carton_layer,
         "product_type": calc_pt,
         "inches": inches,
         "paper_l_inch": paper_l_inch,
@@ -657,6 +662,35 @@ def calc_material_line(
         "dimoldb_name": dm.get("name") if dm.get("success") else "",
         "dimoldb_label": dimoldb_label,
     }
+
+
+def _format_carton_paper_display(
+    paper: dict[str, Any],
+    *,
+    mat_key: str = "",
+    material_text: str = "",
+) -> tuple[str, str]:
+    """算料纸板展示：层数放最前，员工一眼能区分 3层 / 5层。"""
+    import production_spec as pspec
+
+    name = str(paper.get("name") or "")
+    blob = " ".join(x for x in (material_text, name, mat_key) if x)
+    layer = pspec.infer_carton_layer_label(blob, material_text, mat_key)
+    supplier = str(paper.get("supplier") or "").strip()
+    spec = str(paper.get("paper_spec") or "").strip()
+    if layer:
+        head = f"【{layer}】"
+    elif mat_key == "b_keng":
+        head = "【3层纸箱】"
+        layer = "3层纸箱"
+    elif mat_key in ("eb_keng", "bc_keng"):
+        head = "【5层纸箱】"
+        layer = "5层纸箱"
+    else:
+        head = ""
+    body = " ".join(x for x in (supplier, name, spec) if x)
+    display = f"{head}{body}".strip() if head else body
+    return display, layer
 
 
 def mark_flow_calc_done(

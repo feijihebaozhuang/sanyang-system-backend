@@ -789,6 +789,36 @@ def attrs_indicate_carton(text: str) -> bool:
     return False
 
 
+def infer_carton_layer_label(text: str, material: str = "", material_key: str = "") -> str:
+    """纸箱层数（员工可读）：3层纸箱 / 5层纸箱。"""
+    blob = " ".join(x for x in (text, material, material_key) if x).strip()
+    if not blob:
+        return ""
+    if re.search(r"EB坑|五层EB|5层EB|K636K|\bEB\b", blob, re.I):
+        return "5层纸箱"
+    if re.search(r"BC坑|五层BC|5层BC|K737K|\bBC\b", blob, re.I):
+        return "5层纸箱"
+    if "五层" in blob or "5层" in blob:
+        return "5层纸箱"
+    if re.search(r"B坑|B瓦|B楞|三层|3层|K7K", blob, re.I):
+        return "3层纸箱"
+    if material_key == "eb_keng" or material_key == "bc_keng":
+        return "5层纸箱"
+    if material_key == "b_keng":
+        return "3层纸箱"
+    return ""
+
+
+def carton_material_for_display(
+    text: str, material: str = "", material_key: str = ""
+) -> str:
+    """打单主行材质：优先写清 3层/5层，避免员工只看 B坑/EB坑 看不懂。"""
+    layer = infer_carton_layer_label(text, material, material_key)
+    if layer:
+        return layer
+    return (material or "").strip()
+
+
 def infer_product_category(attrs: str, *, order_type_hint: str = "") -> str:
     """从规格文本推断产品大类（纸箱 / 飞机盒 / 扣底盒等）。"""
     a = (attrs or "").strip()
@@ -954,6 +984,16 @@ def build_production_spec(
     color_src = raw if attrs_have_lw else mat_text
     color = _parse_color(color_src, material)
 
+    mat_blob = " ".join(x for x in (raw, mat_text, t, material) if x)
+    is_carton = attrs_indicate_carton(mat_blob) or infer_product_category(
+        mat_blob
+    ) == "纸箱"
+    carton_layer = infer_carton_layer_label(mat_blob, material) if is_carton else ""
+    if is_carton:
+        display_mat = carton_material_for_display(mat_blob, material)
+        if display_mat:
+            material = display_mat
+
     if not dims_ok:
         formatted = (
             raw.strip()
@@ -993,6 +1033,7 @@ def build_production_spec(
         "qty_label": qinfo.get("qty_label") or "",
         "qty_source": qinfo.get("qty_source") or "",
         "material": material,
+        "carton_layer": carton_layer,
         "color": color,
         "diameter_type": diam,
         "length": dims.get("l"),

@@ -273,6 +273,35 @@ def rebuild_dashboard_cache(
             )
             cached_mc = mcalc.get_cached_line(so_id, line_idx)
             mc_status = (cached_mc or {}).get("status") or "pending"
+            carton_layer = ps.get("carton_layer") or ""
+            if cached_mc and mc_status == "done" and not carton_layer:
+                carton_layer = pspec.infer_carton_layer_label(
+                    " ".join(
+                        x
+                        for x in (
+                            cached_mc.get("paper_display") or "",
+                            cached_mc.get("material") or "",
+                            raw_attrs,
+                        )
+                        if x
+                    ),
+                    str(cached_mc.get("material") or ""),
+                    str(cached_mc.get("material_key") or ""),
+                )
+            if carton_layer and "层" not in (ps.get("line2") or ""):
+                ps = dict(ps)
+                ps["carton_layer"] = carton_layer
+                ps["material"] = carton_layer
+                line2 = pspec._build_formatted_line(
+                    diameter_type=ps.get("diameter_type") or "",
+                    size=ps.get("size") or "",
+                    qty_label=ps.get("qty_label") or "",
+                    material=carton_layer,
+                    color=ps.get("color") or "",
+                )
+                ps["line2"] = line2
+                ps["formatted"] = line2
+                ps["line"] = line2
             if cached_mc and (
                 cached_mc.get("dimoldb_code") or cached_mc.get("dimoldb_id")
             ):
@@ -313,6 +342,9 @@ def rebuild_dashboard_cache(
                     "dimoldb_matched": bool(dm_info.get("matched")),
                     "dimoldb_skip": bool(dm_info.get("skip")),
                     "material_name": ps.get("material") or "—",
+                    "carton_layer_label": carton_layer
+                    or (cached_mc or {}).get("carton_layer_label")
+                    or "",
                     "material_status": mc_status,
                     "material_calc": cached_mc or {"status": mc_status},
                     "dimensions_ok": bool(ps.get("dimensions_ok")),
@@ -476,6 +508,35 @@ def patch_line_material(
                 st = (mc_result or {}).get("status") or "pending"
                 fi["material_calc"] = mc_result or {}
                 fi["material_status"] = st
+                layer = (mc_result or {}).get("carton_layer_label") or ""
+                if layer:
+                    fi["carton_layer_label"] = layer
+                    if "层" not in (fi.get("production_spec") or ""):
+                        import production_spec as pspec
+
+                        fi["material_name"] = layer
+                        psd = fi.get("production_spec_detail") or {}
+                        if psd and not psd.get("carton_layer"):
+                            psd = dict(psd)
+                            psd["carton_layer"] = layer
+                            psd["material"] = layer
+                            size = (psd.get("size") or "").strip()
+                            diam = (psd.get("diameter_type") or "").strip()
+                            qty_label = (psd.get("qty_label") or "").strip()
+                            color = (psd.get("color") or "").strip()
+                            line2 = pspec._build_formatted_line(
+                                diameter_type=diam,
+                                size=size,
+                                qty_label=qty_label,
+                                material=layer,
+                                color=color,
+                            )
+                            psd["line2"] = line2
+                            psd["formatted"] = line2
+                            psd["line"] = line2
+                            fi["production_spec_detail"] = psd
+                            fi["production_spec"] = line2
+                            fi["display"] = line2
                 code = (mc_result or {}).get("dimoldb_code") or ""
                 if code:
                     fi["dimoldb_code"] = code
