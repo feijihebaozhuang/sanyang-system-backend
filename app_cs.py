@@ -13,6 +13,7 @@ from pypinyin import lazy_pinyin
 import pymysql
 
 import dimoldb_store as _dimoldb_store
+import dimoldb_inventory_api as _dim_inv_api
 from settings import (
     ALIBABA_CONFIG,
     ALIBABA_SHOPS,
@@ -1929,66 +1930,27 @@ def _dimoldb_infer_inner_outer(dm):
 @app.route('/api/dimoldb', methods=['GET'])
 def get_dimoldb():
     """获取刀模列表（支持分页）"""
-    data = load_dimoldb()
-    # 支持筛选
     ptype = request.args.get('type', '')
     search = request.args.get('search', '').strip()
     dim_type = request.args.get('dim_type', '').strip()
-    if ptype:
-        # 兼容 zhengsquare-outer / zhengsquare-inner（dim_type 为空时 name/remark 推断）
-        if ptype == 'zhengsquare-outer':
-            data = [d for d in data if d.get('product_type') == 'zhengsquare' and _dimoldb_infer_inner_outer(d) == 'outer']
-        elif ptype == 'zhengsquare-inner':
-            data = [d for d in data if d.get('product_type') == 'zhengsquare' and _dimoldb_infer_inner_outer(d) == 'inner']
-        else:
-            data = [d for d in data if d.get('product_type') == ptype]
-    if dim_type and not ptype.startswith('zhengsquare-'):
-        data = [d for d in data if _dimoldb_infer_inner_outer(d) == dim_type]
-    if search:
-        # 刀模搜索统一用正则提取数字，兼容所有分隔符（x/*/×/空格...）
-        nums = re.findall(r'\d+\.?\d*', search.replace(' ', '*'))
-        nums = [n for n in nums if n.strip()]
-        if len(nums) >= 3:
-            try:
-                sl = float(nums[0].strip())
-                sw = float(nums[1].strip())
-                sh = float(nums[2].strip())
-                data = [d for d in data if 
-                    d.get('length') is not None and abs(d['length'] - sl) < 0.1 and
-                    d.get('width') is not None and abs(d['width'] - sw) < 0.1 and
-                    d.get('height') is not None and abs(d['height'] - sh) < 0.1]
-            except:
-                pass
-        else:
-            data = [
-                d for d in data
-                if search in d.get('name', '')
-                or search in str(d.get('code') or '')
-                or search in str(d.get('production_spec') or '')
-                or search in str(d.get('km_mapping_code') or '')
-                or f"{d.get('length',0)}x{d.get('width',0)}x{d.get('height',0)}" in search
-                or f"{d.get('length',0)}×{d.get('width',0)}×{d.get('height',0)}" in search
-            ]
-    # 分页
+    data = _dim_inv_api.filter_dimoldb_rows(
+        load_dimoldb(),
+        ptype=ptype,
+        search=search,
+        dim_type=dim_type,
+        infer_fn=_dimoldb_infer_inner_outer,
+    )
     try:
         page = int(request.args.get('page', 1))
         page_size = int(request.args.get('page_size', 50))
     except ValueError:
         page, page_size = 1, 50
-    if page < 1: page = 1
-    if page_size < 1: page_size = 50
-    if page_size > 200: page_size = 200
-    total = len(data)
-    total_pages = max(1, (total + page_size - 1) // page_size)
-    start = (page - 1) * page_size
-    end = start + page_size
-    page_data = data[start:end] if start < total else []
-    # 给每条刀模补充真实库存数（缓存 60s，避免每页重复读全表）
+    page_data, total, page, page_size, total_pages = _dim_inv_api.paginate_rows(
+        data, page, page_size
+    )
     inv_all = load_inventory_cached()
     inv_items = inv_all.get('finished', inv_all if isinstance(inv_all, list) else [])
-    for d in page_data:
-        d['stock'] = _dimoldb_store.calc_dimoldb_stock(d, inv_items)
-        d['type_class'] = _dimoldb_store.infer_type_class(d)
+    _dim_inv_api.enrich_dimoldb_page(page_data, inv_items)
     return jsonify({
         "success": True,
         "data": page_data,
@@ -2243,53 +2205,21 @@ def search_dimoldb():
     """查询某尺寸是否有固定刀模（供报价系统调用）"""
     try:
         data = request.get_json(silent=True) or {}
-        ptype = data.get('type', '')
-        length = data.get('length')
-        width = data.get('width')
-        height = data.get('height')
-        dim_type = data.get('dim_type', '')
-        db = load_dimoldb()
-        matches = db
-        if ptype:
-            # 兼容 zhengsquare-outer / zhengsquare-inner
-            actual_type = ptype.replace('-outer', '').replace('-inner', '')
-            matches = [d for d in matches if d.get('product_type') == actual_type]
-            # 如果ptype带内外径但dim_type没传，自动设置
-            if 'outer' in ptype and not data.get('dim_type'):
-                dim_type = 'outer'
-            elif 'inner' in ptype and not data.get('dim_type'):
-                dim_type = 'inner'
-        if length is not None:
-            lv = float(length)
-            matches = [d for d in matches if abs(float(d.get('length', 0)) - lv) < 0.1]
-        if width is not None:
-            wv = float(width)
-            matches = [d for d in matches if abs(float(d.get('width', 0)) - wv) < 0.1]
-        if height is not None:
-            hv = float(height)
-            matches = [d for d in matches if abs(float(d.get('height', 0)) - hv) < 0.1]
-        # 内外径过滤：刀模数据dim_type字段为空，需要用name里的(内)/(外)来判断
-        # 但juxing/koudi/shuangcha等类型没有内外径之分，忽略dim_type过滤
-        ptype_for_dim = data.get('type', '')
-        if dim_type and ptype_for_dim == 'zhengsquare':
-            if dim_type == 'inner':
-                matches = [d for d in matches if _dimoldb_infer_inner_outer(d) == 'inner']
-            elif dim_type == 'outer':
-                matches = [d for d in matches if _dimoldb_infer_inner_outer(d) == 'outer']
-        elif dim_type and ptype_for_dim not in ('zhengsquare', '', None):
-            # 非正方形类型：若存在内外径信息则过滤
-            has_inner_outer = any(_dimoldb_infer_inner_outer(d) for d in matches)
-            if has_inner_outer and dim_type:
-                if dim_type == 'inner':
-                    matches = [d for d in matches if _dimoldb_infer_inner_outer(d) == 'inner']
-                elif dim_type == 'outer':
-                    matches = [d for d in matches if _dimoldb_infer_inner_outer(d) == 'outer']
-        for d in matches:
-            d['type_class'] = _dimoldb_store.infer_type_class(d)
-            if not d.get('dim_type'):
-                d['dim_type'] = _dimoldb_infer_inner_outer(d)
-        if len(matches) > 100:
-            matches = matches[:100]
+        if (
+            not data.get('type')
+            and data.get('length') is None
+            and data.get('width') is None
+            and data.get('height') is None
+            and not data.get('dim_type')
+        ):
+            return jsonify({
+                "success": True,
+                "matches": [],
+                "message": "请填写尺寸或类型后再查询",
+            })
+        matches = _dim_inv_api.search_dimoldb_matches(
+            load_dimoldb(), data, _dimoldb_infer_inner_outer
+        )
         return jsonify({"success": True, "matches": matches})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
@@ -2410,125 +2340,31 @@ def get_inventory():
     data = load_inventory_cached()
     items = data.get(tab, [])
     dm_index = _dimoldb_store.build_dim_match_index(load_dimoldb())
-    
-    # 材质映射函数：库存中的材质名 → 显示名
-    def map_material(m):
-        mapping = {
-            '国产纸': '特硬D6D',
-            '双白': '白色W7W',
-            '台湾纸': '台湾纸',
-            '黑色': '黑色',
-            '红色': '红色',
-            '差材料': '差材料'
-        }
-        return mapping.get(m.strip(), m.strip()) if m else ''
-    
-    # 给所有item做材质映射
-    for item in items:
-        if item.get('material'):
-            item['material'] = map_material(item['material'])
-        # name 中也替换材质名
-        n = item.get('name', '')
-        for old, new in [('国产纸','特硬D6D'), ('双白','白色W7W')]:
-            if old in n:
-                item['name'] = n.replace(old, new)
-                n = item['name']
-    
+    _dim_inv_api.apply_inventory_material_labels(items)
     ptype = request.args.get('type', '')
     search = request.args.get('search', '').strip()
     length = request.args.get('length', '').strip()
     width = request.args.get('width', '').strip()
     height = request.args.get('height', '').strip()
-    if ptype == 'zhengsquare-outer':
-        items = [d for d in items if d.get('product_type') == 'zhengsquare' and d.get('dim_type') == 'outer']
-    elif ptype == 'zhengsquare-inner':
-        items = [d for d in items if d.get('product_type') == 'zhengsquare' and d.get('dim_type') == 'inner']
-    elif ptype == 'changfang-outer':
-        items = [d for d in items if d.get('product_type') == 'changfang' and d.get('dim_type') == 'outer']
-    elif ptype == 'changfang-inner':
-        items = [d for d in items if d.get('product_type') == 'changfang' and d.get('dim_type') == 'inner']
-    elif ptype:
-        # 库存只有 changfang 和 zhengsquare，刀模type需要映射
-        _type_to_inv = {'juxing':'changfang', 'daikou':'changfang', 'koudi':'changfang', 'shuangcha':'changfang', 'qita':'changfang', 'changfang':'changfang', 'zhengsquare':'zhengsquare'}
-        inv_type = _type_to_inv.get(ptype, ptype)
-        items = [d for d in items if d.get('product_type') == inv_type]
-    if search:
-        # 【通用提取】提取输入中的前三个数字，不管分隔符是什么
-        # 支持: 10x10x2, 10*10*2, 10×10×2, 10 10 2, 10,10,2, 10-10-2, 10.10.2 等全部格式
-        nums = re.findall(r'\d+\.?\d*', search.replace(' ', '*'))
-        nums = [n for n in nums if n.strip()]
-        if len(nums) >= 3:
-            try:
-                sl = float(nums[0].strip())
-                sw = float(nums[1].strip())
-                sh = float(nums[2].strip())
-                items = [d for d in items if 
-                    d.get('length') is not None and abs(d['length'] - sl) < 0.1 and
-                    d.get('width') is not None and abs(d['width'] - sw) < 0.1 and
-                    d.get('height') is not None and abs(d['height'] - sh) < 0.1]
-            except:
-                pass
-        elif search.replace('.','').replace('-','').isdigit() or search.strip().replace('.','').replace('-','').replace(',','').replace('|','').lstrip('-').isdigit():
-            # 纯数字搜索
-            sv = float(search.strip().lstrip('-').replace(',','.'))
-            items = [d for d in items if 
-                (d.get('length') is not None and abs(d['length'] - sv) < 0.1) or
-                (d.get('width') is not None and abs(d['width'] - sv) < 0.1) or
-                (d.get('height') is not None and abs(d['height'] - sv) < 0.1)]
-        else:
-            search_field = request.args.get('search_field', 'all')
-            if search_field == 'name':
-                items = [d for d in items if search in d.get('name', '')]
-            elif search_field == 'material':
-                items = [d for d in items if search in d.get('material', '')]
-            else:
-                # 通用搜索
-                items = [d for d in items if 
-                    search in d.get('name', '') or
-                    search in d.get('material', '')]
-    if length:
-        lv = float(length)
-        items = [d for d in items if d.get('length') is not None and abs(float(d['length']) - lv) < 0.1]
-    if width:
-        wv = float(width)
-        items = [d for d in items if d.get('width') is not None and abs(float(d['width']) - wv) < 0.1]
-    if height:
-        hv = float(height)
-        items = [d for d in items if d.get('height') is not None and abs(float(d['height']) - hv) < 0.1]
-    # 按尺寸从小到大排序
-    def sort_key(item):
-        try:
-            dims = item.get('name', '').replace('×','*').replace('x','*').replace('X','*').split('*')
-            l, w, h = float(dims[0]), float(dims[1]), float(dims[2])
-            return (l, w, h)
-        except:
-            return (9999, 9999, 9999)
-    items.sort(key=sort_key)
-    # 分页
+    items = _dim_inv_api.filter_inventory_rows(
+        items,
+        ptype=ptype,
+        search=search,
+        length=length,
+        width=width,
+        height=height,
+        search_field=request.args.get('search_field', 'all'),
+    )
+    _dim_inv_api.sort_inventory_rows(items)
     try:
         page = int(request.args.get('page', 1))
         page_size = int(request.args.get('page_size', 50))
     except ValueError:
         page, page_size = 1, 50
-    if page < 1: page = 1
-    if page_size < 1: page_size = 50
-    if page_size > 200: page_size = 200
-    total = len(items)
-    total_pages = max(1, (total + page_size - 1) // page_size)
-    start = (page - 1) * page_size
-    end = start + page_size
-    page_data = items[start:end] if start < total else []
-    # 兼容前端stock字段 + 在name中标明内外径 + 反缓存
-    for item in page_data:
-        if 'stock' not in item and 'qty' in item:
-            item['stock'] = item['qty']
-        if item.get('dim_type') == 'inner' and not item['name'].startswith('内径'):
-            item['name'] = '内径' + item['name']
-        elif item.get('dim_type') == 'outer' and not item['name'].startswith('外径') and not item['name'].startswith('内'):
-            item['name'] = '外径' + item['name']
-        item['dimoldb_info'] = _dimoldb_store.match_dimoldb_for_inventory_item(
-            item, dm_index, infer_fn=_dimoldb_infer_inner_outer
-        )
+    page_data, total, page, page_size, total_pages = _dim_inv_api.paginate_rows(
+        items, page, page_size
+    )
+    _dim_inv_api.enrich_inventory_page(page_data, dm_index, _dimoldb_infer_inner_outer)
     resp = jsonify({
         "success": True,
         "data": page_data,
