@@ -4066,10 +4066,16 @@
                 body: JSON.stringify(dmBody)
             });
             const dmData = await dmRes.json();
+            if (!dmData.success) throw new Error(dmData.error || '刀模查询失败');
 
-            const invRes = await SY_AUTH.apiFetch(`/api/inventory?search=${encodeURIComponent(`${l}×${w}×${h}`)}&page=1&page_size=50`);
-            const invData = await invRes.json();
-            const invItems = (invData.success && invData.data) ? invData.data : [];
+            let invItems = [];
+            try {
+                const invRes = await SY_AUTH.apiFetch(`/api/inventory?search=${encodeURIComponent(`${l}×${w}×${h}`)}&page=1&page_size=50&lite=1`);
+                const invData = await invRes.json();
+                invItems = (invData.success && invData.data) ? invData.data : [];
+            } catch (invErr) {
+                console.warn('[quickSearchSize] inventory skip', invErr);
+            }
 
             // 3. 如果没有刀模也没有库存
             if ((!dmData.success || !dmData.matches || dmData.matches.length === 0) && invItems.length === 0) {
@@ -4730,19 +4736,27 @@
             };
             if (ptype) params.type = ptype;
             if (dimType) params.dim_type = dimType;
-            const [dmRes, invRes] = await Promise.all([
+            const [dmSettled, invSettled] = await Promise.allSettled([
                 SY_AUTH.apiFetch('/api/dimoldb/search', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(params)
                 }),
-                SY_AUTH.apiFetch('/api/inventory?length=' + encodeURIComponent(l) + '&width=' + encodeURIComponent(w) + '&height=' + encodeURIComponent(h))
+                SY_AUTH.apiFetch('/api/inventory?length=' + encodeURIComponent(l) + '&width=' + encodeURIComponent(w) + '&height=' + encodeURIComponent(h) + '&lite=1')
             ]);
-            const dmData = await dmRes.json();
-            const invData = await invRes.json();
+            if (dmSettled.status !== 'fulfilled') throw dmSettled.reason;
+            const dmData = await dmSettled.value.json();
             if (!dmData.success) throw new Error(dmData.error);
             const matches = dmData.matches || [];
-            const invItems = (invData.success && invData.data) ? invData.data : [];
+            let invItems = [];
+            if (invSettled.status === 'fulfilled') {
+                try {
+                    const invData = await invSettled.value.json();
+                    invItems = (invData.success && invData.data) ? invData.data : [];
+                } catch (invErr) {
+                    console.warn('[homeQuickSearchDimoldb] inventory skip', invErr);
+                }
+            }
 
             function _invMatchesDims(inv, dl, dw, dh) {
                 const blob = ((inv.name || '') + ' ' + (inv.spec || '')).toLowerCase();
@@ -6175,7 +6189,7 @@ async function filterProdOrders(keyword) {
     loadProdDashboard();
 }
 </script>
-<script src="/static/prod_ui.js?v=20260522c"></script>
+<script src="/static/prod_ui.js?v=20260523a"></script>
 
 </body>
 </html>

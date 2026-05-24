@@ -2736,11 +2736,29 @@ def export_inventory():
         import traceback
         return jsonify({"success": False, "error": str(e), "traceback": traceback.format_exc()}), 500
 
-@app.route('/api/dimoldb/search', methods=['POST'])
+@app.route('/api/dimoldb/search', methods=['POST', 'GET'])
 def search_dimoldb():
-    """查询某尺寸是否有固定刀模（供报价系统调用）"""
+    """查询某尺寸是否有固定刀模（供报价系统 / 小程序 / 首页快查）"""
     try:
-        data = request.get_json(silent=True) or {}
+        if request.method == 'GET':
+            data = {
+                'type': (request.args.get('type') or '').strip(),
+                'dim_type': (request.args.get('dim_type') or '').strip(),
+            }
+            for k in ('length', 'width', 'height'):
+                v = request.args.get(k)
+                if v not in (None, ''):
+                    try:
+                        data[k] = float(v)
+                    except (TypeError, ValueError):
+                        pass
+        else:
+            data = request.get_json(silent=True) or {}
+            if not data and request.data:
+                try:
+                    data = json.loads(request.data)
+                except Exception:
+                    data = {}
         if (
             not data.get('type')
             and data.get('length') is None
@@ -2888,7 +2906,20 @@ def get_inventory():
     page_data, total, page, page_size, total_pages = _dim_inv_api.paginate_rows(
         items, page, page_size
     )
-    _dim_inv_api.enrich_inventory_page(page_data, dm_index, _dimoldb_infer_inner_outer)
+    # 刀模快查只要数量/材质/位置，跳过逐行刀模匹配（否则全表 dimoldb 索引很慢）
+    lite = request.args.get('lite') == '1'
+    dim_only = (
+        lite
+        or (
+            length
+            and width
+            and height
+            and not search
+            and not ptype
+        )
+    )
+    if not dim_only:
+        _dim_inv_api.enrich_inventory_page(page_data, dm_index, _dimoldb_infer_inner_outer)
     resp = jsonify({
         "success": True,
         "data": page_data,

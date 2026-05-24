@@ -170,19 +170,14 @@ def search_dimoldb_matches(
         matches = [
             d for d in matches if abs(float(d.get("height", 0)) - hv) < 0.1
         ]
-    ptype_for_dim = payload.get("type", "")
-    if dim_type and ptype_for_dim == "zhengsquare":
-        if dim_type == "inner":
-            matches = [d for d in matches if infer_fn(d) == "inner"]
-        elif dim_type == "outer":
-            matches = [d for d in matches if infer_fn(d) == "outer"]
-    elif dim_type and ptype_for_dim not in ("zhengsquare", "", None):
-        has_inner_outer = any(infer_fn(d) for d in matches)
-        if has_inner_outer and dim_type:
-            if dim_type == "inner":
-                matches = [d for d in matches if infer_fn(d) == "inner"]
-            elif dim_type == "outer":
-                matches = [d for d in matches if infer_fn(d) == "outer"]
+    ptype_for_dim = payload.get("type", "") or ""
+    if dim_type in ("inner", "outer"):
+        if not ptype_for_dim or ptype_for_dim == "zhengsquare":
+            matches = [d for d in matches if infer_fn(d) == dim_type]
+        else:
+            has_inner_outer = any(infer_fn(d) for d in matches)
+            if has_inner_outer:
+                matches = [d for d in matches if infer_fn(d) == dim_type]
     for d in matches:
         d["type_class"] = ds.infer_type_class(d)
         if not d.get("dim_type"):
