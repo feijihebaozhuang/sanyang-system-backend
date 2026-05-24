@@ -56,6 +56,11 @@ su - "$ADMIN" -c "cd ${REPO} && git status -sb | head -3"
 su - "$ADMIN" -c "test -x ${STABLE}/venv/bin/gunicorn && echo gunicorn:OK"
 su - "$ADMIN" -c "curl -sf -o /dev/null -w '3002:%{http_code}\n' http://127.0.0.1:3002/"
 
+# 7. systemd 是否写死 TERMINAL_ENV=ssh
+if systemctl cat hermes-agent.service 2>/dev/null | grep -q 'TERMINAL_ENV=ssh'; then
+  log "WARN: hermes-agent.service 里 TERMINAL_ENV=ssh，需人工改 unit 或 drop-in"
+fi
+
 systemctl restart hermes-agent.service
 sleep 3
 log "=== hermes ==="

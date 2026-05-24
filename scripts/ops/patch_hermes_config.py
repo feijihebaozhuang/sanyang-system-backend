@@ -132,9 +132,20 @@ def _ensure_code_execution(text: str) -> str:
     return text.rstrip() + "\n\ncode_execution:\n  mode: project\n  timeout: 300\n"
 
 
+def _strip_root_ssh_garbage(text: str) -> str:
+    """Remove top-level SSH leftovers from broken sed (not under terminal:)."""
+    return re.sub(
+        r"^(?:ssh_host|ssh_user|ssh_port|host|user|password|port):\s*.*\n",
+        "",
+        text,
+        flags=re.MULTILINE,
+    )
+
+
 def patch_config(raw: str) -> str:
     text = raw.replace("\r\n", "\n")
     text = re.sub(r"backend:\s*ssh\b", "backend: local", text)
+    text = _strip_root_ssh_garbage(text)
     text = _remove_root_orphan_yaml_items(text)
     text = _remove_top_level_blocks(text, ("terminal", "toolsets", "platform_toolsets"))
     text = _strip_disabled_toolsets(text)
@@ -176,6 +187,9 @@ def patch_env_file(path: Path) -> bool:
 def patch_env() -> list[Path]:
     touched: list[Path] = []
     for path in ENV_FILES:
+        if not path.is_file():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("", encoding="utf-8")
         if patch_env_file(path):
             touched.append(path)
     return touched
