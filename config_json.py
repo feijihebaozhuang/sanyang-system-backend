@@ -115,18 +115,8 @@ def apply_permission_overlay(
     *,
     keys: frozenset[str] = PERMISSION_JSON_KEYS,
 ) -> None:
-    """用 JSON/保险库配置补齐内存。保险库为真源时整键覆盖；否则仅补缺失键。"""
-    vault_as_source = False
-    try:
-        import permission_vault as pv
-
-        vault_as_source = pv.vault_enabled() and overlay is None
-    except ImportError:
-        pass
+    """用 JSON/保险库配置补齐内存：仅非空键补入，永不因 vault 空数据冲掉已有工序。"""
     overlay = overlay if overlay is not None else read_permission_overlay()
-    if vault_as_source and overlay:
-        _apply_vault_keys(permission_data, overlay, keys=keys)
-        return
     for key in keys:
         val = overlay.get(key)
         if val is None:

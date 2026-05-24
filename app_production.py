@@ -1661,7 +1661,6 @@ def process_timeout_api():
 
 @app.route('/api/permissions/data')
 def get_permissions_data():
-    _cfg_json.refresh_permission_from_vault(_permission_data)
     _sync_all_employees_perms()
     return jsonify(_permission_data)
 

@@ -2707,7 +2707,6 @@ def permissions():
 
 @app.route('/api/permissions/data')
 def permissions_data():
-    _cfg_json_cs.refresh_permission_from_vault(_permission_data)
     _sync_all_employees_perms()
     employees = _employees_master_list
     perms = _permission_data.get("permissions", {})

@@ -18,6 +18,12 @@ from typing import Any
 
 
 def vault_enabled() -> bool:
+    if (os.getenv("PERMISSION_VAULT_OFF") or "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    ):
+        return False
     return bool((os.getenv("PERMISSION_VAULT_URL") or "").strip())
 
 
