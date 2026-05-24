@@ -12,29 +12,29 @@ die() { echo "[handoff] 错误: $*" >&2; exit 1; }
 
 [ "$(id -u)" -eq 0 ] || die "请 root 执行"
 
-# 1. config.yaml terminal → local + cwd repo
-log "1/3 patch hermes config.yaml"
-mkdir -p /home/admin/.hermes
-python3 "$SCRIPT_DIR/patch_hermes_config.py"
-chown -R admin:admin /home/admin/.hermes
-
 # admin 免密 sudo（小马哥 restart 不卡）
 echo 'admin ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/admin
 chmod 0440 /etc/sudoers.d/admin
 visudo -c -f /etc/sudoers.d/admin
 
-# 2. repo + deploy
-log "2/3 bootstrap repo + deploy"
+# 2. repo + deploy（先 clone，再 patch config）
+log "1/3 clone + deploy"
 [ -n "$GITEE_TOKEN" ] || die "请 export GITEE_TOKEN"
 export GITEE_TOKEN
-TMP=$(mktemp -d)
-curl -fsSL \
-  "https://gitee.com/api/v5/repos/feijihesanyan/sanyang-system/tarball/main?access_token=${GITEE_TOKEN}" \
-  -o "$TMP/repo.tar.gz"
-tar -xzf "$TMP/repo.tar.gz" -C "$TMP"
-SOURCE_DIR=$(find "$TMP" -mindepth 1 -maxdepth 1 -type d | head -1)
-export SOURCE_DIR
-bash "$SOURCE_DIR/scripts/ops/bootstrap_repo_87.sh"
+mkdir -p /www/feijihe
+if [ ! -d /www/feijihe/repo/.git ]; then
+  git clone -b main \
+    "https://oauth2:${GITEE_TOKEN}@gitee.com/feijihesanyan/sanyang-system.git" \
+    /www/feijihe/repo
+fi
+SCRIPT_DIR="/www/feijihe/repo/scripts/ops"
+
+log "2/3 patch hermes config.yaml"
+mkdir -p /home/admin/.hermes
+python3 "$SCRIPT_DIR/patch_hermes_config.py"
+chown -R admin:admin /home/admin/.hermes
+
+bash "$SCRIPT_DIR/bootstrap_repo_87.sh"
 
 # vault 暂停，权限走 data.json
 STABLE=/www/feijihe/stable

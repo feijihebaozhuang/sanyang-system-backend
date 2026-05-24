@@ -32,6 +32,14 @@ _fetch_tarball() {
     -o "$dest/repo.tar.gz"
 }
 
+_git_clone_repo() {
+  log "git clone（tarball 404 时用此方式）…"
+  rm -rf "$REPO"
+  git clone -b "$BRANCH" \
+    "https://oauth2:${GITEE_TOKEN}@gitee.com/${REPO_OWNER}/${REPO_NAME}.git" \
+    "$REPO"
+}
+
 if [ ! -d "$REPO/.git" ]; then
   log "repo 不存在，从 Gitee 拉代码…"
   TMP=$(mktemp -d)
@@ -39,7 +47,10 @@ if [ ! -d "$REPO/.git" ]; then
     log "使用已解压目录: $SOURCE_DIR"
     mkdir -p "$REPO"
     cp -a "$SOURCE_DIR/." "$REPO/"
+  elif _git_clone_repo 2>/dev/null; then
+    log "git clone 成功"
   else
+    log "git clone 失败，尝试 tarball…"
     _fetch_tarball "$TMP"
     mkdir -p "$REPO"
     tar -xzf "$TMP/repo.tar.gz" -C "$TMP"
@@ -48,12 +59,14 @@ if [ ! -d "$REPO/.git" ]; then
   fi
   rm -rf "$TMP"
   cd "$REPO"
-  git init -q
-  git remote add origin "https://oauth2:${GITEE_TOKEN}@gitee.com/${REPO_OWNER}/${REPO_NAME}.git" 2>/dev/null \
-    || git remote set-url origin "https://oauth2:${GITEE_TOKEN}@gitee.com/${REPO_OWNER}/${REPO_NAME}.git"
-  git fetch origin "$BRANCH" -q
-  git checkout -B "$BRANCH" FETCH_HEAD -q
-  log "repo 已初始化: $(git rev-parse --short HEAD)"
+  if [ ! -d .git ]; then
+    git init -q
+    git remote add origin "https://oauth2:${GITEE_TOKEN}@gitee.com/${REPO_OWNER}/${REPO_NAME}.git" 2>/dev/null \
+      || git remote set-url origin "https://oauth2:${GITEE_TOKEN}@gitee.com/${REPO_OWNER}/${REPO_NAME}.git"
+    git fetch origin "$BRANCH" -q
+    git checkout -B "$BRANCH" FETCH_HEAD -q
+  fi
+  log "repo 就绪: $(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 else
   log "repo 已存在，git pull…"
   cd "$REPO"
