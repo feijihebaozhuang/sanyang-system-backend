@@ -3539,17 +3539,8 @@ def api_employee_delete_resigned():
 
 @app.route('/api/permissions/save', methods=['POST'])
 def api_permissions_save():
-    """保存权限：整包写入 156 vault；员工勾选同步 MySQL。"""
+    """保存权限：写 data.json + 尽力同步 vault；员工勾选同步 MySQL。"""
     global _permission_data
-    import permission_vault as _pv
-
-    if _pv.vault_readonly_on_app():
-        return jsonify(
-            {
-                "success": False,
-                "error": "权限已锁定：未配置 PERMISSION_VAULT_WRITE_URL，请联系运维在应用机 .env 开启写入",
-            }
-        ), 403
     data = request.get_json() or {}
     for key in (
         "processes",
@@ -3596,7 +3587,7 @@ def api_permissions_save():
         return jsonify(
             {
                 "success": False,
-                "error": "权限保存失败（保险库或本地镜像写入失败，请查看服务日志）",
+                "error": "权限保存失败，请查看服务日志",
             }
         ), 500
     return jsonify({"success": True, "message": "保存成功"})

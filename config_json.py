@@ -56,6 +56,24 @@ def merge_missing_keys(target: dict, defaults: dict) -> None:
             merge_missing_keys(target[key], default_val)
 
 
+def _overlay_value_usable(val: Any) -> bool:
+    """vault/JSON 覆盖时：空列表、空 dict 视为无效，避免冲掉 admin 已配好的工序等。"""
+    if val is None:
+        return False
+    if isinstance(val, (list, dict, str)) and not val:
+        return False
+    return True
+
+
+def _apply_vault_keys(permission_data: dict, remote: dict[str, Any], *, keys: frozenset[str]) -> None:
+    """从 vault 合并：仅非空键覆盖，永不把工序/映射等清空。"""
+    for key in keys:
+        val = remote.get(key)
+        if not _overlay_value_usable(val):
+            continue
+        permission_data[key] = copy.deepcopy(val)
+
+
 def read_json_file(path: str | Path, default: Any) -> Any:
     p = Path(path)
     if not p.is_file():
@@ -107,9 +125,7 @@ def apply_permission_overlay(
         pass
     overlay = overlay if overlay is not None else read_permission_overlay()
     if vault_as_source and overlay:
-        for key in keys:
-            if key in overlay:
-                permission_data[key] = copy.deepcopy(overlay[key])
+        _apply_vault_keys(permission_data, overlay, keys=keys)
         return
     for key in keys:
         val = overlay.get(key)
@@ -179,9 +195,7 @@ def refresh_permission_from_vault(permission_data: dict) -> None:
         remote = pv.fetch_permission_overlay()
         if not remote:
             return
-        for key in PERMISSION_JSON_KEYS:
-            if key in remote:
-                permission_data[key] = copy.deepcopy(remote[key])
+        _apply_vault_keys(permission_data, remote, keys=PERMISSION_JSON_KEYS)
     except Exception as e:
         print(f"[config_json] 保险库刷新失败: {e}")
 
@@ -224,23 +238,21 @@ def write_permission_overlay(
     base_dir: str | Path | None = None,
     keys: frozenset[str] = PERMISSION_JSON_KEYS,
 ) -> bool:
-    """Admin 保存：先 POST 156 vault，成功后再镜像本机 data.json（回退/备份）。"""
+    """Admin 保存：先写本机 data.json，再尽力 POST 156 vault。"""
+    local_ok = _write_permission_data_local(
+        permission_data, base_dir=base_dir, keys=keys
+    )
+    if not local_ok:
+        return False
     try:
         import permission_vault as pv
 
-        if pv.vault_enabled():
-            if pv.vault_readonly_on_app():
-                return True
+        if pv.vault_enabled() and not pv.vault_readonly_on_app():
             if not pv.push_permission_overlay(permission_data, keys=keys):
-                return False
-            return _write_permission_data_local(
-                permission_data, base_dir=base_dir, keys=keys
-            )
+                print("[config_json] vault POST 失败，已保留本机 data.json 镜像")
     except ImportError:
         pass
-    return _write_permission_data_local(
-        permission_data, base_dir=base_dir, keys=keys
-    )
+    return True
 
 
 def match_material_from_mapping(text: str, mapping: list[dict] | None) -> str:

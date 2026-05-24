@@ -293,7 +293,6 @@ if isinstance(_employee_today_status, dict):
 def persist():
     """持久化当前数据到文件（data.json，不覆盖 admin 未改动的其它键）。"""
     global _employee_today_status, _employee_leave_counts, _permission_data, USERS, _resigned_employees, _employees_master_list
-    import permission_vault as _pv
     # 把USERS的密码也存到文件（用户改密码后重启不丢）
     users_data = {}
     for uid, u in USERS.items():
@@ -315,16 +314,6 @@ def persist():
         "resigned_employees": _resigned_employees,
         "employees_master": _employees_master_list,
     }
-    if _pv.vault_readonly_on_app():
-        try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
-                kept = json.load(f)
-            if isinstance(kept, dict) and isinstance(
-                kept.get("permission_data"), dict
-            ):
-                data["permission_data"] = kept["permission_data"]
-        except Exception:
-            pass
     if not save_data(data):
         return False
     return _cfg_json.write_permission_overlay(_permission_data)
@@ -1675,15 +1664,6 @@ def get_permissions_data():
 @app.route('/api/permissions/save', methods=['POST'])
 def save_permissions_data():
     global _permission_data
-    import permission_vault as _pv
-
-    if _pv.vault_readonly_on_app():
-        return jsonify(
-            {
-                "success": False,
-                "error": "权限已锁定：未配置 PERMISSION_VAULT_WRITE_URL，请联系运维在应用机 .env 开启写入",
-            }
-        ), 403
     data = request.get_json()
     if data:
         for key in (
@@ -1715,7 +1695,7 @@ def save_permissions_data():
             return jsonify(
                 {
                     "success": False,
-                    "error": "权限保存失败（保险库或本地镜像写入失败，请查看服务日志）",
+                    "error": "权限保存失败，请查看服务日志",
                 }
             ), 500
     return jsonify({"success": True, "message": "权限配置已保存"})
