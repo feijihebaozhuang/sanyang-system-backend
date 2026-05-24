@@ -4,10 +4,12 @@
 # ⚠️ 仅在 213（8.138.10.213）以 root 执行
 # ⚠️ 不 stop mysqld、不删 /var/lib/mysql
 #
-# 213 上没有 git 仓库时，root 一键下载并执行：
-#   curl -fsSL 'https://gitee.com/feijihesanyan/sanyang-system/raw/main/scripts/ops/purge_213_non_mysql.sh' | bash -s -- --execute
+# 213 上没有 git 时，从 87 拷脚本（Gitee 私有库 raw 会 403）：
+#   scp /www/feijihe/repo/scripts/ops/purge_213_non_mysql.sh admin@8.138.10.213:/tmp/
+#   ssh admin@8.138.10.213 'sudo bash /tmp/purge_213_non_mysql.sh --execute'
 #
-# 或本地：
+# 公网 raw（仅公开仓库可用，私有会 403）：
+#   curl -fsSL 'https://gitee.com/feijihesanyan/sanyang-system/raw/main/scripts/ops/purge_213_non_mysql.sh' | bash -s -- --execute
 #   bash purge_213_non_mysql.sh              # 预览
 #   bash purge_213_non_mysql.sh --execute    # 真删
 set -euo pipefail
@@ -149,5 +151,5 @@ if [ "$EXEC" -eq 1 ]; then
   log "完成。213 仅数据层；小马哥只在 87。"
 else
   log "预览结束。root 执行: bash $0 --execute"
-  log "或: curl -fsSL 'https://gitee.com/feijihesanyan/sanyang-system/raw/main/scripts/ops/purge_213_non_mysql.sh' | bash -s -- --execute"
+  log "私有库请从 87 scp 本脚本到 213，勿用 curl raw"
 fi
