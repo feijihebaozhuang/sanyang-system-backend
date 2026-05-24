@@ -63,6 +63,10 @@ fi
 
 systemctl restart hermes-agent.service
 sleep 3
+# 可选：若仍像旧实例，跑 restart_hermes_hard_87.sh 硬杀残留进程
+if [ -x "$REPO/scripts/ops/restart_hermes_hard_87.sh" ]; then
+  log "提示: 若飞书仍报 SSH 缺参，再跑: sudo bash $REPO/scripts/ops/restart_hermes_hard_87.sh"
+fi
 log "=== hermes ==="
 systemctl is-active hermes-agent.service
 grep -E '^(TERMINAL_ENV|TERMINAL_CWD|TERMINAL_SSH_HOST)=' "$HERMES/env" "$HERMES/.env" 2>/dev/null || true
