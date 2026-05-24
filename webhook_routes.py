@@ -51,3 +51,25 @@ def register_webhook_routes(app: Flask) -> None:
                 hdrs[key] = v
         body, code = fd.handle_webhook(raw, hdrs)
         return jsonify(body), code
+
+    @app.route("/api/internal/self-repair", methods=["GET", "POST"])
+    def api_internal_self_repair():
+        """小马哥本机自救：修 Hermes、关 vault、拉 Gitee 代码。仅 127.0.0.1 或带令牌。"""
+        import agent_self_repair as asr
+
+        if request.method == "GET":
+            return jsonify(
+                {
+                    "success": True,
+                    "msg": "POST with X-Ops-Token to run repair",
+                    "token_hint": "OPS_SELF_REPAIR_TOKEN or FLASK_SECRET_KEY前32位",
+                    "gitee_token_set": bool(asr._gitee_token()),
+                }
+            )
+        remote = (request.remote_addr or "").strip()
+        token = (request.headers.get("X-Ops-Token") or "").strip()
+        if remote not in ("127.0.0.1", "::1") and token != asr.repair_token():
+            return jsonify({"success": False, "error": "需要本机访问或正确 X-Ops-Token"}), 403
+        restart = request.args.get("restart", "1") not in ("0", "false", "no")
+        report = asr.repair_all(restart=restart)
+        return jsonify({"success": True, "report": report})

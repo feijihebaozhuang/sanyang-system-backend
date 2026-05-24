@@ -263,6 +263,10 @@ import hermes_boot_fix as _hermes_fix
 
 _hermes_fix.auto_fix_hermes_local_backend()
 
+import agent_self_repair as _agent_repair
+
+_agent_repair.run_boot_repair()
+
 # 从data.json加载所有用户（覆盖并扩展USERS字典）
 _loaded_users = persistent_data.get("users", {})
 for uid, uinfo in _loaded_users.items():
