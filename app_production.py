@@ -325,8 +325,9 @@ def persist():
                 data["permission_data"] = kept["permission_data"]
         except Exception:
             pass
-    save_data(data)
-    _cfg_json.write_permission_overlay(_permission_data)
+    if not save_data(data):
+        return False
+    return _cfg_json.write_permission_overlay(_permission_data)
 
 # ==================== 登录API ====================
 @app.route('/api/login', methods=['POST'])
@@ -1667,6 +1668,7 @@ def process_timeout_api():
 
 @app.route('/api/permissions/data')
 def get_permissions_data():
+    _cfg_json.refresh_permission_from_vault(_permission_data)
     _sync_all_employees_perms()
     return jsonify(_permission_data)
 
@@ -1679,7 +1681,7 @@ def save_permissions_data():
         return jsonify(
             {
                 "success": False,
-                "error": "权限结构已锁定在独立配置服务器，请在配置机修改后重启业务服务",
+                "error": "权限已锁定：未配置 PERMISSION_VAULT_WRITE_URL，请联系运维在应用机 .env 开启写入",
             }
         ), 403
     data = request.get_json()
@@ -1709,7 +1711,13 @@ def save_permissions_data():
             _permission_data["employee_roles"] = data["employee_roles"]
             _apply_employee_roles_to_users(data["employee_roles"])
         _sync_all_employees_perms()
-        persist()
+        if not persist():
+            return jsonify(
+                {
+                    "success": False,
+                    "error": "权限保存失败（保险库或本地镜像写入失败，请查看服务日志）",
+                }
+            ), 500
     return jsonify({"success": True, "message": "权限配置已保存"})
 
 

@@ -37,6 +37,16 @@ def _request_headers() -> dict[str, str]:
     return h
 
 
+def _write_headers() -> dict[str, str]:
+    """156 permission_vault POST 认 X-Vault-Token；同时保留 Bearer 兼容其它部署。"""
+    h = _request_headers()
+    token = (os.getenv("PERMISSION_VAULT_TOKEN") or "").strip()
+    if token:
+        h["X-Vault-Token"] = token
+    h["Content-Type"] = "application/json"
+    return h
+
+
 def _parse_permission_payload(raw: Any) -> dict[str, Any]:
     if isinstance(raw, dict) and isinstance(raw.get("permission_data"), dict):
         return raw["permission_data"]
@@ -71,9 +81,9 @@ def push_permission_overlay(
     kset = keys or cfg.PERMISSION_JSON_KEYS
     patch = {k: permission_data[k] for k in kset if k in permission_data}
     payload = json.dumps({"permission_data": patch}, ensure_ascii=False).encode("utf-8")
-    headers = _request_headers()
-    headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(write_url, data=payload, headers=headers, method="POST")
+    req = urllib.request.Request(
+        write_url, data=payload, headers=_write_headers(), method="POST"
+    )
     ctx = ssl.create_default_context()
     try:
         with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:

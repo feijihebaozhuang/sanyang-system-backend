@@ -97,8 +97,20 @@ def apply_permission_overlay(
     *,
     keys: frozenset[str] = PERMISSION_JSON_KEYS,
 ) -> None:
-    """用 JSON/保险库配置补齐内存：仅补缺失键，不覆盖 admin 已在 data.json 中保存的值。"""
+    """用 JSON/保险库配置补齐内存。保险库为真源时整键覆盖；否则仅补缺失键。"""
+    vault_as_source = False
+    try:
+        import permission_vault as pv
+
+        vault_as_source = pv.vault_enabled() and overlay is None
+    except ImportError:
+        pass
     overlay = overlay if overlay is not None else read_permission_overlay()
+    if vault_as_source and overlay:
+        for key in keys:
+            if key in overlay:
+                permission_data[key] = copy.deepcopy(overlay[key])
+        return
     for key in keys:
         val = overlay.get(key)
         if val is None:
@@ -157,26 +169,29 @@ def apply_permission_overlay(
             permission_data[key] = copy.deepcopy(val)
 
 
-def write_permission_overlay(
+def refresh_permission_from_vault(permission_data: dict) -> None:
+    """读接口刷新：多 worker 下从保险库拉最新 permission_data（即时生效）。"""
+    try:
+        import permission_vault as pv
+
+        if not pv.vault_enabled():
+            return
+        remote = pv.fetch_permission_overlay()
+        if not remote:
+            return
+        for key in PERMISSION_JSON_KEYS:
+            if key in remote:
+                permission_data[key] = copy.deepcopy(remote[key])
+    except Exception as e:
+        print(f"[config_json] 保险库刷新失败: {e}")
+
+
+def _write_permission_data_local(
     permission_data: dict,
     *,
     base_dir: str | Path | None = None,
     keys: frozenset[str] = PERMISSION_JSON_KEYS,
 ) -> bool:
-    """Admin 保存：保险库模式仅允许 POST 到配置机；否则写本机 data.json。"""
-    try:
-        import permission_vault as pv
-
-        if pv.vault_enabled():
-            if pv.vault_readonly_on_app():
-                print(
-                    "[config_json] permission_data 已锁定在独立配置服务器，"
-                    "本机禁止写入（未配置 PERMISSION_VAULT_WRITE_URL）"
-                )
-                return False
-            return pv.push_permission_overlay(permission_data, keys=keys)
-    except ImportError:
-        pass
     path = data_json_path(base_dir)
     existing: dict[str, Any] = {}
     if path.is_file():
@@ -201,6 +216,31 @@ def write_permission_overlay(
     except OSError as e:
         print(f"[config_json] 写入失败 {path}: {e}")
         return False
+
+
+def write_permission_overlay(
+    permission_data: dict,
+    *,
+    base_dir: str | Path | None = None,
+    keys: frozenset[str] = PERMISSION_JSON_KEYS,
+) -> bool:
+    """Admin 保存：先 POST 156 vault，成功后再镜像本机 data.json（回退/备份）。"""
+    try:
+        import permission_vault as pv
+
+        if pv.vault_enabled():
+            if pv.vault_readonly_on_app():
+                return True
+            if not pv.push_permission_overlay(permission_data, keys=keys):
+                return False
+            return _write_permission_data_local(
+                permission_data, base_dir=base_dir, keys=keys
+            )
+    except ImportError:
+        pass
+    return _write_permission_data_local(
+        permission_data, base_dir=base_dir, keys=keys
+    )
 
 
 def match_material_from_mapping(text: str, mapping: list[dict] | None) -> str:

@@ -395,9 +395,8 @@ if isinstance(_employee_today_status, dict):
         _employee_today_status = {today: _employee_today_status}
 
 def persist():
-    """持久化当前数据到文件"""
+    """持久化当前数据到 MySQL；permission_data 写入 156 vault 并镜像 data.json。"""
     global _employee_today_status, _permission_data, USERS, _resigned_employees
-    # 把USERS的密码也存到文件（用户改密码后重启不丢）
     users_data = {}
     for uid, u in USERS.items():
         entry = {
@@ -416,7 +415,9 @@ def persist():
         "permission_data": _permission_data,
         "resigned_employees": _resigned_employees
     }
-    save_data(data)
+    if not save_data(data):
+        return False
+    return _cfg_json_cs.write_permission_overlay(_permission_data)
 
 # ==================== 登录API ====================
 @app.route('/api/login', methods=['POST'])
@@ -2702,6 +2703,7 @@ def permissions():
 
 @app.route('/api/permissions/data')
 def permissions_data():
+    _cfg_json_cs.refresh_permission_from_vault(_permission_data)
     _sync_all_employees_perms()
     employees = _employees_master_list
     perms = _permission_data.get("permissions", {})
@@ -3537,32 +3539,66 @@ def api_employee_delete_resigned():
 
 @app.route('/api/permissions/save', methods=['POST'])
 def api_permissions_save():
-    """保存权限配置（员工勾选 → MySQL；工序/映射结构走保险库）"""
+    """保存权限：整包写入 156 vault；员工勾选同步 MySQL。"""
     global _permission_data
-    data = request.get_json()
-    if 'permissions' in data:
-        _permission_data['permissions'] = data['permissions']
-    if 'employee_enabled' in data:
-        _permission_data['employee_enabled'] = data['employee_enabled']
-    # 保存到数据库
+    import permission_vault as _pv
+
+    if _pv.vault_readonly_on_app():
+        return jsonify(
+            {
+                "success": False,
+                "error": "权限已锁定：未配置 PERMISSION_VAULT_WRITE_URL，请联系运维在应用机 .env 开启写入",
+            }
+        ), 403
+    data = request.get_json() or {}
+    for key in (
+        "processes",
+        "positions",
+        "employees",
+        "production_material_mapping",
+        "process_timeouts",
+    ):
+        if key in data:
+            _permission_data[key] = data[key]
+    new_perms = data.get("permissions", {})
+    if new_perms:
+        old_perms = _permission_data.setdefault("permissions", {})
+        for name, feats in new_perms.items():
+            if isinstance(feats, dict):
+                old_perms[name] = dict(feats)
+                _migrate_perm_dict(old_perms[name])
+    if "employee_enabled" in data:
+        _permission_data["employee_enabled"] = data["employee_enabled"]
+    if "role_permissions" in data and isinstance(data["role_permissions"], dict):
+        _permission_data["role_permissions"] = data["role_permissions"]
+    if "employee_roles" in data and isinstance(data["employee_roles"], dict):
+        _permission_data["employee_roles"] = data["employee_roles"]
     try:
         db = get_db()
         cur = db.cursor()
-        for emp_name, perms in data.get('permissions', {}).items():
+        for emp_name, perms in data.get("permissions", {}).items():
             for pk, val in perms.items():
                 cur.execute("""
                     INSERT INTO employee_permissions (employee_name, permission_key, enabled)
                     VALUES (%s, %s, %s)
                     ON DUPLICATE KEY UPDATE enabled=%s
                 """, (emp_name, pk, 1 if val else 0, 1 if val else 0))
-        for emp_name, ena in data.get('employee_enabled', {}).items():
+        for emp_name, ena in data.get("employee_enabled", {}).items():
             cur.execute("UPDATE employees SET enabled=%s WHERE name=%s", (1 if ena else 0, emp_name))
         db.commit()
         cur.close()
         db.close()
     except Exception as e:
-        print(f"[权限保存] 错误: {e}")
-    persist()
+        print(f"[权限保存] MySQL 错误: {e}")
+        return jsonify({"success": False, "error": f"MySQL 同步失败: {e}"}), 500
+    _sync_all_employees_perms()
+    if not persist():
+        return jsonify(
+            {
+                "success": False,
+                "error": "权限保存失败（保险库或本地镜像写入失败，请查看服务日志）",
+            }
+        ), 500
     return jsonify({"success": True, "message": "保存成功"})
 
 @app.route('/api/qrcode/<order_id>')
