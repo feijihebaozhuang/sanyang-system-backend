@@ -1505,7 +1505,12 @@
             footerCards.forEach(card => {
                 const perm = card.getAttribute('data-perm');
                 if (perm) {
-                    card.style.display = hasPerm(perm) ? '' : 'none';
+                    // 「管理员」= 角色门槛（管理/主管/超管），不是权限勾选项
+                    if (perm === '管理员') {
+                        card.style.display = (role === '超级管理员' || role === '管理' || role === '主管') ? '' : 'none';
+                    } else {
+                        card.style.display = hasPerm(perm) ? '' : 'none';
+                    }
                 } else {
                     const onclick = card.getAttribute('onclick') || '';
                     const titleEl = card.querySelector('.f-title');
