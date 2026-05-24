@@ -104,6 +104,13 @@ def require_admin():
         return jsonify({"error": "无权限", "code": 403}), 403
     return None
 
+
+def _can_edit_employee_info(user: dict | None) -> bool:
+    """超级管理员与管理层（邓涛等）均可修改员工基本信息。"""
+    if not user:
+        return False
+    return user.get("role") in ("超级管理员", "管理")
+
 # ==================== 数据持久化 ====================
 DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data.json')
 
@@ -152,6 +159,7 @@ def load_data():
     default = {
         "users": default_users,  # 持久化的用户密码
         "employee_status": {},  # 考勤状态
+        "employees_master": [],  # 员工主数据（admin 修改后持久化，部署不覆盖）
         "permission_data": {    # 权限数据
             "processes": [  # 树形结构：美丽湾工厂部/纸箱部 两部门，每部门下工序步骤
                 {
@@ -284,7 +292,7 @@ if isinstance(_employee_today_status, dict):
 
 def persist():
     """持久化当前数据到文件（data.json，不覆盖 admin 未改动的其它键）。"""
-    global _employee_today_status, _employee_leave_counts, _permission_data, USERS, _resigned_employees
+    global _employee_today_status, _employee_leave_counts, _permission_data, USERS, _resigned_employees, _employees_master_list
     import permission_vault as _pv
     # 把USERS的密码也存到文件（用户改密码后重启不丢）
     users_data = {}
@@ -305,6 +313,7 @@ def persist():
         "order_extra": _order_extra,
         "permission_data": _permission_data,
         "resigned_employees": _resigned_employees,
+        "employees_master": _employees_master_list,
     }
     if _pv.vault_readonly_on_app():
         try:
@@ -815,6 +824,13 @@ _employees_master_list = [
     {"name": "于天发", "position": "纸箱-粘胶/打角", "group": "纸箱粘胶组", "dept": "美丽湾工厂部", "phone": "13800138066"},
 ]
 
+_emp_saved = persistent_data.get("employees_master")
+if isinstance(_emp_saved, list) and len(_emp_saved) > 0:
+    import copy as _copy
+    _employees_master_list = _copy.deepcopy(_emp_saved)
+else:
+    persist()
+
 @app.route('/api/employees')
 def employees():
     # 过滤掉系统账号的员工（admin是系统账号，对应的员工名不出现在列表）
@@ -848,12 +864,12 @@ def employees():
 # ==================== 员工编辑API ====================
 @app.route('/api/employee/update', methods=['POST'])
 def update_employee():
-    """编辑员工信息（admin权限）"""
+    """编辑员工信息（超级管理员或管理层）"""
     if 'username' not in session:
         return jsonify({"success": False, "message": "未登录"}), 401
     user = USERS.get(session['username'])
-    if not user or user['role'] != '超级管理员':
-        return jsonify({"success": False, "message": "仅管理员可编辑员工"}), 403
+    if not _can_edit_employee_info(user):
+        return jsonify({"success": False, "message": "仅管理员或管理层可编辑员工"}), 403
     
     data = request.get_json()
     old_name = data.get('old_name', '')
@@ -1422,11 +1438,10 @@ def _user_has_permission(user: dict | None, username: str, feature: str) -> bool
         feature,
         _permission_data,
         sync_fn=_sync_all_employees_perms,
-        get_db_fn=get_db,
     )
 
 
-# 初始化时执行一次
+# 初始化时执行一次（MySQL 仅补缺失权限键，不覆盖 data.json）
 _sync_all_employees_perms()
 _merge_employee_permissions_from_db()
 
@@ -1546,9 +1561,9 @@ def save_permissions_data():
         if new_perms:
             old_perms = _permission_data.setdefault("permissions", {})
             for name, feats in new_perms.items():
-                if name not in old_perms:
-                    old_perms[name] = {}
-                old_perms[name].update(feats)
+                if isinstance(feats, dict):
+                    old_perms[name] = dict(feats)
+                    _migrate_perm_dict(old_perms[name])
         new_enabled = data.get("employee_enabled")
         if new_enabled is not None:
             _permission_data["employee_enabled"] = new_enabled

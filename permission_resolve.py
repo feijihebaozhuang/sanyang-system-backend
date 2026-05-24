@@ -49,7 +49,8 @@ def merge_employee_permissions_from_db(
             pk = _PERM_CURRENT_KEY
         if en not in base:
             base[en] = {}
-        base[en][pk] = val
+        if pk not in base[en]:
+            base[en][pk] = val
     permission_data["permissions"] = base
 
 
@@ -94,8 +95,7 @@ def user_has_permission(
         return True
     if sync_fn:
         sync_fn()
-    if get_db_fn:
-        merge_employee_permissions_from_db(permission_data, get_db_fn)
+    # MySQL 仅作历史数据补全，不在每次鉴权时覆盖 admin 已保存的权限
     subject = permission_lookup_name(user, username, permission_data)
     row = migrate_perm_dict(dict(permission_data.get("permissions", {}).get(subject, {})))
     return bool(row.get(feature, False))

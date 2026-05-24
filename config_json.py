@@ -95,7 +95,7 @@ def apply_permission_overlay(
     *,
     keys: frozenset[str] = PERMISSION_JSON_KEYS,
 ) -> None:
-    """用 JSON 中的配置覆盖内存（仅当 JSON 里该键有内容）。"""
+    """用 JSON/保险库配置补齐内存：仅补缺失键，不覆盖 admin 已在 data.json 中保存的值。"""
     overlay = overlay if overlay is not None else read_permission_overlay()
     for key in keys:
         val = overlay.get(key)
@@ -105,7 +105,36 @@ def apply_permission_overlay(
             continue
         if isinstance(val, dict) and not val:
             continue
-        permission_data[key] = copy.deepcopy(val)
+        if key == "permissions" and isinstance(val, dict):
+            target = permission_data.setdefault("permissions", {})
+            for emp, feats in val.items():
+                if not isinstance(feats, dict):
+                    continue
+                if emp not in target:
+                    target[emp] = copy.deepcopy(feats)
+                else:
+                    for feat, enabled in feats.items():
+                        if feat not in target[emp]:
+                            target[emp][feat] = enabled
+            continue
+        if key == "employee_enabled" and isinstance(val, dict):
+            target = permission_data.setdefault("employee_enabled", {})
+            for emp, enabled in val.items():
+                if emp not in target:
+                    target[emp] = enabled
+            continue
+        if isinstance(val, dict):
+            if key not in permission_data or not isinstance(permission_data.get(key), dict):
+                permission_data[key] = copy.deepcopy(val)
+            else:
+                merge_missing_keys(permission_data[key], val)
+            continue
+        if isinstance(val, list):
+            if key not in permission_data or not permission_data[key]:
+                permission_data[key] = copy.deepcopy(val)
+            continue
+        if key not in permission_data:
+            permission_data[key] = copy.deepcopy(val)
 
 
 def write_permission_overlay(

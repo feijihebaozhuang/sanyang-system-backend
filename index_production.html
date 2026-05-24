@@ -1270,7 +1270,7 @@
         <div id="permLoginHint" style="display:none;text-align:center;padding:60px 20px;">
             <div style="font-size:64px;margin-bottom:16px;">🔒</div>
             <h3 style="margin-bottom:12px;">请先用admin账号登录</h3>
-            <p style="color:#999;">只有超级管理员才能管理员工和权限</p>
+            <p style="color:#999;">请登录并拥有「权限管理」功能权限</p>
         </div>
     </div>
 
@@ -1420,10 +1420,11 @@
                 ? '<span class="role-tag" style="background:rgba(233,69,96,0.2);color:#e94560;">💬 客服</span>'
                 : '<span class="role-tag" style="background:rgba(52,211,153,0.2);color:#34d399;">👤 员工</span>';
             el.innerHTML = `👤 ${_currentUser.name} ${roleTag} ▾`;
-            // admin显示管理员工按钮
+            // 超级管理员、管理层显示「管理员工」入口
             const editBtn = document.getElementById('empEditBtn');
             if (editBtn) {
-                editBtn.style.display = _currentUser.role === '超级管理员' ? 'inline-block' : 'none';
+                const canEditEmp = _currentUser.role === '超级管理员' || _currentUser.role === '管理';
+                editBtn.style.display = canEditEmp ? 'inline-block' : 'none';
             }
         } else {
             el.innerHTML = '🔑 登录';
@@ -1573,6 +1574,8 @@
             btns += '<button onclick="openPasswordModal();closeUserMenu()" style="display:block;width:100%;padding:10px;margin-bottom:4px;background:#f5f5f5;border:1px solid #e8e8e8;border-radius:6px;cursor:pointer;font-size:14px;text-align:left;">🔑 修改密码</button>';
             if (_currentUser.role === '超级管理员') {
                 btns += '<button onclick="goPermissionPage();closeUserMenu()" style="display:block;width:100%;padding:10px;margin-bottom:4px;background:#f5f5f5;border:1px solid #e8e8e8;border-radius:6px;cursor:pointer;font-size:14px;text-align:left;">🔐 权限设置</button>';
+            } else if (_currentUser.role === '管理') {
+                btns += '<button onclick="goPermissionPage();closeUserMenu()" style="display:block;width:100%;padding:10px;margin-bottom:4px;background:#f5f5f5;border:1px solid #e8e8e8;border-radius:6px;cursor:pointer;font-size:14px;text-align:left;">👥 管理员工</button>';
             }
             btns += '<button onclick="doLogout();closeUserMenu()" style="display:block;width:100%;padding:10px;background:#fff2f0;border:1px solid #ffccc7;border-radius:6px;cursor:pointer;font-size:14px;text-align:left;color:#e94560;">🚪 退出登录</button>';
             
@@ -3177,9 +3180,10 @@
     function initPermissionPage() {
         const content = document.getElementById('permContent');
         const hint = document.getElementById('permLoginHint');
-        const mainContent = document.getElementById('permMainContent');
+        const canEditEmpInfo = _currentUser && (_currentUser.role === '超级管理员' || _currentUser.role === '管理');
+        const canFullPerm = _currentUser && (_currentUser.role === '超级管理员' || hasPerm('权限管理'));
         
-        if (!_currentUser || !hasPerm('权限管理')) {
+        if (!_currentUser || (!canFullPerm && !canEditEmpInfo)) {
             content.style.display = 'none';
             hint.style.display = 'block';
             return;
@@ -3187,12 +3191,27 @@
         content.style.display = 'block';
         hint.style.display = 'none';
         const quoteBtn = document.getElementById('permQuoteBtn');
-        if (quoteBtn) quoteBtn.style.display = '';
+        if (quoteBtn) quoteBtn.style.display = _currentUser.role === '超级管理员' ? '' : 'none';
+        const toolbar = document.getElementById('permToolbar');
+        if (toolbar) {
+            toolbar.querySelectorAll('button').forEach(btn => {
+                const onclick = btn.getAttribute('onclick') || '';
+                if (onclick.includes('loadFullEmployeeEditor')) {
+                    btn.style.display = canEditEmpInfo ? '' : 'none';
+                } else {
+                    btn.style.display = canFullPerm ? '' : 'none';
+                }
+            });
+        }
         const adminHint = document.getElementById('permAdminHint');
         if (adminHint) {
-            adminHint.textContent = _currentUser.role === '超级管理员'
-                ? '超级管理员：可管理员工、权限与报价参数'
-                : '需「权限管理」功能权限';
+            if (_currentUser.role === '超级管理员') {
+                adminHint.textContent = '超级管理员：可管理员工、权限与报价参数';
+            } else if (_currentUser.role === '管理') {
+                adminHint.textContent = '管理层：可修改员工基本信息（岗位/组别/手机等）';
+            } else {
+                adminHint.textContent = '需「权限管理」功能权限';
+            }
         }
         loadFullEmployeeEditor();
     }
@@ -3205,12 +3224,14 @@
         const empData = await getAPI('/api/employees');
         const employees = empData.employees;
         document.getElementById('permStat').textContent = `共 ${employees.length} 人`;
+        const isSuperAdmin = _currentUser && _currentUser.role === '超级管理员';
+        const canEditEmpInfo = _currentUser && (_currentUser.role === '超级管理员' || _currentUser.role === '管理');
         
         let html = `
         <div class="order-table-wrap" style="margin-bottom:16px;">
             <div class="table-title" style="display:flex;justify-content:space-between;align-items:center;">
                 <span>👥 全部员工管理（${employees.length}人）</span>
-                <button onclick="promptAddEmployee()" style="padding:4px 14px;background:#52c41a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">➕ 新增员工</button>
+                ${isSuperAdmin ? '<button onclick="promptAddEmployee()" style="padding:4px 14px;background:#52c41a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">➕ 新增员工</button>' : ''}
             </div>
             <div style="overflow-x:auto;padding:8px;">
                 <table style="min-width:700px;font-size:13px;">
@@ -3236,8 +3257,8 @@
                 <td>${e.dept === '美丽湾工厂部' ? '🏭 美丽湾' : '🏢 洋坑塘'}</td>
                 <td>${e.phone || '—'}</td>
                 <td>
-                    <button onclick="editSingleEmployee('${e.name}')" style="padding:2px 8px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:10px;">✏️</button>
-                    <button onclick="deleteSingleEmployee('${e.name}')" style="padding:2px 8px;background:#ff4d4f;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:10px;">🗑️</button>
+                    ${canEditEmpInfo ? `<button onclick="editSingleEmployee('${e.name.replace(/'/g, "\\'")}')" style="padding:2px 8px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:10px;">✏️</button>` : ''}
+                    ${isSuperAdmin ? `<button onclick="deleteSingleEmployee('${e.name.replace(/'/g, "\\'")}')" style="padding:2px 8px;background:#ff4d4f;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:10px;">🗑️</button>` : ''}
                 </td>
             </tr>`;
         });
