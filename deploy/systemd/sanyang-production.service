@@ -1,6 +1,6 @@
 [Unit]
-Description=Sanyang Production (app_production.py :3002)
-After=network.target mysql.service
+Description=Sanyang Production (gunicorn :3002)
+After=network.target
 
 [Service]
 Type=simple
@@ -8,7 +8,7 @@ User=admin
 Group=admin
 WorkingDirectory=/www/feijihe/stable
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/www/feijihe/stable/venv/bin/python3 app_production.py
+ExecStart=/www/feijihe/stable/venv/bin/gunicorn -w 2 -b 0.0.0.0:3002 --timeout 120 app_production:app
 Restart=on-failure
 RestartSec=5
 
