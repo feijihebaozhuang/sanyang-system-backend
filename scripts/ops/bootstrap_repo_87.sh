@@ -16,9 +16,15 @@ REPO="$BASE/repo"
 STABLE="$BASE/stable"
 GITEE_TOKEN="${GITEE_TOKEN:-}"
 SOURCE_DIR="${SOURCE_DIR:-}"
+ADMIN_USER="${ADMIN_USER:-admin}"
 
 log() { echo "[bootstrap] $*"; }
 die() { echo "[bootstrap] 错误: $*" >&2; exit 1; }
+
+_fix_repo_git_safe() {
+  git config --global --add safe.directory "$REPO" 2>/dev/null || true
+  chown -R "${ADMIN_USER}:${ADMIN_USER}" "$BASE" 2>/dev/null || true
+}
 
 [ -n "$GITEE_TOKEN" ] || die "请先 export GITEE_TOKEN='Gitee私人令牌'（设置→私人令牌→projects 读权限）"
 
@@ -67,8 +73,10 @@ if [ ! -d "$REPO/.git" ]; then
     git checkout -B "$BRANCH" FETCH_HEAD -q
   fi
   log "repo 就绪: $(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  _fix_repo_git_safe
 else
   log "repo 已存在，git pull…"
+  _fix_repo_git_safe
   cd "$REPO"
   git remote set-url origin "https://oauth2:${GITEE_TOKEN}@gitee.com/${REPO_OWNER}/${REPO_NAME}.git" 2>/dev/null || true
   git fetch origin "$BRANCH"
