@@ -261,6 +261,7 @@ for uid, uinfo in _loaded_users.items():
         "employee_name": uinfo.get("employee_name", uinfo.get("name", uid))
     }
 _employee_today_status = persistent_data.get("employee_status", {})
+_employee_leave_counts = persistent_data.get("employee_leave_counts", {})
 _order_extra = persistent_data.get("order_extra", {})
 _permission_data = persistent_data.get("permission_data", {})
 _resigned_employees = persistent_data.get("resigned_employees", [])  # 离职员工列表[{name, position, group, dept, phone, resigned_time}]
@@ -283,7 +284,7 @@ if isinstance(_employee_today_status, dict):
 
 def persist():
     """持久化当前数据到文件（data.json，不覆盖 admin 未改动的其它键）。"""
-    global _employee_today_status, _permission_data, USERS, _resigned_employees
+    global _employee_today_status, _employee_leave_counts, _permission_data, USERS, _resigned_employees
     import permission_vault as _pv
     # 把USERS的密码也存到文件（用户改密码后重启不丢）
     users_data = {}
@@ -300,6 +301,7 @@ def persist():
     data = {
         "users": users_data,
         "employee_status": _employee_today_status,
+        "employee_leave_counts": _employee_leave_counts,
         "order_extra": _order_extra,
         "permission_data": _permission_data,
         "resigned_employees": _resigned_employees,
@@ -1103,18 +1105,20 @@ def delete_resigned():
 
 
 # ==================== 员工今日状态 ====================
-# 模拟数据：每天重置
-_employee_today_status = {}
+# 按日期存储；新的一天自动空字典（旧日期数据仍保留在文件中）
 
 @app.route('/api/employee/status', methods=['GET'])
 def get_employee_status():
-    global _employee_today_status
+    global _employee_today_status, _employee_leave_counts
     today = datetime.date.today().isoformat()
     if today not in _employee_today_status:
         _employee_today_status[today] = {}
+    if today not in _employee_leave_counts:
+        _employee_leave_counts[today] = {}
     return jsonify({
         "date": today,
-        "statuses": _employee_today_status[today]
+        "statuses": _employee_today_status[today],
+        "leave_counts": _employee_leave_counts[today],
     })
 
 @app.route('/api/employee/status', methods=['POST'])
@@ -1136,17 +1140,24 @@ def update_employee_status():
         if name != user['employee_name']:
             return jsonify({"error": "无权限：仅可修改自己的考勤", "code": 403}), 403
 
-    global _employee_today_status
+    global _employee_today_status, _employee_leave_counts
     today = datetime.date.today().isoformat()
     if today not in _employee_today_status:
         _employee_today_status[today] = {}
+    if today not in _employee_leave_counts:
+        _employee_leave_counts[today] = {}
     if name:
+        old_status = _employee_today_status[today].get(name, '出勤')
+        if status == '离岗' and old_status != '离岗':
+            _employee_leave_counts[today][name] = _employee_leave_counts[today].get(name, 0) + 1
         _employee_today_status[today][name] = status
         persist()  # 持久化到文件
     return jsonify({
         "date": today,
         "name": name,
         "status": status,
+        "leave_count": _employee_leave_counts[today].get(name, 0) if name else 0,
+        "leave_counts": _employee_leave_counts[today],
         "success": True
     })
 
@@ -1582,16 +1593,17 @@ def get_process_tree():
 @app.route('/api/my_permissions')
 def get_my_permissions():
     """返回当前登录用户的完整权限映射"""
-    if 'username' not in session:
-        return jsonify({"error": "未登录"}), 401
-    user = USERS.get(session['username'])
+    un = resolve_login_user()
+    if not un:
+        return jsonify({"error": "未登录", "code": 401}), 401
+    user = USERS.get(un)
     if not user:
-        return jsonify({"error": "用户不存在"}), 401
+        return jsonify({"error": "用户不存在", "code": 401}), 401
     name = user['employee_name']
     _sync_all_employees_perms()
     all_perms = _permission_data.get("permissions", {})
     # 系统账号（admin）直接全权限
-    if user.get("is_system"):
+    if user.get("is_system") or user.get("role") == "超级管理员":
         my_perm = {f: True for f in PERM_FEATURES}
     else:
         my_perm = all_perms.get(name, {})
