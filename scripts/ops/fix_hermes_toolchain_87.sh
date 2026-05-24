@@ -38,12 +38,10 @@ grep -q '^STABLE_DIR=' "$HERMES/env" 2>/dev/null || echo "STABLE_DIR=${STABLE}" 
 grep -q '^REPO_DIR=' "$HERMES/env" 2>/dev/null || echo "REPO_DIR=${REPO}" >> "$HERMES/env"
 chown -R "${ADMIN}:${ADMIN}" "$HERMES"
 
-# 5. config.yaml terminal 段
-python3 "$REPO/scripts/ops/patch_hermes_config.py" 2>/dev/null \
-  || python3 "$STABLE/scripts/ops/patch_hermes_config.py"
-# 删掉任何残留 ssh backend
-sed -i 's/backend: ssh/backend: local/g' "$HERMES/config.yaml"
-sed -i '/^[[:space:]]*host:/d;/^[[:space:]]*port: 22/d;/password:/d' "$HERMES/config.yaml"
+# 5. config.yaml：terminal local + toolsets all + feishu 全工具（勿用 sed 删 host/password，会误伤）
+PATCH="$REPO/scripts/ops/patch_hermes_config.py"
+[ -f "$PATCH" ] || PATCH="$STABLE/scripts/ops/patch_hermes_config.py"
+python3 "$PATCH"
 chown "${ADMIN}:${ADMIN}" "$HERMES/config.yaml"
 
 # 6. 权限 vault 关（避免冲配置）
@@ -63,5 +61,8 @@ sleep 3
 log "=== hermes ==="
 systemctl is-active hermes-agent.service
 grep -A5 '^terminal:' "$HERMES/config.yaml"
+grep -A6 '^toolsets:' "$HERMES/config.yaml" || true
+grep -A8 '^platform_toolsets:' "$HERMES/config.yaml" || true
 
 log "完成。请飞书 @小马哥 发：cd /www/feijihe/repo && git status"
+log "若仍无 terminal/execute_code，把 patch --check 输出发给 C"

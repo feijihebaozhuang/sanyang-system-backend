@@ -12,16 +12,20 @@ die() { echo "[unlock-hermes] 错误: $*" >&2; exit 1; }
 
 [ "$(id -u)" -eq 0 ] || die "请用 root 在 Workbench 执行: sudo bash $0"
 
-# ── 1. Hermes：SSH 模式 → 本机 local（核心）──
-if [ -f "$HERMES_CFG" ]; then
+# ── 1. Hermes：local terminal + 全工具集（用 Python patch，勿 sed 删 host/password）──
+PATCH_SCRIPT=""
+for p in /www/feijihe/repo/scripts/ops/patch_hermes_config.py \
+         /www/feijihe/stable/scripts/ops/patch_hermes_config.py; do
+  [ -f "$p" ] && PATCH_SCRIPT="$p" && break
+done
+if [ -n "$PATCH_SCRIPT" ]; then
+  python3 "$PATCH_SCRIPT"
+  chown "${ADMIN_USER}:${ADMIN_USER}" "$HERMES_CFG" 2>/dev/null || true
+  log "Hermes config patched via $PATCH_SCRIPT"
+elif [ -f "$HERMES_CFG" ]; then
   cp -a "$HERMES_CFG" "${HERMES_CFG}.bak.$(date +%Y%m%d_%H%M)"
   sed -i 's/backend: ssh/backend: local/g' "$HERMES_CFG"
-  sed -i '/host: 8\.166\.132\.87/d' "$HERMES_CFG"
-  sed -i '/host: 8\.138\.10\.213/d' "$HERMES_CFG"
-  sed -i '/port: 22/d' "$HERMES_CFG"
-  sed -i '/^[[:space:]]*user: admin/d' "$HERMES_CFG"
-  sed -i '/^[[:space:]]*password:/d' "$HERMES_CFG"
-  log "Hermes config → backend: local（已删 SSH 段）"
+  log "WARN: 无 patch 脚本，仅 backend→local；请 git pull 后重跑"
 else
   log "WARN: 无 $HERMES_CFG，跳过 Hermes 配置（确认 Agent 是否已装到 87）"
 fi

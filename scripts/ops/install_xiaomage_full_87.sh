@@ -25,12 +25,15 @@ die() { echo "[xiaomage-full] 错误: $*" >&2; exit 1; }
 mkdir -p "$BASE" "$STABLE"
 chown -R "$ADMIN:$ADMIN" "$BASE" /home/admin/.hermes 2>/dev/null || true
 
-# ── A. 小马哥 Hermes：本机 local，禁止 SSH 跳板 ──
-if [ -f "$HERMES_CFG" ]; then
+# ── A. 小马哥 Hermes：本机 local + 全工具集 ──
+PATCH_SCRIPT="$SCRIPT_DIR/patch_hermes_config.py"
+if [ -f "$PATCH_SCRIPT" ]; then
+  python3 "$PATCH_SCRIPT"
+  log "Hermes config patched (terminal local + toolsets all)"
+elif [ -f "$HERMES_CFG" ]; then
   cp -a "$HERMES_CFG" "${HERMES_CFG}.bak.$(date +%Y%m%d_%H%M)"
   sed -i 's/backend: ssh/backend: local/g' "$HERMES_CFG"
-  sed -i '/host: 8\./d;/host: 172\./d;/port: 22/d;/^[[:space:]]*user: admin/d;/password:/d' "$HERMES_CFG"
-  log "Hermes → backend: local"
+  log "WARN: 无 patch_hermes_config.py，仅 backend→local"
 fi
 mkdir -p /home/admin/.hermes
 touch "$HERMES_ENV"
