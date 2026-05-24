@@ -19,6 +19,20 @@ log()  { echo -e "${GREEN}[$(date '+%H:%M:%S')]${NC} $1"; }
 warn() { echo -e "${YELLOW}[$(date '+%H:%M:%S')] ${NC} $1"; }
 err()  { echo -e "${RED}[$(date '+%H:%M:%S')] ${NC} $1"; }
 
+# admin 跑 deploy 时必须 sudo systemctl（NOPASSWD 见 scripts/ops/setup_admin_nopasswd.sh）
+_run_systemctl() {
+    if [ "$(id -u)" -eq 0 ]; then
+        systemctl "$@"
+    elif sudo -n systemctl "$@" 2>/dev/null; then
+        :
+    else
+        err "systemctl 需要 root 或 admin 免密 sudo"
+        err "请 root 执行一次: bash $REPO_DIR/scripts/ops/setup_admin_nopasswd.sh"
+        err "或: sudo bash $REPO_DIR/deploy.sh"
+        exit 1
+    fi
+}
+
 get_port_entry() {
     case "$1" in
         cs)   echo "3001:/www/feijihe/stable:app_cs.py" ;;
@@ -119,8 +133,8 @@ fi
 
 if [ "$USE_SYSTEMD" -eq 1 ]; then
     log "[3/5] Restart via systemd (venv python)..."
-    systemctl daemon-reload 2>/dev/null || true
-    systemctl restart sanyang-cs.service sanyang-production.service \
+    _run_systemctl daemon-reload 2>/dev/null || true
+    _run_systemctl restart sanyang-cs.service sanyang-production.service \
         || { err "systemctl restart 失败，请检查 /etc/systemd/system/*.service 的 ExecStart"; exit 1; }
     sleep 3
 else
