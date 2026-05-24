@@ -1,0 +1,20 @@
+[Unit]
+Description=Sanyang permission_data vault (156 配置机)
+After=network.target
+
+[Service]
+Type=simple
+User=admin
+Group=admin
+WorkingDirectory=/opt/sanyang-config
+Environment=PYTHONUNBUFFERED=1
+Environment=PERMISSION_VAULT_BIND=0.0.0.0
+Environment=PERMISSION_VAULT_PORT=9443
+Environment=PERMISSION_VAULT_DATA_FILE=/opt/sanyang-config/permission_data.json
+# 安装时替换：Environment=PERMISSION_VAULT_TOKEN=长随机串
+ExecStart=/usr/bin/python3 /opt/sanyang-config/permission_vault_server.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
