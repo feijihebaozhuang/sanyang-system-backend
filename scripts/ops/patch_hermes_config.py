@@ -9,6 +9,7 @@ from pathlib import Path
 CFG = Path("/home/admin/.hermes/config.yaml")
 TERMINAL_BLOCK = """terminal:
   backend: local
+  shell: /bin/bash
   cwd: /www/feijihe/repo
   timeout: 180
 """
