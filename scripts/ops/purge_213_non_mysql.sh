@@ -1,10 +1,13 @@
 #!/bin/bash
-# 213 数据机：只保留 MySQL，清掉 Hermes/Flask/三羊应用残留（防抢飞书、防 SSH 跳板）
+# 213 数据机：只保留 MySQL + 备份脚本，清掉 Hermes/Flask/三羊应用（防抢飞书）
 #
-# ⚠️ 仅在 213（8.138.10.213）以 root 执行一次
-# ⚠️ 不删 MySQL 数据目录、不 stop mysqld（除非显式 PURGE_STOP_MYSQL=1，默认不碰）
+# ⚠️ 仅在 213（8.138.10.213）以 root 执行
+# ⚠️ 不 stop mysqld、不删 /var/lib/mysql
 #
-# 用法：
+# 213 上没有 git 仓库时，root 一键下载并执行：
+#   curl -fsSL 'https://gitee.com/feijihesanyan/sanyang-system/raw/main/scripts/ops/purge_213_non_mysql.sh' | bash -s -- --execute
+#
+# 或本地：
 #   bash purge_213_non_mysql.sh              # 预览
 #   bash purge_213_non_mysql.sh --execute    # 真删
 set -euo pipefail
@@ -21,93 +24,130 @@ run() {
   fi
 }
 
-[ "$(id -u)" -eq 0 ] || { echo "请 root 执行"; exit 1; }
+[ "$(id -u)" -eq 0 ] || { echo "请 root 执行（admin 无法 kill Hermes / 删系统目录）"; exit 1; }
 
-# 防误删：要求本机像 213（有 mysqld 且无 87 应用目录或 hostname 提示）
-if ! command -v mysqld >/dev/null 2>&1 && ! systemctl is-active mysql >/dev/null 2>&1 && ! systemctl is-active mysqld >/dev/null 2>&1; then
-  log "WARN: 未检测到 MySQL 服务，确认这是 213 数据机再 --execute"
-fi
-if [ -d /www/feijihe/repo ] && [ -f /www/feijihe/stable/app_production.py ] 2>/dev/null; then
-  if systemctl is-active sanyang-production >/dev/null 2>&1; then
-    echo "ERROR: 这像 87 应用机（sanyang-production active），禁止在本机 purge"
-    exit 1
-  fi
+if [ -d /www/feijihe/stable ] && systemctl is-active sanyang-production >/dev/null 2>&1; then
+  echo "ERROR: sanyang-production 在本机 active，像 87 应用机，禁止 purge"
+  exit 1
 fi
 
 log "模式: $([ "$EXEC" -eq 1 ] && echo EXECUTE || echo DRY-RUN)"
-log "MySQL 状态（purge 前后应保持 running）:"
+log "MySQL（purge 前后应保持 running）:"
 systemctl is-active mysql mysqld mariadb 2>/dev/null | head -3 || true
 
 BACKUP="/home/admin/backup/213-purge-$(date +%Y%m%d_%H%M)"
 run "mkdir -p '$BACKUP'"
 
-# ── 1. 停业务进程 ──
-log "1/6 停 Hermes / Flask / 三羊 systemd"
-for u in hermes-agent sanyang-cs sanyang-production openclaw; do
+# ── 1. 停 systemd ──
+log "1/8 停 Hermes / Flask / OpenClaw systemd"
+for u in hermes-agent sanyang-cs sanyang-production openclaw openclaw-gateway; do
   run "systemctl stop '$u' 2>/dev/null || true"
   run "systemctl disable '$u' 2>/dev/null || true"
 done
 
-run "pkill -9 -u admin -f 'hermes_cli.main gateway' 2>/dev/null || true"
-run "pkill -9 -u admin -f hermes-agent 2>/dev/null || true"
-run "pkill -9 -u admin -f 'app_cs.py' 2>/dev/null || true"
-run "pkill -9 -u admin -f 'app_production.py' 2>/dev/null || true"
+# admin 用户级 systemd（Hermes 常藏这里）
+if id admin >/dev/null 2>&1; then
+  run "sudo -u admin XDG_RUNTIME_DIR=/run/user/\$(id -u admin) systemctl --user stop hermes-agent 2>/dev/null || true"
+  run "sudo -u admin XDG_RUNTIME_DIR=/run/user/\$(id -u admin) systemctl --user disable hermes-agent 2>/dev/null || true"
+  run "rm -rf /home/admin/.config/systemd/user/hermes*.service 2>/dev/null || true"
+fi
 
-# ── 2. 备份后删 Hermes（飞书长连接抢 87 的根源）──
-log "2/6 移除 /home/admin/.hermes"
+# ── 2. 强杀进程（admin pkill 常无效，必须 root kill -9）──
+log "2/8 强杀 Hermes / Flask / OpenClaw 进程"
+for pat in 'hermes_cli.main gateway' hermes-agent 'app_cs.py' 'app_production.py' openclaw; do
+  if [ "$EXEC" -eq 1 ]; then
+  while read -r pid; do
+    [ -n "$pid" ] && kill -9 "$pid" 2>/dev/null || true
+  done < <(pgrep -f "$pat" 2>/dev/null || true)
+  else
+    pgrep -af "$pat" 2>/dev/null || true
+  fi
+done
+
+# ── 3. 备份后删 Hermes 整目录 ──
+log "3/8 移除 /home/admin/.hermes"
 if [ -d /home/admin/.hermes ]; then
   if [ "$EXEC" -eq 1 ]; then
     tar czf "$BACKUP/hermes-home.tgz" -C /home/admin .hermes 2>/dev/null || true
+    chown admin:admin "$BACKUP/hermes-home.tgz" 2>/dev/null || true
   else
-    echo "  [dry-run] tar backup .hermes -> $BACKUP/hermes-home.tgz"
+    echo "  [dry-run] backup -> $BACKUP/hermes-home.tgz"
+    du -sh /home/admin/.hermes 2>/dev/null || true
   fi
   run "rm -rf /home/admin/.hermes"
 fi
 
-# ── 3. 删三羊代码树（213 不应有 repo/stable）──
-log "3/6 移除 /www/feijihe"
-if [ -d /www/feijihe ]; then
-  if [ "$EXEC" -eq 1 ]; then
-    tar czf "$BACKUP/feijihe-www.tgz" -C /www feijihe 2>/dev/null || true
-  else
-    echo "  [dry-run] tar backup /www/feijihe -> $BACKUP/feijihe-www.tgz"
+# ── 4. 删三羊代码 / 运行时 ──
+log "4/8 移除 /www/feijihe、/opt 下三羊残留"
+for d in /www/feijihe /opt/feijihe /opt/sanyang /home/admin/feijihe /home/admin/sanyang-system; do
+  if [ -d "$d" ]; then
+    if [ "$EXEC" -eq 1 ]; then
+      bn=$(basename "$d")
+      tar czf "$BACKUP/${bn}.tgz" -C "$(dirname "$d")" "$bn" 2>/dev/null || true
+    fi
+    run "rm -rf '$d'"
   fi
-  run "rm -rf /www/feijihe"
-fi
+done
 
-# ── 4. 删 systemd 单元文件（若存在）──
-log "4/6 清理 systemd 单元"
-for f in /etc/systemd/system/hermes-agent.service \
-         /etc/systemd/system/sanyang-cs.service \
-         /etc/systemd/system/sanyang-production.service; do
-  [ -f "$f" ] && run "rm -f '$f'"
+# ── 5. systemd 单元 ──
+log "5/8 清理 systemd 单元"
+for f in /etc/systemd/system/hermes*.service \
+         /etc/systemd/system/sanyang*.service \
+         /etc/systemd/system/openclaw*.service \
+         /lib/systemd/system/hermes*.service; do
+  [ -e "$f" ] || continue
+  run "rm -f '$f'"
 done
 run "systemctl daemon-reload 2>/dev/null || true"
 
-# ── 5. 删 nginx 里三羊站点（若整站只为 Flask）──
-log "5/6 检查 nginx 三羊站点"
-for f in /etc/nginx/sites-enabled/*feijihe* /etc/nginx/conf.d/*feijihe*; do
+# ── 6. nginx / supervisor ──
+log "6/8 nginx / supervisor"
+for f in /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*; do
   [ -e "$f" ] || continue
-  run "rm -f '$f'"
-  NGINX_RELOAD=1
+  if grep -qE 'feijihe|sanyang|3001|3002|18888' "$f" 2>/dev/null; then
+    run "rm -f '$f'"
+    NGINX_TOUCH=1
+  fi
 done
-if [ "${NGINX_RELOAD:-0}" = 1 ]; then
-  run "nginx -t && systemctl reload nginx 2>/dev/null || true"
+if [ "${NGINX_TOUCH:-0}" = 1 ]; then
+  run "nginx -t 2>/dev/null && systemctl reload nginx 2>/dev/null || systemctl stop nginx 2>/dev/null || true"
+fi
+if [ -f /etc/supervisor/conf.d/hermes.conf ]; then
+  run "rm -f /etc/supervisor/conf.d/hermes.conf /etc/supervisor/conf.d/sanyang*.conf"
+  run "supervisorctl update 2>/dev/null || true"
 fi
 
-# ── 6. 标记 + 验收 ──
-log "6/6 写入标记并验收"
+# ── 7. cron 里非 MySQL 的三羊任务（保留 mysql_daily_backup）──
+log "7/8 检查 cron"
+if [ "$EXEC" -eq 1 ] && id admin >/dev/null 2>&1; then
+  crontab -l -u admin 2>/dev/null | grep -viE 'hermes|feijihe|app_production|app_cs|openclaw|deploy\.sh' | crontab -u admin - 2>/dev/null || true
+fi
+
+# ── 8. 标记 + 验收 ──
+log "8/8 标记与验收"
 run "mkdir -p /etc/sanyang"
 run "echo 'mysql-only since $(date -Iseconds)' > /etc/sanyang/213-mysql-only.marker"
 
 if [ "$EXEC" -eq 1 ]; then
+  sleep 1
   echo ""
   log "=== 验收 ==="
-  ps aux | grep -E '[h]ermes|[a]pp_production|[a]pp_cs' || echo "  无 Hermes/Flask 进程 OK"
-  ss -tlnp | grep -E '3001|3002|18888' || echo "  无 3001/3002/18888 OK"
-  systemctl is-active mysql mysqld mariadb 2>/dev/null | grep -q active && echo "  MySQL: active OK" || echo "  WARN: MySQL 未 active，请人工检查"
-  echo "  备份目录: $BACKUP"
-  log "完成。213 仅保留 MySQL；小马哥只在 87。"
+  if ps aux | grep -E '[h]ermes|[a]pp_production|[a]pp_cs|[o]penclaw'; then
+    log "FAIL: 仍有业务进程，请把 ps 输出贴给大虾"
+    exit 1
+  else
+    echo "  无 Hermes/Flask/OpenClaw 进程 OK"
+  fi
+  ss -tlnp 2>/dev/null | grep -E '3001|3002|18888' && exit 1 || echo "  无 3001/3002/18888 OK"
+  if systemctl is-active mysql mysqld mariadb 2>/dev/null | grep -q active; then
+    echo "  MySQL: active OK"
+  else
+    log "WARN: MySQL 未 active，请人工检查"
+  fi
+  echo "  备份: $BACKUP"
+  echo "  保留: mysqld + /home/admin/backup + mysql_daily_backup_213.sh cron"
+  log "完成。213 仅数据层；小马哥只在 87。"
 else
-  log "以上为预览。确认后执行: sudo bash $0 --execute"
+  log "预览结束。root 执行: bash $0 --execute"
+  log "或: curl -fsSL 'https://gitee.com/feijihesanyan/sanyang-system/raw/main/scripts/ops/purge_213_non_mysql.sh' | bash -s -- --execute"
 fi
