@@ -60,9 +60,12 @@ systemctl restart hermes-agent.service
 sleep 3
 log "=== hermes ==="
 systemctl is-active hermes-agent.service
+grep -E '^(TERMINAL_ENV|TERMINAL_CWD|TERMINAL_SSH_HOST)=' "$HERMES/env" "$HERMES/.env" 2>/dev/null || true
 grep -A5 '^terminal:' "$HERMES/config.yaml"
-grep -A6 '^toolsets:' "$HERMES/config.yaml" || true
-grep -A8 '^platform_toolsets:' "$HERMES/config.yaml" || true
+grep -A3 '^toolsets:' "$HERMES/config.yaml" || true
+grep -A20 '^platform_toolsets:' "$HERMES/config.yaml" | head -25 || true
+journalctl -u hermes-agent -n 30 --no-pager 2>/dev/null | grep -iE 'terminal|ssh|disabled|tool' || true
 
-log "完成。请飞书 @小马哥 发：cd /www/feijihe/repo && git status"
-log "若仍无 terminal/execute_code，把 patch --check 输出发给 C"
+log "完成。请飞书 @小马哥 新开对话发：cd /www/feijihe/repo && git status"
+log "（必须新开对话；旧会话会缓存旧工具列表）"
+log "若仍无 terminal，把 patch --check 输出发给 C"
