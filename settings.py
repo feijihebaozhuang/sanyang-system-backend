@@ -67,6 +67,37 @@ def get_wechat_token() -> str:
     return os.getenv("WECHAT_TOKEN", "").strip()
 
 
+def get_feishu_dify_config() -> dict:
+    """飞书机器人 ↔ Dify 应用 API（见 docs/FEISHU_DIFY.md）。"""
+    enabled = os.getenv("FEISHU_DIFY_ENABLED", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+    return {
+        "enabled": enabled,
+        "app_id": os.getenv("FEISHU_APP_ID", "").strip(),
+        "app_secret": os.getenv("FEISHU_APP_SECRET", "").strip(),
+        "verification_token": os.getenv("FEISHU_VERIFICATION_TOKEN", "").strip(),
+        "encrypt_key": os.getenv("FEISHU_ENCRYPT_KEY", "").strip(),
+        "bot_open_id": os.getenv("FEISHU_BOT_OPEN_ID", "").strip(),
+        "group_reply_all": os.getenv("FEISHU_GROUP_REPLY_ALL", "").strip().lower()
+        in ("1", "true", "yes"),
+        "dify_api_base": os.getenv(
+            "DIFY_API_BASE", "https://api.dify.ai/v1"
+        ).strip().rstrip("/"),
+        "dify_api_key": os.getenv("DIFY_API_KEY", "").strip(),
+        "dify_timeout": os.getenv("DIFY_TIMEOUT", "120").strip() or "120",
+        "ollama_base": os.getenv("OLLAMA_BASE", "http://127.0.0.1:11434").strip().rstrip(
+            "/"
+        ),
+        "ollama_model": os.getenv("OLLAMA_MODEL", "qwen2.5:0.5b").strip() or "qwen2.5:0.5b",
+        "ollama_fallback": os.getenv("FEISHU_USE_OLLAMA_FALLBACK", "").strip().lower()
+        in ("1", "true", "yes", "on"),
+    }
+
+
 def get_km_config() -> dict:
     return {
         "app_key": os.getenv("KM_APP_KEY", "").strip(),

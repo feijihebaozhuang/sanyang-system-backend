@@ -17,9 +17,10 @@ def _check(module_name: str) -> None:
     mod = __import__(module_name)
     app = mod.app
     rules = {r.rule for r in app.url_map.iter_rules()}
-    if "/api/webhook/kuaimai" not in rules:
-        raise SystemExit(f"{module_name}: missing /api/webhook/kuaimai in url_map")
-    print(f"OK {module_name} webhook registered")
+    for path in ("/api/webhook/kuaimai", "/api/webhook/feishu"):
+        if path not in rules:
+            raise SystemExit(f"{module_name}: missing {path} in url_map")
+    print(f"OK {module_name} webhooks registered")
 
 
 def main() -> int:
