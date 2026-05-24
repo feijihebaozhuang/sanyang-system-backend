@@ -430,6 +430,49 @@ def build_production_orders(
     return orders_data
 
 
+def build_production_order_one(
+    cache_file: str,
+    db_config: dict,
+    process_tree: list,
+    order_extra: dict,
+    query: str,
+) -> dict | None:
+    """按单号查一条生产订单（扫码报工小程序用，避免拉全量列表）。"""
+    orders = load_cache_orders(cache_file)
+    o = find_order_in_cache(orders, query)
+    if not o:
+        return None
+    oid = internal_order_id(o)
+    order_type = infer_order_type(o)
+    flow = get_or_create_flow_steps(db_config, process_tree, oid, order_type)
+    specs = []
+    product_parts = []
+    for item in o.get("items") or []:
+        spec = (item.get("spec") or "").strip()
+        qty = int(item.get("qty") or 0)
+        specs.append({"spec": spec, "qty": qty})
+        label = spec or (item.get("name") or "")[:40]
+        if label:
+            product_parts.append(f"{label} x{qty}")
+    addr = o.get("receiver_address") or ""
+    parts = addr.split() if addr else []
+    ex = order_extra.get(oid, {})
+    return {
+        "inner_id": oid,
+        "store": o.get("shop_name") or "",
+        "province": o.get("receiver_province") or (parts[0] if parts else ""),
+        "city": o.get("receiver_city") or (parts[1] if len(parts) > 1 else ""),
+        "specs": specs,
+        "product": "; ".join(product_parts[:3]) or "?",
+        "seller_memo": o.get("seller_memo") or "",
+        "buyer_memo": o.get("buyer_memo") or "",
+        "qty": sum(i.get("qty", 0) for i in (o.get("items") or [])),
+        "type": order_type,
+        "urgent": bool(ex.get("urgent")),
+        "flow": flow,
+    }
+
+
 def apply_scan_report(
     db_config: dict,
     process_tree: list,

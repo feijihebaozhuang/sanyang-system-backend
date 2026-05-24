@@ -550,6 +550,26 @@ def production_orders():
     )
     return jsonify({"orders": orders_data})
 
+
+@app.route('/api/scan_order/<order_id>')
+def scan_order_detail(order_id):
+    """单条订单工序（车间扫码报工小程序，避免拉全量 production_orders）。"""
+    query = (order_id or "").strip()
+    if not query:
+        return jsonify({"success": False, "error": "缺少单号"})
+    process_tree = _permission_data.get("processes", [])
+    order = ph.build_production_order_one(
+        _orders_cache_path(),
+        DB_CONFIG,
+        process_tree,
+        _order_extra,
+        query,
+    )
+    if not order:
+        return jsonify({"success": False, "error": f"未找到订单 {query}"})
+    return jsonify({"success": True, "order": order})
+
+
 # ==================== 扫码报工 ====================
 @app.route('/api/scan_report', methods=['POST'])
 def scan_report():
@@ -1100,9 +1120,10 @@ def get_employee_status():
 @app.route('/api/employee/status', methods=['POST'])
 def update_employee_status():
     """更新员工考勤状态 - 员工只能改自己的，管理可改所有人"""
-    if 'username' not in session:
+    username = resolve_login_user()
+    if not username:
         return jsonify({"error": "未登录", "code": 401}), 401
-    user = USERS.get(session['username'])
+    user = USERS.get(username)
     if not user:
         return jsonify({"error": "无权限", "code": 403}), 403
     
