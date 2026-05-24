@@ -1387,41 +1387,172 @@ def _migrate_perm_dict(perms):
         perms.pop(_PERM_LEGACY_KEY, None)
     return perms
 
+
+def _normalize_role_name(role: str) -> str:
+    """岗位/角色名称统一（管理员→管理）。"""
+    r = (role or "员工").strip()
+    if r in ("管理员", "主管"):
+        return "管理"
+    return r
+
+
+def _users_role_for_perm_role(role: str) -> str:
+    """写入 USERS.role 的值。"""
+    r = _normalize_role_name(role)
+    if r == "超级管理员":
+        return "超级管理员"
+    if r == "管理":
+        return "管理"
+    if r in ("客服", "员工", "财务", "业务员"):
+        return r
+    return "员工"
+
+
+def _builtin_role_permissions() -> dict[str, dict[str, bool]]:
+    all_true = {f: True for f in PERM_FEATURES}
+    mgmt = {
+        "首页": True,
+        "订单生产进度": True,
+        "扫码报工": True,
+        "日报表": True,
+        "数据看板": True,
+        "刀模": True,
+        "刀模库": True,
+        "库存": True,
+        "原材料": True,
+        "快麦ERP": True,
+        "员工": True,
+        "报价": True,
+        "实时订单": True,
+        "权限管理": False,
+    }
+    cs = {
+        "首页": True,
+        "订单生产进度": True,
+        "快麦ERP": True,
+        "刀模": True,
+        "刀模库": True,
+        "库存": True,
+        "原材料": True,
+        "员工": True,
+        "报价": True,
+        "实时订单": True,
+    }
+    worker = {
+        "首页": True,
+        "扫码报工": True,
+        "日报表": True,
+        "员工": True,
+    }
+    return {
+        "超级管理员": dict(all_true),
+        "管理": dict(mgmt),
+        "管理员": dict(mgmt),
+        "主管": dict(mgmt),
+        "客服": dict(cs),
+        "员工": dict(worker),
+        "财务": {"首页": True, "数据看板": True, "快麦ERP": True, "员工": True},
+        "业务员": {"首页": True, "快麦ERP": True, "刀模": True, "报价": True, "员工": True},
+    }
+
+
+def _infer_employee_role(employee_name: str) -> str:
+    er = _permission_data.get("employee_roles") or {}
+    if employee_name in er:
+        return _normalize_role_name(er[employee_name])
+    for u in USERS.values():
+        if u.get("employee_name") == employee_name:
+            return _normalize_role_name(u.get("role", "员工"))
+    return "员工"
+
+
+def _role_template_permissions(role: str) -> dict[str, bool]:
+    role = _normalize_role_name(role)
+    stored = _permission_data.get("role_permissions") or {}
+    # 兼容 positions 里写的「管理员」等别名
+    for key in (role, "管理员" if role == "管理" else None, "主管" if role == "管理" else None):
+        if not key:
+            continue
+        tpl = stored.get(key)
+        if isinstance(tpl, dict) and tpl:
+            out = {}
+            for f in PERM_FEATURES:
+                out[f] = bool(tpl.get(f, False))
+            return out
+    builtin = _builtin_role_permissions()
+    tpl = builtin.get(role) or builtin.get("员工", {})
+    out = {f: False for f in PERM_FEATURES}
+    for f, v in tpl.items():
+        if f in PERM_FEATURES:
+            out[f] = bool(v)
+    return out
+
+
+def _get_effective_permissions(employee_name: str, user: dict | None = None) -> dict[str, bool]:
+    """角色默认 + 个人覆盖（个人优先）。"""
+    if employee_name == "戴雅利":
+        return {f: True for f in PERM_FEATURES}
+    if user and (user.get("is_system") or user.get("role") == "超级管理员"):
+        return {f: True for f in PERM_FEATURES}
+    role = _infer_employee_role(employee_name)
+    if role == "超级管理员":
+        return {f: True for f in PERM_FEATURES}
+    effective = _role_template_permissions(role)
+    personal = _permission_data.get("permissions", {}).get(employee_name, {})
+    if isinstance(personal, dict):
+        personal = _migrate_perm_dict(dict(personal))
+        for f in PERM_FEATURES:
+            if f in personal:
+                effective[f] = bool(personal[f])
+    return effective
+
+
+def _apply_employee_roles_to_users(employee_roles: dict) -> None:
+    for ename, role in (employee_roles or {}).items():
+        users_role = _users_role_for_perm_role(str(role))
+        for u in USERS.values():
+            if u.get("employee_name") == ename and not u.get("is_system"):
+                u["role"] = users_role
+
+
+def _ensure_role_permissions_defaults() -> None:
+    rp = _permission_data.setdefault("role_permissions", {})
+    positions = _permission_data.get("positions") or list(_builtin_role_permissions().keys())
+    builtin = _builtin_role_permissions()
+    for pos in positions:
+        if pos not in rp or not isinstance(rp.get(pos), dict):
+            rp[pos] = dict(builtin.get(pos) or builtin.get(_normalize_role_name(pos)) or builtin["员工"])
+
+
 def _sync_all_employees_perms():
     """
-    核心：确保_permission_data['permissions'] 包含所有员工且每个功能字段齐全。
-    同步规则：
-    - 超级管理员: 所有功能 true
-    - 已有记录: 保留已有值，补全缺失字段为 false
-    - 新员工(无记录): 所有功能 false
-    每次保存和API返回前都调用，永不遗漏任何人。
+    同步员工角色映射；permissions 仅存「相对角色的个人覆盖」，不再整表填 false。
     """
-    base = _permission_data.setdefault("permissions", {})
+    employee_roles = _permission_data.setdefault("employee_roles", {})
     for emp in _employees_master_list:
         name = emp["name"]
-        if name == "戴雅利":
-            # 超级管理员全开
-            if name not in base:
-                base[name] = {}
-            for f in PERM_FEATURES:
-                base[name][f] = True
-        elif name not in base:
-            # 新员工默认全false
-            base[name] = {}
-            for f in PERM_FEATURES:
-                base[name][f] = False
-        else:
-            _migrate_perm_dict(base[name])
-            # 已有员工：补全缺失字段
-            for f in PERM_FEATURES:
-                if f not in base[name]:
-                    base[name][f] = False
-    # 清理已删除员工的残留权限
+        if name not in employee_roles:
+            employee_roles[name] = _infer_employee_role(name)
+    _ensure_role_permissions_defaults()
+    base = _permission_data.setdefault("permissions", {})
     valid_names = {e["name"] for e in _employees_master_list}
     for name in list(base.keys()):
         if name not in valid_names:
             del base[name]
+    for emp in _employees_master_list:
+        name = emp["name"]
+        if name not in base:
+            base[name] = {}
+        else:
+            _migrate_perm_dict(base[name])
+            role = _infer_employee_role(name)
+            tpl = _role_template_permissions(role)
+            for f in list(base[name].keys()):
+                if f in tpl and bool(base[name][f]) == bool(tpl.get(f)):
+                    del base[name][f]
     _permission_data["permissions"] = base
+    _permission_data["employee_roles"] = employee_roles
+    _apply_employee_roles_to_users(employee_roles)
 
 
 import permission_resolve as _perm_resolve
@@ -1432,13 +1563,18 @@ def _merge_employee_permissions_from_db() -> None:
 
 
 def _user_has_permission(user: dict | None, username: str, feature: str) -> bool:
-    return _perm_resolve.user_has_permission(
-        user,
-        username,
-        feature,
-        _permission_data,
-        sync_fn=_sync_all_employees_perms,
-    )
+    if not user:
+        return False
+    role = (user.get("role") or "").strip()
+    if user.get("is_system") or role == "超级管理员":
+        return True
+    un = (username or "").strip().lower()
+    if un == "admin" and role in ("超级管理员", "管理员", "管理", ""):
+        return True
+    _sync_all_employees_perms()
+    subject = _perm_resolve.permission_lookup_name(user, username, _permission_data)
+    row = _migrate_perm_dict(_get_effective_permissions(subject, user))
+    return bool(row.get(feature, False))
 
 
 # 初始化时执行一次（MySQL 仅补缺失权限键，不覆盖 data.json）
@@ -1567,6 +1703,11 @@ def save_permissions_data():
         new_enabled = data.get("employee_enabled")
         if new_enabled is not None:
             _permission_data["employee_enabled"] = new_enabled
+        if "role_permissions" in data and isinstance(data["role_permissions"], dict):
+            _permission_data["role_permissions"] = data["role_permissions"]
+        if "employee_roles" in data and isinstance(data["employee_roles"], dict):
+            _permission_data["employee_roles"] = data["employee_roles"]
+            _apply_employee_roles_to_users(data["employee_roles"])
         _sync_all_employees_perms()
         persist()
     return jsonify({"success": True, "message": "权限配置已保存"})
@@ -1616,16 +1757,21 @@ def get_my_permissions():
         return jsonify({"error": "用户不存在", "code": 401}), 401
     name = user['employee_name']
     _sync_all_employees_perms()
-    all_perms = _permission_data.get("permissions", {})
-    # 系统账号（admin）直接全权限
     if user.get("is_system") or user.get("role") == "超级管理员":
         my_perm = {f: True for f in PERM_FEATURES}
     else:
-        my_perm = all_perms.get(name, {})
+        my_perm = _get_effective_permissions(name, user)
+    all_effective = {
+        en: _get_effective_permissions(en)
+        for en in {e["name"] for e in _employees_master_list}
+    }
     return jsonify({
         "success": True,
         "my_permissions": my_perm,
-        "all_permissions": all_perms,
+        "all_permissions": all_effective,
+        "permissions_overrides": _permission_data.get("permissions", {}),
+        "role_permissions": _permission_data.get("role_permissions", {}),
+        "employee_roles": _permission_data.get("employee_roles", {}),
         "all_employees": _employees_master_list
     })
 

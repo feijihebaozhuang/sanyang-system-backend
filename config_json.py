@@ -26,6 +26,8 @@ PERMISSION_JSON_KEYS = frozenset(
         "permissions",
         "employee_enabled",
         "process_timeouts",
+        "role_permissions",
+        "employee_roles",
     }
 )
 
@@ -122,6 +124,24 @@ def apply_permission_overlay(
             for emp, enabled in val.items():
                 if emp not in target:
                     target[emp] = enabled
+            continue
+        if key == "role_permissions" and isinstance(val, dict):
+            target = permission_data.setdefault("role_permissions", {})
+            for role, feats in val.items():
+                if not isinstance(feats, dict):
+                    continue
+                if role not in target:
+                    target[role] = copy.deepcopy(feats)
+                else:
+                    for feat, enabled in feats.items():
+                        if feat not in target[role]:
+                            target[role][feat] = enabled
+            continue
+        if key == "employee_roles" and isinstance(val, dict):
+            target = permission_data.setdefault("employee_roles", {})
+            for emp, role in val.items():
+                if emp not in target:
+                    target[emp] = role
             continue
         if isinstance(val, dict):
             if key not in permission_data or not isinstance(permission_data.get(key), dict):

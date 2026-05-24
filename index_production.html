@@ -3435,6 +3435,88 @@
     }
 
     // ===== 功能权限管理 =====
+    let _selectedRoleForEdit = null;
+
+    function _escPermAttr(s) {
+        return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    }
+
+    function getEmployeeRole(name) {
+        if (!_permData) return '员工';
+        const er = _permData.employee_roles || {};
+        let r = er[name] || '员工';
+        const roles = _permData.positions || [];
+        if (r === '管理' && roles.indexOf('管理') < 0 && roles.indexOf('管理员') >= 0) r = '管理员';
+        if (r === '管理员' && roles.indexOf('管理员') < 0 && roles.indexOf('管理') >= 0) r = '管理';
+        return r;
+    }
+
+    function effectivePerm(name, feat) {
+        const role = getEmployeeRole(name);
+        const rp = (_permData && _permData.role_permissions && _permData.role_permissions[role]) || {};
+        const personal = (_permData && _permData.permissions && _permData.permissions[name]) || {};
+        if (Object.prototype.hasOwnProperty.call(personal, feat)) {
+            return !!personal[feat];
+        }
+        return !!rp[feat];
+    }
+
+    function updateEmployeeRole(name, selectEl) {
+        if (!_permData) return;
+        _permData.employee_roles = _permData.employee_roles || {};
+        _permData.employee_roles[name] = selectEl.value;
+        loadPermissionTable();
+    }
+
+    function selectRoleForEdit(role) {
+        _selectedRoleForEdit = role;
+        renderRoleManagement(_permData.positions, _permData.role_permissions);
+    }
+
+    function updateRolePermCheckbox(role, feat, el) {
+        if (!_permData) return;
+        _permData.role_permissions = _permData.role_permissions || {};
+        if (!_permData.role_permissions[role]) {
+            _permData.role_permissions[role] = {};
+        }
+        _permData.role_permissions[role][feat] = el.checked;
+    }
+
+    function renderRoleTemplateEditor(role) {
+        const features = ['首页', '订单生产进度', '扫码报工', '日报表', '数据看板', '刀模', '刀模库', '库存', '原材料', '快麦ERP', '员工', '权限管理', '报价', '实时订单'];
+        const rp = (_permData.role_permissions && _permData.role_permissions[role]) || {};
+        let rows = features.map(f => {
+            const checked = rp[f] ? 'checked' : '';
+            return `<label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;margin:2px 6px 2px 0;white-space:nowrap;">
+                <input type="checkbox" ${checked} onchange="updateRolePermCheckbox('${_escPermAttr(role)}','${_escPermAttr(f)}',this)">${f}
+            </label>`;
+        }).join('');
+        return `<div style="margin-top:8px;padding:8px;background:#fafafa;border-radius:6px;border:1px solid #e8e8e8;">
+            <div style="font-size:12px;font-weight:600;color:#1677ff;margin-bottom:6px;">「${role}」默认能看什么</div>
+            <div style="display:flex;flex-wrap:wrap;">${rows}</div>
+        </div>`;
+    }
+
+    function renderRoleManagement(positions, rolePerms) {
+        const el = document.getElementById('permPositions');
+        if (!positions || !positions.length) {
+            positions = ['超级管理员', '管理', '客服', '员工'];
+        }
+        _permData.role_permissions = _permData.role_permissions || rolePerms || {};
+        let html = positions.map((p, i) => {
+            const active = _selectedRoleForEdit === p ? 'background:#e6f4ff;border-left:3px solid #1677ff;' : '';
+            return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 4px;border-bottom:1px solid #f0f0f0;cursor:pointer;${active}" onclick="selectRoleForEdit('${_escPermAttr(p)}')">
+                <span style="font-size:13px;">${i + 1}. ${p}</span>
+                <button onclick="event.stopPropagation();deletePermItem('positions', ${i})" style="padding:2px 8px;background:#ff4d4f;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">删除</button>
+            </div>`;
+        }).join('');
+        if (_selectedRoleForEdit && positions.indexOf(_selectedRoleForEdit) >= 0) {
+            html += renderRoleTemplateEditor(_selectedRoleForEdit);
+        }
+        html += '<p style="font-size:11px;color:#888;margin-top:8px;line-height:1.5;">① 点角色名 → 勾默认权限<br>② 下方表格给人选角色<br>③ 个人勾选项覆盖角色默认（跟快麦一样）</p>';
+        el.innerHTML = html;
+    }
+
     async function loadPermissionTable() {
         const main = document.getElementById('permMainContent');
         document.getElementById('permStat').textContent = '加载权限数据...';
@@ -3453,9 +3535,13 @@
         const empData = await getAPI('/api/employees');
         const allEmpNames = empData.employees.map(e => e.name);
         
-        const features = ['首页', '订单生产进度', '扫码报工', '日报表', '数据看板', '刀模', '刀模库', '库存', '原材料', '快麦ERP', '员工', '权限管理'];
-        // 用_allPerms（来自/api/my_permissions），服务端保证完整
-        const perms = window._allPerms || data.permissions || {};
+        const features = ['首页', '订单生产进度', '扫码报工', '日报表', '数据看板', '刀模', '刀模库', '库存', '原材料', '快麦ERP', '员工', '权限管理', '报价', '实时订单'];
+        const roles = (data.positions && data.positions.length) ? data.positions : ['超级管理员', '管理', '客服', '员工'];
+        _permData.role_permissions = data.role_permissions || _permData.role_permissions || {};
+        _permData.employee_roles = data.employee_roles || _permData.employee_roles || {};
+        if (!_selectedRoleForEdit || roles.indexOf(_selectedRoleForEdit) < 0) {
+            _selectedRoleForEdit = roles[0] || null;
+        }
         
         // 检查流程是否为树形结构（新版）
         const isTree = Array.isArray(data.processes) && data.processes.length > 0 && data.processes[0].dept;
@@ -3471,7 +3557,7 @@
             </div>
             <div class="order-table-wrap">
                 <div class="table-title" style="display:flex;justify-content:space-between;align-items:center;">
-                    <span>👔 岗位管理</span>
+                    <span>👔 角色管理 <span style="font-size:11px;color:#888;font-weight:400;">(点角色名设默认权限)</span></span>
                     <button onclick="addPositionItem()" style="padding:2px 10px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">+ 添加</button>
                 </div>
                 <div id="permPositions" style="padding:8px;"></div>
@@ -3479,12 +3565,12 @@
         </div>
         <div class="order-table-wrap">
             <div class="table-title" style="display:flex;justify-content:space-between;align-items:center;">
-                <span>📋 员工 × 功能权限</span>
+                <span>📋 员工 × 角色 × 功能（个人覆盖角色默认）</span>
                 <button onclick="savePermissions()" style="padding:4px 14px;background:#52c41a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">💾 保存权限</button>
             </div>
             <div style="overflow-x:auto;padding:8px;">
                 <table style="min-width:860px;">
-                    <thead><tr><th style="min-width:60px;">状态</th><th style="min-width:80px;">员工</th>`;
+                    <thead><tr><th style="min-width:60px;">状态</th><th style="min-width:80px;">员工</th><th style="min-width:90px;">角色</th>`;
         
         features.forEach(f => {
             html += `<th style="text-align:center;font-size:12px;padding:6px 4px;">${f}</th>`;
@@ -3492,24 +3578,27 @@
         html += '</tr></thead><tbody>';
         
         allEmpNames.forEach(n => {
-            const p = perms[n] || {};
             const enabled = (data.employee_enabled || {})[n];
-            // 默认启用（undefined/null都视为启用）
             const isEnabled = enabled !== false;
             const toggleBg = isEnabled ? '#52c41a' : '#d9d9d9';
-            const toggleText = isEnabled ? '启用' : '禁用';
+            const curRole = getEmployeeRole(n);
             html += `<tr>
                 <td style="text-align:center;">
                     <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-size:11px;color:#666;" onclick="event.stopPropagation()">
                         <span style="display:inline-block;width:36px;height:20px;border-radius:10px;background:${toggleBg};position:relative;transition:0.2s;">
                             <span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:#fff;position:absolute;top:2px;${isEnabled?'left:18px;':'left:2px;'};transition:0.2s;"></span>
                         </span>
-                        <input type="checkbox" style="display:none;" data-emp-toggle="${n}" ${isEnabled?'checked':''} onchange="toggleEmployeeEnabled('${n}', this)">
+                        <input type="checkbox" style="display:none;" data-emp-toggle="${n}" ${isEnabled?'checked':''} onchange="toggleEmployeeEnabled('${_escPermAttr(n)}', this)">
                     </label>
                 </td>
-                <td style="font-weight:500;font-size:13px;">${n}</td>`;
+                <td style="font-weight:500;font-size:13px;">${n}</td>
+                <td><select style="font-size:12px;padding:2px 4px;max-width:88px;" onchange="updateEmployeeRole('${_escPermAttr(n)}', this)">`;
+            roles.forEach(r => {
+                html += `<option value="${r}" ${r === curRole ? 'selected' : ''}>${r}</option>`;
+            });
+            html += `</select></td>`;
             features.forEach(f => {
-                const checked = p[f] ? 'checked' : '';
+                const checked = effectivePerm(n, f) ? 'checked' : '';
                 html += `<td style="text-align:center;"><input type="checkbox" data-emp="${n}" data-feat="${f}" ${checked} onchange="updatePermCheckbox(this)"></td>`;
             });
             html += '</tr>';
@@ -3519,9 +3608,9 @@
         main.innerHTML = html;
         document.getElementById('permStat').textContent = '';
         
-        // 渲染流程（树形）和岗位
+        // 渲染流程（树形）和角色
         renderPermProcesses(data.processes);
-        renderPermPositions(data.positions);
+        renderRoleManagement(data.positions, data.role_permissions);
     }
 
     // ===== 渲染树形流程 =====
@@ -3649,7 +3738,14 @@
         if (!_permData.permissions[name]) {
             _permData.permissions[name] = {};
         }
-        _permData.permissions[name][feat] = el.checked;
+        const role = getEmployeeRole(name);
+        const rp = (_permData.role_permissions && _permData.role_permissions[role]) || {};
+        const roleDefault = !!rp[feat];
+        if (el.checked === roleDefault) {
+            delete _permData.permissions[name][feat];
+        } else {
+            _permData.permissions[name][feat] = el.checked;
+        }
     }
 
     function addProcessItem() {
@@ -3662,11 +3758,17 @@
     }
 
     function addPositionItem() {
-        const name = prompt('请输入新岗位名称：');
+        const name = prompt('请输入新角色名称（如：管理、员工、客服）：');
         if (name && name.trim()) {
             if (!_permData) return;
-            _permData.positions.push(name.trim());
-            renderPermPositions(_permData.positions);
+            const n = name.trim();
+            _permData.positions.push(n);
+            _permData.role_permissions = _permData.role_permissions || {};
+            if (!_permData.role_permissions[n]) {
+                _permData.role_permissions[n] = {};
+            }
+            _selectedRoleForEdit = n;
+            renderRoleManagement(_permData.positions, _permData.role_permissions);
         }
     }
 
@@ -3682,7 +3784,7 @@
             const item = _permData.positions[idx];
             if (!confirm(`确认删除岗位「${item}」？`)) return;
             _permData.positions.splice(idx, 1);
-            renderPermPositions(_permData.positions);
+            renderRoleManagement(_permData.positions, _permData.role_permissions);
         }
     }
 
@@ -3717,6 +3819,8 @@
                 processes: _permData.processes,
                 positions: _permData.positions,
                 permissions: _permData.permissions,
+                role_permissions: _permData.role_permissions || {},
+                employee_roles: _permData.employee_roles || {},
                 employee_enabled: _permData.employee_enabled || {}
             })
         });
