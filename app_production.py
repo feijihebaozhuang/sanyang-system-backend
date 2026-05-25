@@ -12,6 +12,8 @@ from datetime import timedelta
 from pypinyin import lazy_pinyin
 import pymysql
 
+from werkzeug.middleware.proxy_fix import ProxyFix
+
 from settings import DB_CONFIG, FLASK_SECRET_KEY
 import production_helpers as ph
 from quote_config_merge import merge_quote_config
@@ -32,6 +34,19 @@ def resolve_login_user() -> str | None:
     return None
 
 
+def _bind_session_for_user(username: str) -> None:
+    """Header 令牌鉴权通过后写入 Session，避免刷新后仅 Cookie 失效导致接口 401。"""
+    user = USERS.get(username)
+    if not user or session.get("username") == username:
+        return
+    session.permanent = True
+    session["username"] = username
+    session["user_name"] = user["name"]
+    session["role"] = user["role"]
+    session["employee_name"] = user["employee_name"]
+    session.modified = True
+
+
 def get_db():
     """获取数据库连接，每次调用新建（线程安全）"""
     return pymysql.connect(**DB_CONFIG, cursorclass=pymysql.cursors.DictCursor)
@@ -46,6 +61,17 @@ app.config['SESSION_REFRESH_EACH_REQUEST'] = True
 app.config['SESSION_COOKIE_SECURE'] = os.getenv('SESSION_COOKIE_SECURE', '').lower() in (
     '1', 'true', 'yes'
 )
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+
+@app.before_request
+def _sync_login_session_from_token():
+    if not request.path.startswith("/api/"):
+        return
+    un = resolve_login_user()
+    if un:
+        _bind_session_for_user(un)
+
 
 import webhook_routes as _webhook_routes
 
@@ -90,16 +116,17 @@ USERS = {
 }
 
 def require_login():
-    """检查是否已登录"""
-    if 'username' not in session:
+    """检查是否已登录（Session 或 X-Sanyang 令牌）"""
+    if not resolve_login_user():
         return jsonify({"error": "未登录", "code": 401}), 401
     return None
 
 def require_admin():
     """检查是否为超级管理员"""
-    if 'username' not in session:
+    un = resolve_login_user()
+    if not un:
         return jsonify({"error": "未登录", "code": 401}), 401
-    user = USERS.get(session['username'])
+    user = USERS.get(un)
     if not user or user['role'] != '超级管理员':
         return jsonify({"error": "无权限", "code": 403}), 403
     return None
@@ -863,7 +890,7 @@ def employees():
 @app.route('/api/employee/update', methods=['POST'])
 def update_employee():
     """编辑员工信息（超级管理员或管理层）"""
-    if 'username' not in session:
+    if not resolve_login_user():
         return jsonify({"success": False, "message": "未登录"}), 401
     user = USERS.get(session['username'])
     if not _can_edit_employee_info(user):
@@ -909,7 +936,7 @@ def update_employee():
 @app.route('/api/employee/add', methods=['POST'])
 def add_employee():
     """添加新员工（admin权限）——自动生成登录账号和部门默认权限"""
-    if 'username' not in session:
+    if not resolve_login_user():
         return jsonify({"success": False, "message": "未登录"}), 401
     user = USERS.get(session['username'])
     if not user or user['role'] != '超级管理员':
@@ -1006,7 +1033,7 @@ def add_employee():
 @app.route('/api/employee/delete', methods=['POST'])
 def delete_employee():
     """删除员工（admin权限）"""
-    if 'username' not in session:
+    if not resolve_login_user():
         return jsonify({"success": False, "message": "未登录"}), 401
     user = USERS.get(session['username'])
     if not user or user['role'] != '超级管理员':
@@ -1034,7 +1061,7 @@ def delete_employee():
 @app.route('/api/employee/deactivate', methods=['POST'])
 def deactivate_employee():
     """标记员工为离职 - 核心管理(邓涛/黄兴/隆浪)可操作"""
-    if 'username' not in session:
+    if not resolve_login_user():
         return jsonify({"success": False, "message": "未登录"}), 401
     user = USERS.get(session['username'])
     if not user or user['role'] not in ['超级管理员', '管理']:
@@ -1065,7 +1092,7 @@ def deactivate_employee():
 @app.route('/api/employee/restore', methods=['POST'])
 def restore_employee():
     """恢复离职员工 - 仅超级管理员"""
-    if 'username' not in session:
+    if not resolve_login_user():
         return jsonify({"success": False, "message": "未登录"}), 401
     user = USERS.get(session['username'])
     if not user or user['role'] != '超级管理员':
@@ -1099,7 +1126,7 @@ def list_resigned():
 @app.route('/api/employee/delete_resigned', methods=['POST'])
 def delete_resigned():
     """彻底删除离职员工记录 - 仅超级管理员"""
-    if 'username' not in session:
+    if not resolve_login_user():
         return jsonify({"success": False, "message": "未登录"}), 401
     user = USERS.get(session['username'])
     if not user or user['role'] != '超级管理员':
@@ -1179,7 +1206,7 @@ def update_employee_status():
 @app.route('/api/order/remark', methods=['POST'])
 def order_remark():
     """设置订单备注 - 仅 超级管理员/管理/客服 可操作"""
-    if 'username' not in session:
+    if not resolve_login_user():
         return jsonify({"error": "未登录", "code": 401}), 401
     user = USERS.get(session['username'])
     if not user or user['role'] == '员工':
@@ -1198,7 +1225,7 @@ def order_remark():
 @app.route('/api/order/urgent', methods=['POST'])
 def order_urgent():
     """切换加急状态 - 仅 超级管理员/管理/客服 可操作"""
-    if 'username' not in session:
+    if not resolve_login_user():
         return jsonify({"error": "未登录", "code": 401}), 401
     user = USERS.get(session['username'])
     if not user or user['role'] == '员工':
@@ -1715,14 +1742,14 @@ def _production_material_mapping() -> list:
 
 @app.route("/api/production/material-mapping", methods=["GET"])
 def get_production_material_mapping():
-    if "username" not in session:
+    if not resolve_login_user():
         return jsonify({"error": "未登录"}), 401
     return jsonify({"success": True, "mapping": _production_material_mapping()})
 
 
 @app.route("/api/production/material-mapping", methods=["POST"])
 def save_production_material_mapping():
-    if "username" not in session:
+    if not resolve_login_user():
         return jsonify({"error": "未登录"}), 401
     body = request.get_json() or {}
     mapping = body.get("mapping")
@@ -1790,7 +1817,7 @@ def save_processes():
 @app.route('/api/scan_workers')
 def scan_workers():
     """根据当前用户角色返回可选择的操作人列表"""
-    if 'username' not in session:
+    if not resolve_login_user():
         return jsonify({"error": "未登录", "code": 401}), 401
     user = USERS.get(session['username'])
     if not user:
@@ -2305,7 +2332,7 @@ def save_quote_config():
     """保存报价配置（仅权限管理角色可操作）"""
     try:
         # 检查权限
-        if 'username' not in session:
+        if not resolve_login_user():
             return jsonify({"success": False, "error": "未登录"})
         user = USERS.get(session['username'])
         if not user:
@@ -2540,7 +2567,7 @@ def load_inventory_cached():
 
 def _has_dimoldb_edit_perm():
     """检查是否有刀模库编辑权限"""
-    if 'username' not in session:
+    if not resolve_login_user():
         return False
     user = USERS.get(session['username'])
     if not user:
@@ -3017,7 +3044,7 @@ def save_inventory(data):
 
 def _has_inv_edit_perm():
     """库存修改权限：超级管理员/管理/有'库存'权限"""
-    if 'username' not in session:
+    if not resolve_login_user():
         return False
     user = USERS.get(session['username'])
     if not user:
@@ -4012,7 +4039,7 @@ def set_order_memo(so_id, memo):
 @app.route('/api/order/1688-memo', methods=['POST'])
 def api_order_1688_memo():
     """修改卖家备注并同步回1688"""
-    if 'username' not in session:
+    if not resolve_login_user():
         return jsonify({'success': False, 'error': '未登录'}), 401
     data = request.get_json() or {}
     so_id = data.get('so_id', '')
@@ -4197,7 +4224,7 @@ def api_sync_status():
 
 @app.route('/api/km/probe', methods=['GET'])
 def api_km_probe():
-    if 'username' not in session:
+    if not resolve_login_user():
         return jsonify({'success': False, 'error': '未登录'}), 401
     import km_api as _km
     return jsonify({'success': True, 'data': _km.km_probe()})

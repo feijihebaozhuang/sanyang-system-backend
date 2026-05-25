@@ -7,12 +7,39 @@
     const AUTH_USER_KEY = 'sanyang_auth_user';
     const AUTH_TOKEN_KEY = 'sanyang_auth_token';
 
-    function readAuthCredentials() {
+    function storageGet(key) {
         try {
-            const u = sessionStorage.getItem(AUTH_USER_KEY);
-            const t = sessionStorage.getItem(AUTH_TOKEN_KEY);
-            if (u && t) return { user: u, token: t };
+            const v = localStorage.getItem(key);
+            if (v) return v;
         } catch (e) { /* ignore */ }
+        try {
+            return sessionStorage.getItem(key);
+        } catch (e) { /* ignore */ }
+        return null;
+    }
+
+    function storageSet(key, value) {
+        try {
+            localStorage.setItem(key, value);
+        } catch (e) { /* ignore */ }
+        try {
+            sessionStorage.setItem(key, value);
+        } catch (e) { /* ignore */ }
+    }
+
+    function storageRemove(key) {
+        try {
+            localStorage.removeItem(key);
+        } catch (e) { /* ignore */ }
+        try {
+            sessionStorage.removeItem(key);
+        } catch (e) { /* ignore */ }
+    }
+
+    function readAuthCredentials() {
+        const u = storageGet(AUTH_USER_KEY);
+        const t = storageGet(AUTH_TOKEN_KEY);
+        if (u && t) return { user: u, token: t };
         return null;
     }
 
@@ -28,17 +55,13 @@
 
     function saveAuthCredentials(user, token) {
         if (!user) return;
-        try {
-            sessionStorage.setItem(AUTH_USER_KEY, user);
-            if (token) sessionStorage.setItem(AUTH_TOKEN_KEY, token);
-        } catch (e) { /* ignore */ }
+        storageSet(AUTH_USER_KEY, user);
+        if (token) storageSet(AUTH_TOKEN_KEY, token);
     }
 
     function clearAuthCredentials() {
-        try {
-            sessionStorage.removeItem(AUTH_USER_KEY);
-            sessionStorage.removeItem(AUTH_TOKEN_KEY);
-        } catch (e) { /* ignore */ }
+        storageRemove(AUTH_USER_KEY);
+        storageRemove(AUTH_TOKEN_KEY);
     }
 
     function saveRoute(top, sub) {

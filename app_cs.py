@@ -14,6 +14,8 @@ import pymysql
 
 import dimoldb_store as _dimoldb_store
 import dimoldb_inventory_api as _dim_inv_api
+from werkzeug.middleware.proxy_fix import ProxyFix
+
 from settings import (
     ALIBABA_CONFIG,
     ALIBABA_SHOPS,
@@ -36,6 +38,17 @@ app.config['SESSION_REFRESH_EACH_REQUEST'] = True
 app.config['SESSION_COOKIE_SECURE'] = os.getenv('SESSION_COOKIE_SECURE', '').lower() in (
     '1', 'true', 'yes'
 )
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+
+@app.before_request
+def _sync_login_session_from_token():
+    if not request.path.startswith("/api/"):
+        return
+    un = resolve_login_user()
+    if un:
+        _bind_session_for_user(un)
+
 
 import webhook_routes as _webhook_routes
 
@@ -102,6 +115,18 @@ def resolve_login_user() -> str | None:
     return None
 
 
+def _bind_session_for_user(username: str) -> None:
+    user = USERS.get(username)
+    if not user or session.get("username") == username:
+        return
+    session.permanent = True
+    session["username"] = username
+    session["user_name"] = user["name"]
+    session["role"] = user["role"]
+    session["employee_name"] = user["employee_name"]
+    session.modified = True
+
+
 def require_login():
     """检查是否已登录"""
     if not resolve_login_user():
@@ -110,9 +135,10 @@ def require_login():
 
 def require_admin():
     """检查是否为超级管理员"""
-    if 'username' not in session:
+    un = resolve_login_user()
+    if not un:
         return jsonify({"error": "未登录", "code": 401}), 401
-    user = USERS.get(session['username'])
+    user = USERS.get(un)
     if not user or user['role'] != '超级管理员':
         return jsonify({"error": "无权限", "code": 403}), 403
     return None
@@ -1023,7 +1049,7 @@ def shop_databoard():
 @app.route('/api/order/remark', methods=['POST'])
 def order_remark():
     """设置订单备注 - 仅 超级管理员/管理/客服 可操作"""
-    if 'username' not in session:
+    if not resolve_login_user():
         return jsonify({"error": "未登录", "code": 401}), 401
     user = USERS.get(session['username'])
     if not user or user['role'] == '员工':
@@ -1042,7 +1068,7 @@ def order_remark():
 @app.route('/api/order/urgent', methods=['POST'])
 def order_urgent():
     """切换加急状态 - 仅 超级管理员/管理/客服 可操作"""
-    if 'username' not in session:
+    if not resolve_login_user():
         return jsonify({"error": "未登录", "code": 401}), 401
     user = USERS.get(session['username'])
     if not user or user['role'] == '员工':
@@ -1717,7 +1743,7 @@ def save_quote_config():
     """保存报价配置（仅权限管理角色可操作）"""
     try:
         # 检查权限
-        if 'username' not in session:
+        if not resolve_login_user():
             return jsonify({"success": False, "error": "未登录"})
         user = USERS.get(session['username'])
         if not user:
@@ -1916,7 +1942,7 @@ def save_dimoldb(data):
 
 def _has_dimoldb_edit_perm():
     """检查是否有刀模库编辑权限"""
-    if 'username' not in session:
+    if not resolve_login_user():
         return False
     user = USERS.get(session['username'])
     if not user:
@@ -2328,7 +2354,7 @@ def save_inventory(data):
 
 def _has_inv_edit_perm():
     """库存修改权限：超级管理员/管理/有'库存'权限"""
-    if 'username' not in session:
+    if not resolve_login_user():
         return False
     user = USERS.get(session['username'])
     if not user:
@@ -3062,7 +3088,7 @@ def set_order_memo(so_id, memo):
 @app.route('/api/order/1688-memo', methods=['POST'])
 def api_order_1688_memo():
     """修改卖家备注并同步回1688"""
-    if 'username' not in session:
+    if not resolve_login_user():
         return jsonify({'success': False, 'error': '未登录'}), 401
     data = request.get_json() or {}
     so_id = data.get('so_id', '')
@@ -3288,7 +3314,7 @@ def api_sync_status():
 @app.route('/api/km/probe', methods=['GET'])
 def api_km_probe():
     """快麦连通性探测（店铺数、近3天订单抽样）"""
-    if 'username' not in session:
+    if not resolve_login_user():
         return jsonify({'success': False, 'error': '未登录'}), 401
     import km_api as _km
     return jsonify({'success': True, 'data': _km.km_probe()})
@@ -3297,7 +3323,7 @@ def api_km_probe():
 @app.route('/api/km/refresh_token', methods=['POST'])
 def api_km_refresh_token():
     """刷新快麦 session（open.token.refresh）"""
-    if 'username' not in session:
+    if not resolve_login_user():
         return jsonify({'success': False, 'error': '未登录'}), 401
     import km_api as _km
     return jsonify(_km.km_refresh_token())

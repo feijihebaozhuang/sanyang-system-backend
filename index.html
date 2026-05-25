@@ -1375,7 +1375,7 @@
 </div>
 
 <script>window.SY_APP_SIDE = 'production';</script>
-<script src="/static/auth_session.js?v=20260519"></script>
+<script src="/static/auth_session.js?v=20260525"></script>
 <script>
     // ===== 当前登录用户 =====
     let _currentUser = null;
@@ -1549,7 +1549,11 @@
             footerCards.forEach(card => {
                 const perm = card.getAttribute('data-perm');
                 if (perm) {
-                    card.style.display = hasPerm(perm) ? '' : 'none';
+                    if (perm === '管理员') {
+                        card.style.display = (role === '超级管理员' || role === '管理' || role === '主管') ? '' : 'none';
+                    } else {
+                        card.style.display = hasPerm(perm) ? '' : 'none';
+                    }
                 } else {
                     const onclick = card.getAttribute('onclick') || '';
                     const titleEl = card.querySelector('.f-title');
@@ -1747,23 +1751,38 @@
 
     // ===== 检查登录状态并初始化 =====
     async function checkLogin() {
+        const overlay = document.getElementById('loginOverlay');
+        if (typeof globalThis.SY_AUTH === 'undefined') {
+            console.error('auth_session.js 未加载');
+            overlay.style.display = 'flex';
+            return;
+        }
         try {
             const res = await SY_AUTH.apiFetch('/api/me');
+            if (!res.ok) {
+                overlay.style.display = 'flex';
+                return;
+            }
             const data = await res.json();
-            if (data.logged_in) {
-                _currentUser = data.user;
-                if (data.auth_token && data.user && data.user.username) {
-                    SY_AUTH.saveAuthCredentials(data.user.username, data.auth_token);
-                }
-                document.getElementById('loginOverlay').style.display = 'none';
-                updateUserInfo();
+            if (!data.logged_in) {
+                overlay.style.display = 'flex';
+                return;
+            }
+            _currentUser = data.user;
+            if (data.auth_token && data.user && data.user.username) {
+                SY_AUTH.saveAuthCredentials(data.user.username, data.auth_token);
+            }
+            overlay.style.display = 'none';
+            updateUserInfo();
+            try {
                 await loadPermissions();
                 restorePageAfterLogin();
-            } else {
-                document.getElementById('loginOverlay').style.display = 'flex';
+            } catch (e) {
+                console.error('登录后初始化失败（仍保持登录）:', e);
             }
-        } catch(e) {
-            document.getElementById('loginOverlay').style.display = 'flex';
+        } catch (e) {
+            console.error('checkLogin:', e);
+            overlay.style.display = 'flex';
         }
     }
 
