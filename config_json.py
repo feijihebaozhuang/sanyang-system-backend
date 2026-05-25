@@ -314,6 +314,7 @@ def write_permission_overlay_detail(
     except Exception as exc:
         vault_ok = False
         vault_error = f"vault 异常: {exc}"
+        import traceback; traceback.print_exc()
     return {
         "ok": True,
         "local_ok": True,
