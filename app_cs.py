@@ -795,7 +795,30 @@ def dashboard():
                     _km.finalize_cache_order(o)
             except ImportError:
                 pass
-            today_orders_raw = [o for o in raw_orders if _order_on_date(o, date)]
+            # 先用列表取今日单ID，再批量查production_flows（避免逐单查MySQL）
+            today_oids = []
+            raw_by_oid = {}
+            for o in raw_orders:
+                if _order_on_date(o, date):
+                    oid = str(o.get('so_id') or o.get('km_sid') or '')
+                    today_oids.append(oid)
+                    raw_by_oid[oid] = o
+            prod_by_oid = {}
+            if today_oids:
+                try:
+                    db = pymysql.connect(**DB_CONFIG, cursorclass=pymysql.cursors.DictCursor)
+                    cur = db.cursor()
+                    ph = ','.join(['%s'] * len(today_oids))
+                    cur.execute(f"SELECT order_id, steps_json FROM production_flows WHERE order_id IN ({ph})", today_oids)
+                    for row in cur.fetchall():
+                        steps = _ph.parse_flow_steps(row.get("steps_json"))
+                        if steps:
+                            prod_by_oid[row['order_id']] = {'flow': steps}
+                    cur.close()
+                    db.close()
+                except Exception as e:
+                    print(f'[Dashboard] 批量查flow失败: {e}')
+            today_orders_raw = [raw_by_oid[o] for o in today_oids if o in raw_by_oid]
             
             for o in today_orders_raw:
                 shop_1688 = o.get('shop_name', '')
@@ -826,8 +849,8 @@ def dashboard():
                     })
                 
                 ex = _order_extra.get(oid, {})
-                # dashboard 不查生产流程度（所有待发货订单状态统一为待发货）
-                ps = {'current_process': '—', 'status': '待发货', 'progress': 0}
+                flow = (prod_by_oid.get(oid) or {}).get('flow') or []
+                ps = _production_status_from_flow(flow)
                 try:
                     import km_api as _km
                     amt = _km.km_to_float(o.get('total_amount'))
