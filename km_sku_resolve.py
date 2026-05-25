@@ -108,6 +108,50 @@ def resolve_line_context(
     }
 
 
+def _product_dims_from_parsed_spec(
+    ps: dict[str, Any],
+    order_spec_raw: str = "",
+) -> dict[str, Any] | None:
+    """
+    快麦档案 x/y/z 为空时：用买家规格文本解析结果构造生产尺寸（须长宽齐全且高可解析）。
+    """
+    import production_spec as pspec
+
+    raw = (order_spec_raw or ps.get("platform_spec_raw") or ps.get("line1") or "").strip()
+    dims: dict[str, float] = {}
+    if ps.get("dimensions_ok") and ps.get("length") and ps.get("width"):
+        try:
+            dims = {
+                "l": float(ps["length"]),
+                "w": float(ps["width"]),
+                "h": float(ps.get("height") or 0),
+            }
+        except (TypeError, ValueError):
+            dims = {}
+    if not dims.get("l") or not dims.get("w"):
+        if not raw:
+            return None
+        dims = pspec.parse_dimensions_cm(raw)
+    if not dims.get("l") or not dims.get("w"):
+        return None
+    if dims.get("h") is None:
+        return None
+    l, w, h = float(dims["l"]), float(dims["w"]), float(dims["h"])
+    return {
+        "outer_id": "",
+        "length": l,
+        "width": w,
+        "height": h,
+        "material": (ps.get("material") or "").strip(),
+        "material_hint": raw[:120],
+        "product_type": "zhengsquare" if abs(l - w) < 0.01 else "juxing",
+        "dim_kind": "inner"
+        if "内" in (ps.get("diameter_type") or "")
+        else "outer",
+        "source": "order_spec_fallback",
+    }
+
+
 def _apply_product_dims_to_spec(
     ps: dict[str, Any],
     product: dict[str, Any],
@@ -187,9 +231,7 @@ def enrich_production_spec(
     km_product: dict[str, Any] | None = None,
     sku: str = "",
 ) -> dict[str, Any]:
-    """生产规格：优先快麦商品档案/映射表结构化尺寸，缺时从规格文本兜底。"""
-    import production_spec as pspec
-
+    """生产规格：优先快麦商品档案/映射表；缺且规格可解析三维时兜底。"""
     if km_product and km_product.get("length") and km_product.get("width"):
         return _apply_product_dims_to_spec(
             ps,
@@ -206,6 +248,19 @@ def enrich_production_spec(
             material_mapping=material_mapping,
         )
 
+    fallback = _product_dims_from_parsed_spec(ps, order_spec_raw)
+    if fallback:
+        out = _apply_product_dims_to_spec(
+            ps,
+            fallback,
+            order_spec_raw=order_spec_raw,
+            material_mapping=material_mapping,
+        )
+        out["km_dims_missing"] = False
+        out["km_spec_fallback"] = True
+        out["dims_source"] = "order_spec_fallback"
+        return out
+
     out = dict(ps)
     line1 = (order_spec_raw or ps.get("line1") or "").strip()
     if line1:
@@ -213,27 +268,6 @@ def enrich_production_spec(
         out["platform_spec_raw"] = line1
 
     if (sku or "").strip():
-        if line1:
-            title = (ps.get("title") or "").strip()
-            text_dims = pspec.parse_dimensions_cm(line1, title=title)
-            l, w, h = text_dims.get("l"), text_dims.get("w"), text_dims.get("h")
-            if l and w:
-                product = {
-                    "length": l,
-                    "width": w,
-                    "height": h or 0,
-                    "material": "",
-                    "material_hint": "",
-                    "product_type": "",
-                    "dim_kind": "outer",
-                    "source": "order_text_fallback",
-                }
-                return _apply_product_dims_to_spec(
-                    ps,
-                    product,
-                    order_spec_raw=order_spec_raw,
-                    material_mapping=material_mapping,
-                )
         out["dimensions_ok"] = False
         out["dimensions_missing"] = ["长", "宽", "高"]
         out["km_dims_missing"] = True

@@ -161,7 +161,23 @@ def _is_outer_dim_label_inside_lw_pair(text: str, m: re.Match[str]) -> bool:
     if label in ("高", "高度"):
         if re.search(r"宽\s*[*×xX]?\s*$", prefix, re.I):
             return True
+        if pos > 0 and text[pos - 1] == "宽":
+            return _match_inside_merged_wh(text, pos)
+    if label in ("宽", "宽度"):
+        if re.search(r"宽高\s*$", prefix, re.I):
+            return True
     return False
+
+
+def _match_inside_merged_wh(text: str, pos: int) -> bool:
+    """「宽高【11*5】」中「高【11」不是独立高尺寸标签。"""
+    if pos <= 0 or pos >= len(text):
+        return False
+    if text[pos - 1] != "宽":
+        return False
+    # pos 指向「高」，其后应为 【数字*数字
+    tail = text[pos : pos + 16]
+    return bool(re.match(r"高\s*【\s*\d+(?:\.\d+)?\s*[*×xX]", tail, re.I))
 
 
 def _normalize_parsed_dims_units(dims: dict[str, float], text: str) -> dict[str, float]:
@@ -205,11 +221,8 @@ def _normalize_parsed_dims_units(dims: dict[str, float], text: str) -> dict[str,
             m = re.search(pat, text, re.I)
             if m and key == "w" and _is_outer_dim_label_inside_lw_pair(text, m):
                 continue
-            if m and key == "h":
-                pos = m.start()
-                prefix = text[max(0, pos - 4) : pos]
-                if re.search(r"[宽长x×]$", prefix, re.I):
-                    continue
+            if m and key == "h" and _match_inside_merged_wh(text, m.start()):
+                continue
             if m:
                 out[key] = _val_to_cm(float(m.group(1)), m.groupdict().get("unit"))
                 break
