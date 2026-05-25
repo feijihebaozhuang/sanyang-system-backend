@@ -4209,16 +4209,22 @@ def api_sync_status():
     if not resolve_login_user():
         return jsonify({'success': False, 'error': '未登录'}), 401
     import order_sync as _osync
+    import order_visit_sync as _ovs
+
     st = _osync.force_sync_status()
     last = st.get('last') or {}
+    visit = _ovs.visit_sync_status()
     return jsonify({
         'success': True,
-        'running': st.get('running'),
-        'error': st.get('error'),
+        'running': st.get('running') or visit.get('running'),
+        'error': st.get('error') or visit.get('last_error'),
         'phase': st.get('phase'),
         'detail': st.get('detail'),
         'last': last,
         'count': last.get('pending_count') if isinstance(last, dict) else None,
+        'cache_updated_ago_sec': visit.get('updated_ago_sec'),
+        'sync_interval_sec': int(os.getenv('ORDER_SYNC_INTERVAL_SEC', '45')),
+        'stale_force_sec': visit.get('stale_force_sec'),
     })
 
 
@@ -4299,8 +4305,8 @@ _order_sched.start_background_order_sync(
     memo_getter=get_order_memo,
     include_1688_direct=False,
     full_days_back=30,
-    incremental_days_back=7,
-    interval_sec=int(os.getenv("ORDER_SYNC_INTERVAL_SEC", "60")),
+    incremental_days_back=int(os.getenv("ORDER_SYNC_INCREMENTAL_DAYS", "14")),
+    interval_sec=int(os.getenv("ORDER_SYNC_INTERVAL_SEC", "45")),
     on_after_sync=_on_background_sync_done,
 )
 

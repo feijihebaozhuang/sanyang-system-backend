@@ -1,0 +1,16 @@
+[Unit]
+Description=Sanyang Kuaimai order sync (once)
+After=network.target
+
+[Service]
+Type=oneshot
+User=admin
+Group=admin
+WorkingDirectory=/www/feijihe/stable
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/www/feijihe/stable/venv/bin/python3 /www/feijihe/repo/scripts/km_order_sync_once.py --mode incremental
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

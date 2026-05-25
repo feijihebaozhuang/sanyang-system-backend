@@ -159,6 +159,29 @@ def sync_orders_to_cache(
     include_1688_direct: bool = False,
 ) -> dict[str, Any]:
     del cache_file  # 仅 MySQL
+    from order_sync_coordinator import order_sync_cluster_lock
+
+    with order_sync_cluster_lock() as acquired:
+        if not acquired:
+            return {
+                "skipped": True,
+                "reason": "another_worker_syncing",
+                "pending_count": ocs.order_count_mysql() if ocs.mysql_cache_available() else 0,
+                "errors": [],
+            }
+        return _sync_orders_to_cache_impl(
+            days_back=days_back,
+            memo_getter=memo_getter,
+            include_1688_direct=include_1688_direct,
+        )
+
+
+def _sync_orders_to_cache_impl(
+    *,
+    days_back: int = 30,
+    memo_getter: Callable[[str], str] | None = None,
+    include_1688_direct: bool = False,
+) -> dict[str, Any]:
     report: dict[str, Any] = {
         "km_outstock_count": 0,
         "km_outstock_by_source": {},
@@ -236,15 +259,49 @@ def sync_orders_incremental(
     cache_file: str | Path | None = None,
     *,
     hours_back: int = 6,
+    days_back: int | None = None,
     memo_getter: Callable[[str], str] | None = None,
     include_1688_direct: bool = False,
 ) -> dict[str, Any]:
-    """增量：保留库内订单，合并近 N 小时快麦更新。"""
+    """
+    增量：以快麦待发货为准刷新近 N 天；库内旧快麦单若本次未返回则剔除（已发货/关闭）。
+    非快麦来源（1688 直连等）保留。
+    """
     del cache_file
+    if days_back is None:
+        days_back = max(1, int(os.getenv("ORDER_SYNC_INCREMENTAL_DAYS", "14")))
+    from order_sync_coordinator import order_sync_cluster_lock
+
+    with order_sync_cluster_lock() as acquired:
+        if not acquired:
+            return {
+                "mode": "incremental",
+                "skipped": True,
+                "reason": "another_worker_syncing",
+                "pending_count": ocs.order_count_mysql() if ocs.mysql_cache_available() else 0,
+                "errors": [],
+            }
+        return _sync_orders_incremental_impl(
+            hours_back=hours_back,
+            days_back=days_back,
+            memo_getter=memo_getter,
+            include_1688_direct=include_1688_direct,
+        )
+
+
+def _sync_orders_incremental_impl(
+    *,
+    hours_back: int,
+    days_back: int,
+    memo_getter: Callable[[str], str] | None = None,
+    include_1688_direct: bool = False,
+) -> dict[str, Any]:
     report: dict[str, Any] = {
         "mode": "incremental",
         "hours_back": hours_back,
+        "days_back": days_back,
         "km_outstock_count": 0,
+        "km_dropped_stale": 0,
         "pending_count": 0,
         "errors": [],
     }
@@ -253,15 +310,16 @@ def sync_orders_incremental(
         return report
 
     with _sync_lock:
-        merged = ocs.read_orders_as_map(finalize=False)
+        existing = ocs.read_orders_as_map(finalize=False)
+        merged: dict[str, dict] = {}
+        km_seen: set[str] = set()
         shops: dict[str, dict] = {}
 
         if km_api.km_configured():
             km_api.km_ensure_session()
             shops = km_api.km_shop_lookup(refresh=False)
             raw_out, err_out = km_api.km_fetch_trades_outstock(
-                1,
-                hours_back=hours_back,
+                days_back,
                 time_type="upd_time",
                 status=km_api.KM_PENDING_STATUSES,
                 source_filter=None,
@@ -273,7 +331,23 @@ def sync_orders_incremental(
                 o = km_api.km_trade_to_cache_order(row, shops)
                 o["shop_name"] = normalize_shop_display(o.get("shop_name") or "")
                 o["sync_source"] = "kuaimai_incremental"
-                _dedupe_merge(merged, [o])
+                sid = str(o.get("so_id") or "").strip()
+                if sid:
+                    merged[sid] = o
+                    km_seen.add(sid)
+
+        for sid, o in existing.items():
+            src = (o.get("sync_source") or "")
+            if src.startswith("kuaimai"):
+                continue
+            if _is_pending_cache_order(o):
+                merged.setdefault(sid, o)
+
+        report["km_dropped_stale"] = sum(
+            1
+            for sid, o in existing.items()
+            if (o.get("sync_source") or "").startswith("kuaimai") and sid not in km_seen
+        )
 
         if include_1688_direct:
             try:

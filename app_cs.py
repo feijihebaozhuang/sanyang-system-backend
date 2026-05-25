@@ -3336,8 +3336,8 @@ _order_sched.start_background_order_sync(
     memo_getter=get_order_memo,
     include_1688_direct=False,
     full_days_back=30,
-    incremental_days_back=7,
-    interval_sec=180,
+    incremental_days_back=int(os.getenv("ORDER_SYNC_INCREMENTAL_DAYS", "14")),
+    interval_sec=int(os.getenv("ORDER_SYNC_INTERVAL_SEC", "45")),
 )
 
 # ==================== 缺失API补充（客服端）====================

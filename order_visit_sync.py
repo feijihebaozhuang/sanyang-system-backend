@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""访问即同步：读缓存秒回，后台增量拉单（防抖）。"""
+"""访问即同步：读缓存秒回，后台按快麦待发货刷新（防抖 + 过期强制）。"""
 from __future__ import annotations
 
 import os
@@ -17,8 +17,9 @@ _state: dict[str, Any] = {
     "last_report": None,
 }
 
-DEBOUNCE_SEC = int(os.getenv("VISIT_SYNC_DEBOUNCE_SEC", "20"))
-INCREMENTAL_HOURS = int(os.getenv("VISIT_SYNC_HOURS", "3"))
+DEBOUNCE_SEC = int(os.getenv("VISIT_SYNC_DEBOUNCE_SEC", "8"))
+STALE_FORCE_SEC = int(os.getenv("ORDER_SYNC_STALE_SEC", "45"))
+INCREMENTAL_DAYS = int(os.getenv("ORDER_SYNC_INCREMENTAL_DAYS", "14"))
 
 
 def cache_updated_ago_sec() -> int | None:
@@ -43,7 +44,9 @@ def visit_sync_status() -> dict[str, Any]:
             "last_finished": _state["last_finished"],
             "last_error": _state["last_error"],
             "updated_ago_sec": ago,
-            "incremental_hours": INCREMENTAL_HOURS,
+            "incremental_days": INCREMENTAL_DAYS,
+            "stale_force_sec": STALE_FORCE_SEC,
+            "debounce_sec": DEBOUNCE_SEC,
         }
 
 
@@ -54,13 +57,16 @@ def schedule_incremental_sync(
     include_1688_direct: bool = False,
     force: bool = False,
 ) -> bool:
-    """若未在防抖窗口内，后台启动增量同步。返回是否已调度。"""
+    """后台启动快麦拉单；缓存超过 STALE_FORCE_SEC 则无视防抖。"""
     now = time.time()
+    ago = cache_updated_ago_sec()
+    stale = ago is None or ago >= STALE_FORCE_SEC
     with _visit_lock:
         if _state["running"]:
             return False
         if (
             not force
+            and not stale
             and _state["last_started"]
             and now - _state["last_started"] < DEBOUNCE_SEC
         ):
@@ -76,7 +82,7 @@ def schedule_incremental_sync(
             path = cache_file or osync.default_cache_path()
             rep = osync.sync_orders_incremental(
                 path,
-                hours_back=INCREMENTAL_HOURS,
+                days_back=INCREMENTAL_DAYS,
                 memo_getter=memo_getter,
                 include_1688_direct=include_1688_direct,
             )
