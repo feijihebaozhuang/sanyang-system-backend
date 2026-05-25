@@ -61,13 +61,23 @@ def _parse_permission_payload(raw: Any) -> dict[str, Any]:
     return {}
 
 
+def _get_urlopen_context(url: str) -> ssl.SSLContext | None:
+    """Only wrap SSL for HTTPS URLs; HTTP v3/v4 plain-text needs no context."""
+    if url.startswith("https://"):
+        return ssl.create_default_context()
+    return None
+
+
 def fetch_permission_overlay(timeout: float = 10.0) -> dict[str, Any]:
     url = (os.getenv("PERMISSION_VAULT_URL") or "").strip()
     if not url:
         return {}
     req = urllib.request.Request(url, headers=_request_headers(), method="GET")
-    ctx = ssl.create_default_context()
-    with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+    ctx = _get_urlopen_context(url)
+    kwargs: dict[str, Any] = {"timeout": timeout}
+    if ctx is not None:
+        kwargs["context"] = ctx
+    with urllib.request.urlopen(req, **kwargs) as resp:  # type: ignore[arg-type]
         body = resp.read().decode("utf-8")
     return _parse_permission_payload(json.loads(body))
 
@@ -90,9 +100,12 @@ def push_permission_overlay(
     req = urllib.request.Request(
         write_url, data=payload, headers=_write_headers(), method="POST"
     )
-    ctx = ssl.create_default_context()
+    ctx = _get_urlopen_context(write_url)
+    kwargs: dict[str, Any] = {"timeout": timeout}
+    if ctx is not None:
+        kwargs["context"] = ctx
     try:
-        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+        with urllib.request.urlopen(req, **kwargs) as resp:  # type: ignore[arg-type]
             return 200 <= resp.status < 300
     except urllib.error.HTTPError as e:
         print(f"[permission_vault] 写入失败 HTTP {e.code}: {e.read()[:500]}")
