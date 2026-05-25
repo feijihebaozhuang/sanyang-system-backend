@@ -7,6 +7,7 @@
 
 from flask import Flask, jsonify, send_from_directory, request, make_response, Response, session
 from flask_cors import CORS
+from flask_session import Session as FlaskSession
 import json, datetime, csv, io, os, hashlib, copy, time, re, hmac, urllib.parse, urllib.request
 from datetime import timedelta
 from pypinyin import lazy_pinyin
@@ -61,6 +62,10 @@ app.config['SESSION_REFRESH_EACH_REQUEST'] = True
 app.config['SESSION_COOKIE_SECURE'] = os.getenv('SESSION_COOKIE_SECURE', '').lower() in (
     '1', 'true', 'yes'
 )
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SESSION_FILE_DIR'] = '/tmp/flask_session_prod'
+app.config['SESSION_FILE_THRESHOLD'] = 100
+FlaskSession(app)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 
@@ -565,6 +570,14 @@ def dashboard():
         if o.get('status') == '已完成'
     ])
 
+    # 筛选今日必发：pay_time/created 日期 = 今天的订单
+    today_str = datetime.date.today().isoformat()
+    today_orders = []
+    for o in all_orders:
+        t = o.get("pay_time", "") or o.get("created", "")
+        if t[:10] == today_str:
+            today_orders.append(o)
+
     return jsonify({
         "date": date,
         "summary": {
@@ -574,7 +587,7 @@ def dashboard():
             "urgent_orders": urgent_count,
             "completed": completed_count,
         },
-        "today_orders": [],
+        "today_orders": today_orders,
         "urgent_orders": urgent_orders,
     })
 
