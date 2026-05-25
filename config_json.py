@@ -311,6 +311,9 @@ def write_permission_overlay_detail(
                 vault_ok = True
     except ImportError:
         pass
+    except Exception as exc:
+        vault_ok = False
+        vault_error = f"vault 异常: {exc}"
     return {
         "ok": True,
         "local_ok": True,
