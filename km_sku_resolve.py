@@ -187,10 +187,9 @@ def enrich_production_spec(
     km_product: dict[str, Any] | None = None,
     sku: str = "",
 ) -> dict[str, Any]:
-    """
-    生产规格：仅用快麦商品档案/映射表结构化尺寸。
-    有商家编码时 **禁止** 从买家规格文本解析长宽高。
-    """
+    """生产规格：优先快麦商品档案/映射表结构化尺寸，缺时从规格文本兜底。"""
+    import production_spec as pspec
+
     if km_product and km_product.get("length") and km_product.get("width"):
         return _apply_product_dims_to_spec(
             ps,
@@ -214,6 +213,27 @@ def enrich_production_spec(
         out["platform_spec_raw"] = line1
 
     if (sku or "").strip():
+        if line1:
+            title = (ps.get("title") or "").strip()
+            text_dims = pspec.parse_dimensions_cm(line1, title=title)
+            l, w, h = text_dims.get("l"), text_dims.get("w"), text_dims.get("h")
+            if l and w:
+                product = {
+                    "length": l,
+                    "width": w,
+                    "height": h or 0,
+                    "material": "",
+                    "material_hint": "",
+                    "product_type": "",
+                    "dim_kind": "outer",
+                    "source": "order_text_fallback",
+                }
+                return _apply_product_dims_to_spec(
+                    ps,
+                    product,
+                    order_spec_raw=order_spec_raw,
+                    material_mapping=material_mapping,
+                )
         out["dimensions_ok"] = False
         out["dimensions_missing"] = ["长", "宽", "高"]
         out["km_dims_missing"] = True

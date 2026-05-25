@@ -205,6 +205,11 @@ def _normalize_parsed_dims_units(dims: dict[str, float], text: str) -> dict[str,
             m = re.search(pat, text, re.I)
             if m and key == "w" and _is_outer_dim_label_inside_lw_pair(text, m):
                 continue
+            if m and key == "h":
+                pos = m.start()
+                prefix = text[max(0, pos - 4) : pos]
+                if re.search(r"[宽长x×]$", prefix, re.I):
+                    continue
             if m:
                 out[key] = _val_to_cm(float(m.group(1)), m.groupdict().get("unit"))
                 break
