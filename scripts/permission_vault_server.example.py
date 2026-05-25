@@ -73,7 +73,12 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:
-        if self.path.rstrip("/") not in ("/permission_data.json", "/permission_data"):
+        if self.path.rstrip("/") not in (
+            "/permission_data.json",
+            "/permission_data",
+            "/api/permission_data.json",
+            "/api/permission_data",
+        ):
             self._json(404, {"error": "not found"})
             return
         if not _check_token(self):
@@ -82,7 +87,7 @@ class Handler(BaseHTTPRequestHandler):
         self._json(200, {"permission_data": _load()})
 
     def do_POST(self) -> None:
-        if self.path.rstrip("/") != "/permission_data":
+        if self.path.rstrip("/") not in ("/permission_data", "/api/permission_data"):
             self._json(404, {"error": "not found"})
             return
         if not _check_token(self):
