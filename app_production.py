@@ -325,9 +325,12 @@ if isinstance(_employee_today_status, dict):
         today = datetime.date.today().isoformat()
         _employee_today_status = {today: _employee_today_status}
 
+_perm_save_detail: dict = {}
+
+
 def persist():
     """持久化当前数据到文件（data.json，不覆盖 admin 未改动的其它键）。"""
-    global _employee_today_status, _employee_leave_counts, _permission_data, USERS, _resigned_employees, _employees_master_list
+    global _employee_today_status, _employee_leave_counts, _permission_data, USERS, _resigned_employees, _employees_master_list, _perm_save_detail
     # 把USERS的密码也存到文件（用户改密码后重启不丢）
     users_data = {}
     for uid, u in USERS.items():
@@ -350,8 +353,10 @@ def persist():
         "employees_master": _employees_master_list,
     }
     if not save_data(data):
+        _perm_save_detail = {"ok": False, "local_ok": False, "vault_error": "save_data 失败"}
         return False
-    return _cfg_json.write_permission_overlay(_permission_data)
+    _perm_save_detail = _cfg_json.write_permission_overlay_detail(_permission_data)
+    return bool(_perm_save_detail.get("ok"))
 
 # ==================== 登录API ====================
 @app.route('/api/login', methods=['POST'])
@@ -1692,6 +1697,7 @@ def process_timeout_api():
 
 @app.route('/api/permissions/data')
 def get_permissions_data():
+    _cfg_json.reload_permission_memory(_permission_data)
     _sync_all_employees_perms()
     return jsonify(_permission_data)
 
@@ -1726,13 +1732,20 @@ def save_permissions_data():
             _apply_employee_roles_to_users(data["employee_roles"])
         _sync_all_employees_perms()
         if not persist():
+            detail = dict(_perm_save_detail)
             return jsonify(
                 {
                     "success": False,
-                    "error": "权限保存失败，请查看服务日志",
+                    "error": detail.get("vault_error") or "权限保存失败，请查看服务日志",
+                    **detail,
                 }
             ), 500
-    return jsonify({"success": True, "message": "权限配置已保存"})
+        _cfg_json.reload_permission_memory(_permission_data)
+    detail = dict(_perm_save_detail)
+    msg = "权限配置已保存"
+    if detail.get("vault_error"):
+        msg += "（" + detail["vault_error"] + "）"
+    return jsonify({"success": True, "message": msg, **detail})
 
 
 def _production_material_mapping() -> list:
@@ -1744,6 +1757,7 @@ def _production_material_mapping() -> list:
 def get_production_material_mapping():
     if not resolve_login_user():
         return jsonify({"error": "未登录"}), 401
+    _cfg_json.reload_permission_memory(_permission_data)
     return jsonify({"success": True, "mapping": _production_material_mapping()})
 
 
@@ -1756,21 +1770,26 @@ def save_production_material_mapping():
     if not isinstance(mapping, list):
         return jsonify({"success": False, "message": "mapping 须为数组"}), 400
     _permission_data["production_material_mapping"] = mapping
-    persist()
-    return jsonify({"success": True, "mapping": mapping, "message": "已保存到 data.json"})
+    if not persist():
+        return jsonify({"success": False, "message": _perm_save_detail.get("vault_error") or "保存失败"}), 500
+    _cfg_json.reload_permission_memory(_permission_data)
+    return jsonify({"success": True, "mapping": mapping, "message": "已保存"})
 
 @app.route('/api/processes')
 def get_processes():
+    _cfg_json.reload_permission_memory(_permission_data)
     return jsonify({"processes": _permission_data.get("processes", [])})
 
 @app.route('/api/process_tree')
 def get_process_tree():
+    _cfg_json.reload_permission_memory(_permission_data)
     return jsonify({"tree": _permission_data.get("processes", [])})
 
 
 @app.route('/api/my_permissions')
 def get_my_permissions():
     """返回当前登录用户的完整权限映射"""
+    _cfg_json.reload_permission_memory(_permission_data)
     un = resolve_login_user()
     if not un:
         return jsonify({"error": "未登录", "code": 401}), 401
@@ -1805,7 +1824,9 @@ def save_processes():
     flows_resynced = 0
     if data and 'processes' in data:
         _permission_data['processes'] = data['processes']
-        persist()
+        if not persist():
+            return jsonify({"success": False, "message": _perm_save_detail.get("vault_error") or "保存失败"}), 500
+        _cfg_json.reload_permission_memory(_permission_data)
         flows_resynced = ph.resync_active_flows_from_tree(DB_CONFIG, data['processes'])
     return jsonify({
         "success": True,

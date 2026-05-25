@@ -90,23 +90,42 @@ def read_json_file(path: str | Path, default: Any) -> Any:
     return data
 
 
+def _read_local_permission_slice(base_dir: str | Path | None = None) -> dict[str, Any]:
+    raw = read_json_file(data_json_path(base_dir), {})
+    pd = raw.get("permission_data") if isinstance(raw, dict) else None
+    return pd if isinstance(pd, dict) else {}
+
+
 def read_permission_overlay(base_dir: str | Path | None = None) -> dict[str, Any]:
-    """读取 permission_data：优先独立配置服务器，否则 data.json。"""
+    """
+    读取 permission_data 权威视图（按键合并）：
+    - 本机 stable/data.json 中**非空键优先**（admin 网页保存写这里，Gunicorn 多 worker 读盘即同步）
+    - vault 仅补齐本机缺失/为空的键（156 备份、新机 bootstrap）
+    """
+    local = _read_local_permission_slice(base_dir)
+    remote: dict[str, Any] = {}
     try:
         import permission_vault as pv
 
         if pv.vault_enabled():
             try:
                 remote = pv.fetch_permission_overlay()
-                if remote:
-                    return remote
             except Exception as e:
-                print(f"[config_json] 保险库拉取失败，回退 data.json: {e}")
+                print(f"[config_json] 保险库拉取失败，仅用本机 data.json: {e}")
+                remote = {}
+            if not isinstance(remote, dict):
+                remote = {}
     except ImportError:
         pass
-    raw = read_json_file(data_json_path(base_dir), {})
-    pd = raw.get("permission_data")
-    return pd if isinstance(pd, dict) else {}
+    out: dict[str, Any] = {}
+    for key in PERMISSION_JSON_KEYS:
+        lv = local.get(key)
+        rv = remote.get(key) if remote else None
+        if _overlay_value_usable(lv):
+            out[key] = copy.deepcopy(lv)
+        elif _overlay_value_usable(rv):
+            out[key] = copy.deepcopy(rv)
+    return out
 
 
 def apply_permission_overlay(
@@ -175,19 +194,34 @@ def apply_permission_overlay(
             permission_data[key] = copy.deepcopy(val)
 
 
-def refresh_permission_from_vault(permission_data: dict) -> None:
-    """读接口刷新：多 worker 下从保险库拉最新 permission_data（即时生效）。"""
+def reload_permission_memory(
+    permission_data: dict,
+    *,
+    base_dir: str | Path | None = None,
+) -> dict[str, Any]:
+    """
+    从 data.json + 156 vault 刷新内存（每个 Gunicorn worker 读 API 前调用，保存后立即生效）。
+    """
+    overlay = read_permission_overlay(base_dir)
+    for key in PERMISSION_JSON_KEYS:
+        val = overlay.get(key)
+        if _overlay_value_usable(val):
+            permission_data[key] = copy.deepcopy(val)
+    meta: dict[str, Any] = {"reloaded": True}
     try:
         import permission_vault as pv
 
-        if not pv.vault_enabled():
-            return
-        remote = pv.fetch_permission_overlay()
-        if not remote:
-            return
-        _apply_vault_keys(permission_data, remote, keys=PERMISSION_JSON_KEYS)
-    except Exception as e:
-        print(f"[config_json] 保险库刷新失败: {e}")
+        meta["vault_enabled"] = pv.vault_enabled()
+        meta["vault_readonly"] = pv.vault_readonly_on_app()
+    except ImportError:
+        meta["vault_enabled"] = False
+        meta["vault_readonly"] = False
+    return meta
+
+
+def refresh_permission_from_vault(permission_data: dict) -> None:
+    """兼容旧名：读接口刷新（多 worker 下必须用 reload_permission_memory）。"""
+    reload_permission_memory(permission_data)
 
 
 def _write_permission_data_local(
@@ -228,21 +262,61 @@ def write_permission_overlay(
     base_dir: str | Path | None = None,
     keys: frozenset[str] = PERMISSION_JSON_KEYS,
 ) -> bool:
-    """Admin 保存：先写本机 data.json，再尽力 POST 156 vault。"""
+    """Admin 保存：写本机 data.json，并尽力 POST 156 vault。返回是否整体成功。"""
+    result = write_permission_overlay_detail(
+        permission_data, base_dir=base_dir, keys=keys
+    )
+    return bool(result.get("ok"))
+
+
+def write_permission_overlay_detail(
+    permission_data: dict,
+    *,
+    base_dir: str | Path | None = None,
+    keys: frozenset[str] = PERMISSION_JSON_KEYS,
+) -> dict[str, Any]:
+    """返回 local_ok / vault_ok / 错误说明，供 API 提示 admin。"""
     local_ok = _write_permission_data_local(
         permission_data, base_dir=base_dir, keys=keys
     )
+    vault_ok: bool | None = None
+    vault_error = ""
     if not local_ok:
-        return False
+        return {
+            "ok": False,
+            "local_ok": False,
+            "vault_ok": None,
+            "vault_error": "写入 stable/data.json 失败，请检查目录权限",
+        }
     try:
         import permission_vault as pv
 
-        if pv.vault_enabled() and not pv.vault_readonly_on_app():
-            if not pv.push_permission_overlay(permission_data, keys=keys):
-                print("[config_json] vault POST 失败，已保留本机 data.json 镜像")
+        if pv.vault_enabled():
+            if pv.vault_readonly_on_app():
+                vault_ok = False
+                vault_error = (
+                    "已保存本机 data.json；未配置 PERMISSION_VAULT_WRITE_URL，"
+                    "156 权限机未更新。请在 87 stable/.env 配置 WRITE_URL 后重启。"
+                )
+            elif not pv.push_permission_overlay(permission_data, keys=keys):
+                vault_ok = False
+                vault_error = "本机已保存，但 POST 156 权限机失败，请检查 TOKEN/防火墙"
+                return {
+                    "ok": False,
+                    "local_ok": True,
+                    "vault_ok": False,
+                    "vault_error": vault_error,
+                }
+            else:
+                vault_ok = True
     except ImportError:
         pass
-    return True
+    return {
+        "ok": True,
+        "local_ok": True,
+        "vault_ok": vault_ok,
+        "vault_error": vault_error,
+    }
 
 
 def match_material_from_mapping(text: str, mapping: list[dict] | None) -> str:

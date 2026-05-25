@@ -402,9 +402,12 @@ if isinstance(_employee_today_status, dict):
         today = datetime.date.today().isoformat()
         _employee_today_status = {today: _employee_today_status}
 
+_perm_save_detail: dict = {}
+
+
 def persist():
     """持久化当前数据到 MySQL；permission_data 写入 156 vault 并镜像 data.json。"""
-    global _employee_today_status, _permission_data, USERS, _resigned_employees
+    global _employee_today_status, _permission_data, USERS, _resigned_employees, _perm_save_detail
     users_data = {}
     for uid, u in USERS.items():
         entry = {
@@ -424,8 +427,10 @@ def persist():
         "resigned_employees": _resigned_employees
     }
     if not save_data(data):
+        _perm_save_detail = {"ok": False, "local_ok": False, "vault_error": "save_data 失败"}
         return False
-    return _cfg_json_cs.write_permission_overlay(_permission_data)
+    _perm_save_detail = _cfg_json_cs.write_permission_overlay_detail(_permission_data)
+    return bool(_perm_save_detail.get("ok"))
 
 # ==================== 登录API ====================
 @app.route('/api/login', methods=['POST'])
@@ -2707,29 +2712,9 @@ def permissions():
 
 @app.route('/api/permissions/data')
 def permissions_data():
+    _cfg_json_cs.reload_permission_memory(_permission_data)
     _sync_all_employees_perms()
-    employees = _employees_master_list
-    perms = _permission_data.get("permissions", {})
-    return jsonify({
-        "employees": employees,
-        "permissions": perms,
-        "roles": [
-            {"name": "超级管理员", "desc": "所有权限", "count": 2},
-            {"name": "主管", "desc": "生产管理、员工查看", "count": 5},
-            {"name": "客服", "desc": "订单查看、生产进度", "count": 10},
-            {"name": "员工", "desc": "扫码报工、查看任务", "count": 20},
-        ],
-        "menu_modules": [
-            {"name": "首页", "perms": ["今日订单", "生产概览", "销售概览"]},
-            {"name": "报价", "perms": ["报价计算", "报价参数"]},
-            {"name": "刀模", "perms": ["刀模查询", "刀模录入"]},
-            {"name": "库存", "perms": ["成品库存", "原材料库存"]},
-            {"name": "订单进度", "perms": ["生产进度", "加急管理"]},
-            {"name": "数据看板", "perms": ["销售数据", "生产数据"]},
-            {"name": "实时订单", "perms": ["订单查看", "客服分配"]},
-            {"name": "员工", "perms": ["员工查看", "员工管理"]},
-        ]
-    })
+    return jsonify(_permission_data)
 
 @app.route('/api/employees')
 def employees_list():
@@ -3587,13 +3572,20 @@ def api_permissions_save():
         return jsonify({"success": False, "error": f"MySQL 同步失败: {e}"}), 500
     _sync_all_employees_perms()
     if not persist():
+        detail = dict(_perm_save_detail)
         return jsonify(
             {
                 "success": False,
-                "error": "权限保存失败，请查看服务日志",
+                "error": detail.get("vault_error") or "权限保存失败，请查看服务日志",
+                **detail,
             }
         ), 500
-    return jsonify({"success": True, "message": "保存成功"})
+    _cfg_json_cs.reload_permission_memory(_permission_data)
+    detail = dict(_perm_save_detail)
+    msg = "保存成功"
+    if detail.get("vault_error"):
+        msg += "（" + detail["vault_error"] + "）"
+    return jsonify({"success": True, "message": msg, **detail})
 
 @app.route('/api/qrcode/<order_id>')
 def api_qrcode(order_id):

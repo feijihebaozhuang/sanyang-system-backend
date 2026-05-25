@@ -18,8 +18,14 @@ ENV_FILE="$STABLE/.env"
 if [ -f "$ENV_FILE" ] && ! grep -q '^PERMISSION_VAULT_WRITE_URL=' "$ENV_FILE" 2>/dev/null; then
   VAULT_URL="$(grep '^PERMISSION_VAULT_URL=' "$ENV_FILE" | head -1 | cut -d= -f2- | tr -d '\r')"
   if [ -n "$VAULT_URL" ]; then
-    echo "PERMISSION_VAULT_WRITE_URL=$VAULT_URL" >> "$ENV_FILE"
-    echo "已追加 PERMISSION_VAULT_WRITE_URL"
+    WRITE_URL="${VAULT_URL%.json}/permission_data"
+    if [[ "$VAULT_URL" == *permission_data.json ]]; then
+      WRITE_URL="${VAULT_URL%.json}"
+    elif [[ "$VAULT_URL" == *permission_data ]]; then
+      WRITE_URL="$VAULT_URL"
+    fi
+    echo "PERMISSION_VAULT_WRITE_URL=$WRITE_URL" >> "$ENV_FILE"
+    echo "已追加 PERMISSION_VAULT_WRITE_URL=$WRITE_URL"
   fi
 fi
 

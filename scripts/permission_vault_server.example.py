@@ -36,6 +36,8 @@ def _check_token(handler: BaseHTTPRequestHandler) -> bool:
         return True
     if handler.headers.get("X-Config-Token") == TOKEN:
         return True
+    if handler.headers.get("X-Vault-Token") == TOKEN:
+        return True
     return False
 
 

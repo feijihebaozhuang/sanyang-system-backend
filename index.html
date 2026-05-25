@@ -3761,9 +3761,12 @@
         });
         const data = await res.json();
         if (data.success) {
-            alert('✅ ' + data.message);
+            let msg = '✅ ' + (data.message || '权限已保存');
+            if (data.vault_error) msg += '\n⚠️ ' + data.vault_error;
+            alert(msg);
+            await loadPermissionTable();
         } else {
-            alert('❌ 保存失败');
+            alert('❌ 保存失败：' + (data.error || data.vault_error || '未知错误'));
         }
     }
 
