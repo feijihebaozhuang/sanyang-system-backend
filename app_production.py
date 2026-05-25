@@ -311,6 +311,9 @@ for uid, uinfo in _loaded_users.items():
 _employee_today_status = persistent_data.get("employee_status", {})
 _employee_leave_counts = persistent_data.get("employee_leave_counts", {})
 _order_extra = persistent_data.get("order_extra", {})
+import order_extra_store as _order_extra_store
+
+_order_extra_store.merge_urgent_into(_order_extra, get_db)
 _permission_data = persistent_data.get("permission_data", {})
 _resigned_employees = persistent_data.get("resigned_employees", [])  # 离职员工列表[{name, position, group, dept, phone, resigned_time}]
 
@@ -331,6 +334,11 @@ if isinstance(_employee_today_status, dict):
         _employee_today_status = {today: _employee_today_status}
 
 _perm_save_detail: dict = {}
+
+
+def _sync_order_extra_from_db() -> None:
+    """从 MySQL order_extras 刷新加急（客服端改完后生产端立即可见）。"""
+    _order_extra_store.merge_urgent_into(_order_extra, get_db)
 
 
 def persist():
@@ -516,6 +524,7 @@ def get_current_user():
 # ==================== 首页 - 生产概览 ====================
 @app.route('/api/dashboard')
 def dashboard():
+    _sync_order_extra_from_db()
     date = request.args.get('date', datetime.date.today().strftime('%Y-%m-%d'))
     shop_config = load_shop_config()
 
@@ -609,6 +618,7 @@ def dashboard():
 @app.route('/api/production_orders')
 def production_orders():
     """待发货订单 + 工序树进度（扫码报工/进度查询）"""
+    _sync_order_extra_from_db()
     process_tree = _permission_data.get("processes", [])
     orders_data = ph.build_production_orders(
         _orders_cache_path(),
@@ -760,6 +770,7 @@ def _production_status_from_flow(flow):
 @app.route('/api/search_order')
 def search_order():
     """扫码/输入单号：从 orders_cache.json 查订单（快麦+1688）。"""
+    _sync_order_extra_from_db()
     query = (request.args.get('q') or '').strip()
     if not query:
         return jsonify({"found": False, "message": "请输入单号"})
@@ -1270,7 +1281,9 @@ def order_urgent():
         if oid not in _order_extra:
             _order_extra[oid] = {}
         _order_extra[oid]['urgent'] = urgent
+        _order_extra_store.upsert_urgent(get_db, oid, urgent)
         persist()
+        _order_extra_store.mirror_order_extra_to_data_json(_order_extra)
     return jsonify({"success": True, "order_id": oid, "urgent": urgent})
 
 # ==================== 导出今日考勤CSV ====================
@@ -4599,6 +4612,10 @@ def production_dashboard():
         _rebuild_prod_dashboard_cache, force=force
     )
     orders = list(cache.get("orders") or [])
+    _sync_order_extra_from_db()
+    for o in orders:
+        sid = o.get("so_id") or ""
+        o["urgent"] = bool(_order_extra.get(sid, {}).get("urgent"))
 
     shop = (request.args.get("shop") or "").strip()
     ptype = (request.args.get("type") or "").strip()

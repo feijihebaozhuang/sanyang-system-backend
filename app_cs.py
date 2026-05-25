@@ -383,6 +383,9 @@ for uid, uinfo in _loaded_users.items():
     }
 _employee_today_status = persistent_data.get("employee_status", {})
 _order_extra = persistent_data.get("order_extra", {})
+import order_extra_store as _order_extra_store
+
+_order_extra_store.merge_urgent_into(_order_extra, get_db)
 _permission_data = persistent_data.get("permission_data", {})
 _resigned_employees = persistent_data.get("resigned_employees", [])  # 离职员工列表[{name, position, group, dept, phone, resigned_time}]
 
@@ -403,6 +406,10 @@ if isinstance(_employee_today_status, dict):
         _employee_today_status = {today: _employee_today_status}
 
 _perm_save_detail: dict = {}
+
+
+def _sync_order_extra_from_db() -> None:
+    _order_extra_store.merge_urgent_into(_order_extra, get_db)
 
 
 def persist():
@@ -429,6 +436,7 @@ def persist():
     if not save_data(data):
         _perm_save_detail = {"ok": False, "local_ok": False, "vault_error": "save_data 失败"}
         return False
+    _order_extra_store.mirror_order_extra_to_data_json(_order_extra)
     _perm_save_detail = _cfg_json_cs.write_permission_overlay_detail(_permission_data)
     # 调试强制注入
     import os as _os
@@ -791,6 +799,7 @@ def _dashboard_shop_info(shop_name: str) -> dict:
 @app.route('/api/dashboard')
 def dashboard():
     """今日订单 - 从 orders_cache（快麦+1688）读取"""
+    _sync_order_extra_from_db()
     date = request.args.get('date', datetime.date.today().strftime('%Y-%m-%d'))
     
     # 读取订单缓存（MySQL）+ 后台增量同步
@@ -1093,6 +1102,7 @@ def order_urgent():
         if oid not in _order_extra:
             _order_extra[oid] = {}
         _order_extra[oid]['urgent'] = urgent
+        _order_extra_store.upsert_urgent(get_db, oid, urgent)
         persist()
     return jsonify({"success": True, "order_id": oid, "urgent": urgent})
 
@@ -3349,6 +3359,7 @@ def _build_production_orders_for_cs():
 @app.route("/api/production_orders")
 def api_production_orders():
     """客服端：订单生产进度（与主站同源数据结构）"""
+    _sync_order_extra_from_db()
     return jsonify({"orders": _build_production_orders_for_cs()})
 
 @app.route('/api/scan_logs')
