@@ -68,6 +68,14 @@ app.config['SESSION_FILE_THRESHOLD'] = 100
 FlaskSession(app)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
+# 小程序 API 同时挂到 3002（feijihe.top 证书可用；guanli 子域 SSL 未配时走此入口）
+try:
+    from mp_api import mp_bp as _mp_bp
+
+    app.register_blueprint(_mp_bp)
+except ImportError:  # pragma: no cover
+    pass
+
 
 @app.before_request
 def _sync_login_session_from_token():
