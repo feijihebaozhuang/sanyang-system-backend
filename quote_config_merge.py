@@ -36,8 +36,6 @@ def merge_quote_config(existing: dict | None, patch: dict | None) -> dict:
         return base
     for key, val in patch.items():
         if key == "material_mapping" and isinstance(val, list):
-            if not val:
-                continue
             base["material_mapping"] = enrich_material_mapping(
                 [
                     _normalize_material_row(row)

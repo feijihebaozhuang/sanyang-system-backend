@@ -198,16 +198,22 @@ def reload_permission_memory(
     permission_data: dict,
     *,
     base_dir: str | Path | None = None,
+    from_vault: bool = False,
 ) -> dict[str, Any]:
     """
-    从 data.json + 156 vault 刷新内存（每个 Gunicorn worker 读 API 前调用，保存后立即生效）。
+    刷新内存中的 permission_data。
+    - 默认只读本机 stable/data.json（多 worker 同步、admin 刚保存的内容）
+    - from_vault=True 时才合并 156（仅启动/bootstrap 用，避免 vault 旧数据冲掉本机）
     """
-    overlay = read_permission_overlay(base_dir)
+    if from_vault:
+        overlay = read_permission_overlay(base_dir)
+    else:
+        overlay = _read_local_permission_slice(base_dir)
     for key in PERMISSION_JSON_KEYS:
         val = overlay.get(key)
         if _overlay_value_usable(val):
             permission_data[key] = copy.deepcopy(val)
-    meta: dict[str, Any] = {"reloaded": True}
+    meta: dict[str, Any] = {"reloaded": True, "source": "vault" if from_vault else "local"}
     try:
         import permission_vault as pv
 
@@ -301,12 +307,6 @@ def write_permission_overlay_detail(
             elif not pv.push_permission_overlay(permission_data, keys=keys):
                 vault_ok = False
                 vault_error = "本机已保存，但 POST 156 权限机失败，请检查 TOKEN/防火墙"
-                return {
-                    "ok": False,
-                    "local_ok": True,
-                    "vault_ok": False,
-                    "vault_error": vault_error,
-                }
             else:
                 vault_ok = True
     except ImportError:
@@ -314,16 +314,47 @@ def write_permission_overlay_detail(
     except Exception as exc:
         vault_ok = False
         vault_error = f"vault 异常: {exc}"
-        import traceback; traceback.print_exc()
+        import traceback
+
+        traceback.print_exc()
+    # 本机 data.json 成功即视为保存成功；vault 失败仅警告（避免刷新后像没保存）
     return {
-        "ok": True,
-        "local_ok": True,
+        "ok": bool(local_ok),
+        "local_ok": local_ok,
         "vault_ok": vault_ok,
         "vault_error": vault_error,
     }
 
 
-def match_material_from_mapping(text: str, mapping: list[dict] | None) -> str:
+def quote_rows_to_production_mapping(rows: list[dict] | None) -> list[dict]:
+    """报价页 material_mapping → permission_data.production_material_mapping。"""
+    out: list[dict] = []
+    if not isinstance(rows, list):
+        return out
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        label = (row.get("material_name") or row.get("label") or "").strip()
+        keywords = (row.get("keywords") or "").strip()
+        if label or keywords:
+            out.append({"label": label, "keywords": keywords})
+    return out
+
+
+def sync_production_mapping_from_quote(
+    permission_data: dict,
+    quote_rows: list[dict] | None,
+    *,
+    base_dir: str | Path | None = None,
+) -> dict[str, Any]:
+    """保存报价材料映射时同步写入 permission_data + 本机 JSON + 156。"""
+    mapping = quote_rows_to_production_mapping(quote_rows)
+    if not mapping:
+        return {"ok": True, "skipped": True}
+    permission_data["production_material_mapping"] = mapping
+    return write_permission_overlay_detail(
+        permission_data, base_dir=base_dir, keys=frozenset({"production_material_mapping"})
+    )
     """按 data.json 中 production_material_mapping 匹配材质。"""
     low = (text or "").lower()
     if not mapping:

@@ -1259,6 +1259,7 @@
                 <button onclick="loadPermissionTable()" style="padding:6px 16px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">🔐 功能权限管理</button>
                 <button onclick="loadResignedEmployees()" style="padding:6px 16px;background:#333;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">🗑️ 回收站</button>
                 <button id="permQuoteBtn" onclick="loadQuoteConfigEditor()" style="padding:6px 16px;background:#fa8c16;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;">📋 报价参数</button>
+                <button type="button" onclick="loadProductionMaterialMappingEditor()" style="padding:6px 16px;background:#13c2c2;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;">🏭 生产材质映射</button>
                 <span id="permStat" style="font-size:12px;color:#888;"></span>
             </div>
             <div id="permMainContent" style="min-height:200px;">
@@ -4284,6 +4285,60 @@
         }
     }
 
+    // ===== 生产材质映射（打单/算料，写入 data.json + 156）=====
+    async function loadProductionMaterialMappingEditor() {
+        const main = document.getElementById('permMainContent');
+        document.getElementById('permStat').textContent = '加载生产材质映射...';
+        try {
+            const res = await fetch('/api/production/material-mapping');
+            const data = await res.json();
+            const mapping = (data.success && data.mapping) ? data.mapping : [];
+            let rows = '';
+            mapping.forEach(function(m) {
+                const label = (m.label || m.material_name || '').replace(/"/g, '&quot;');
+                const kw = (m.keywords || '').replace(/"/g, '&quot;');
+                rows += '<tr><td style="padding:6px 8px;border:1px solid #e8e8e8;"><input type="text" class="prod-map-label" value="' + label + '" style="width:100px;padding:4px 6px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;"></td>' +
+                    '<td style="padding:6px 8px;border:1px solid #e8e8e8;"><input type="text" class="prod-map-keywords" value="' + kw + '" style="width:100%;padding:4px 6px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;"></td>' +
+                    '<td style="padding:6px 8px;border:1px solid #e8e8e8;text-align:center;"><button type="button" onclick="this.closest(\'tr\').remove()" style="padding:2px 8px;background:#e94560;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:11px;">删除</button></td></tr>';
+            });
+            main.innerHTML = '<div class="order-table-wrap"><div class="table-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">' +
+                '<span>🏭 生产材质映射 <span style="font-size:11px;color:#888;">— 保存后刷新不变</span></span>' +
+                '<div style="display:flex;gap:8px;"><button type="button" onclick="addProductionMaterialMappingRow()" style="padding:4px 12px;background:#52c41a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">+ 添加</button>' +
+                '<button type="button" onclick="saveProductionMaterialMapping()" style="padding:4px 12px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">💾 保存</button></div></div>' +
+                '<div style="overflow-x:auto;padding:8px;"><table id="prodMaterialMapTable" style="min-width:520px;width:100%;"><thead><tr><th>生产简称</th><th>匹配关键词</th><th>操作</th></tr></thead><tbody>' +
+                (rows || '<tr><td colspan="3" style="text-align:center;color:#999;padding:16px;">暂无</td></tr>') + '</tbody></table></div></div>';
+            document.getElementById('permStat').textContent = '共 ' + mapping.length + ' 条';
+        } catch (e) {
+            main.innerHTML = '<div style="color:#e94560;padding:20px;">加载失败: ' + e.message + '</div>';
+        }
+    }
+    function addProductionMaterialMappingRow() {
+        const tbody = document.querySelector('#prodMaterialMapTable tbody');
+        if (!tbody) return;
+        if (tbody.querySelector('td[colspan]')) tbody.innerHTML = '';
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td style="padding:6px 8px;"><input type="text" class="prod-map-label" placeholder="特硬" style="width:100px;padding:4px 6px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;"></td>' +
+            '<td style="padding:6px 8px;"><input type="text" class="prod-map-keywords" style="width:100%;padding:4px 6px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;"></td>' +
+            '<td style="padding:6px 8px;text-align:center;"><button type="button" onclick="this.closest(\'tr\').remove()" style="padding:2px 8px;background:#e94560;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:11px;">删除</button></td>';
+        tbody.appendChild(tr);
+    }
+    async function saveProductionMaterialMapping() {
+        const mapping = [];
+        document.querySelectorAll('#prodMaterialMapTable tbody tr').forEach(function(tr) {
+            const label = (tr.querySelector('.prod-map-label') || {}).value || '';
+            const keywords = (tr.querySelector('.prod-map-keywords') || {}).value || '';
+            if (label.trim() || keywords.trim()) mapping.push({ label: label.trim(), keywords: keywords.trim() });
+        });
+        const res = await fetch('/api/production/material-mapping', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mapping }) });
+        const data = await res.json();
+        if (data.success) {
+            let msg = '✅ ' + (data.message || '已保存');
+            if (data.vault_error) msg += '\n⚠️ ' + data.vault_error;
+            alert(msg);
+            loadProductionMaterialMappingEditor();
+        } else alert('❌ ' + (data.message || data.error || '保存失败'));
+    }
+
     // ===== 报价参数配置（在权限管理页面） =====
     async function loadQuoteConfigEditor() {
         const container = document.getElementById('permMainContent');
@@ -4445,6 +4500,7 @@
                 }
             });
             if (mappingRows.length) patch.material_mapping = mappingRows;
+            else patch.material_mapping = [];
 
             const saveRes = await fetch('/api/quote/save_config', {
                 method: 'POST',

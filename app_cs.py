@@ -452,7 +452,7 @@ def persist():
         _os.environ.setdefault("PERMISSION_VAULT_WRITE_URL", "http://8.163.107.156:9443/api/permission_data")
         _os.environ.setdefault("PERMISSION_VAULT_TOKEN", "7854f273a06f21ce9b93dbdde816e131146afe6b11c39b9576b8cb5c7009d622")
         _perm_save_detail = _cfg_json_cs.write_permission_overlay_detail(_permission_data)
-    return bool(_perm_save_detail.get("ok"))
+    return bool(_perm_save_detail.get("local_ok"))
 
 # ==================== 登录API ====================
 @app.route('/api/login', methods=['POST'])
@@ -1763,6 +1763,7 @@ def get_quote_data():
 @app.route('/api/quote/save_config', methods=['POST'])
 def save_quote_config():
     """保存报价配置（仅权限管理角色可操作）"""
+    global _permission_data
     try:
         # 检查权限
         if 'username' not in session:
@@ -1791,10 +1792,17 @@ def save_quote_config():
 
         existing = load_quote_data() or {}
         merged = merge_quote_config(existing, patch)
-        if save_quote_data(merged):
-            return jsonify({"success": True, "message": "报价配置已保存"})
-        else:
+        if not save_quote_data(merged):
             return jsonify({"success": False, "error": "保存失败"})
+        sync_detail: dict = {}
+        if isinstance(patch, dict) and "material_mapping" in patch:
+            sync_detail = _cfg_json_cs.sync_production_mapping_from_quote(
+                _permission_data, merged.get("material_mapping")
+            )
+        msg = "报价配置已保存"
+        if sync_detail.get("vault_error"):
+            msg += "（" + sync_detail["vault_error"] + "）"
+        return jsonify({"success": True, "message": msg, "sync": sync_detail})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
 
@@ -3628,7 +3636,6 @@ def api_permissions_save():
                 **detail,
             }
         ), 500
-    _cfg_json_cs.reload_permission_memory(_permission_data)
     detail = dict(_perm_save_detail)
     msg = "保存成功"
     if detail.get("vault_error"):
