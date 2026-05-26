@@ -557,6 +557,19 @@ def ensure_customer_for_openid(
     return get_customer_by_id(int(cid)) or {"id": cid, "name": label, "wx_openid": openid}
 
 
+def get_cs_staff(staff_id: int) -> dict | None:
+    if not staff_id:
+        return None
+    ensure_tables()
+    db = connect()
+    try:
+        cur = db.cursor()
+        cur.execute("SELECT * FROM co_cs_staff WHERE id=%s LIMIT 1", (int(staff_id),))
+        return cur.fetchone()
+    finally:
+        db.close()
+
+
 def find_cs_staff_by_openid(openid: str) -> dict | None:
     openid = (openid or "").strip()
     if not openid:

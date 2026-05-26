@@ -53,6 +53,16 @@ def _customer_from_request():
     return None
 
 
+def _cs_session_allowed(cs: dict) -> bool:
+    if cs.get("auth_mode") == "pwd":
+        user = mp_auth.find_user_by_username(cs.get("username") or "")
+    else:
+        staff = co_store.get_cs_staff(int(cs.get("cs_staff_id") or 0))
+        en = (staff.get("employee_name") if staff else "") or cs.get("username") or ""
+        user = mp_auth.find_user_by_employee_name(en)
+    return mp_auth.user_can_use_quote_weapp(user)
+
+
 def _cs_from_request():
     body = request.get_json(silent=True) or {}
     token = (request.headers.get("Authorization") or "").replace("Bearer ", "").strip()
@@ -61,19 +71,50 @@ def _cs_from_request():
     openid = (body.get("openid") or request.headers.get("X-Mp-Openid") or "").strip()
     cs_id_raw = body.get("cs_staff_id") or request.headers.get("X-Mp-Cs-Id") or ""
     cs_id = int(cs_id_raw) if cs_id_raw not in ("", None) else None
+    cs = None
     if openid and cs_id and token and mp_auth.verify_cs_wx_token(openid, int(cs_id), token):
         staff = co_store.find_cs_staff_by_openid(openid)
         if staff and int(staff.get("id") or 0) == int(cs_id):
-            return {
+            cs = {
                 "username": staff.get("employee_name") or "",
                 "cs_staff_id": cs_id,
                 "openid": openid,
                 "auth_mode": "wx",
             }
-    username = (body.get("username") or request.headers.get("X-Mp-User") or "").strip()
-    if username and token and mp_auth.verify_cs_token(username, cs_id, token):
-        return {"username": username, "cs_staff_id": cs_id, "auth_mode": "pwd"}
+    if not cs:
+        username = (body.get("username") or request.headers.get("X-Mp-User") or "").strip()
+        if username and token and mp_auth.verify_cs_token(username, cs_id, token):
+            cs = {"username": username, "cs_staff_id": cs_id, "auth_mode": "pwd"}
+    if cs and _cs_session_allowed(cs):
+        return cs
     return None
+
+
+def _require_cs_or_forbidden():
+    body = request.get_json(silent=True) or {}
+    token = (request.headers.get("Authorization") or "").replace("Bearer ", "").strip()
+    if not token:
+        token = (body.get("token") or request.headers.get("X-Mp-Token") or "").strip()
+    if not token:
+        return None, (jsonify({"success": False, "error": "请先登录", "code": 401}), 401)
+    cs = _cs_from_request()
+    if cs:
+        return cs, None
+    # 有 token 但角色不对
+    openid = (request.headers.get("X-Mp-Openid") or "").strip()
+    username = (request.headers.get("X-Mp-User") or "").strip()
+    if openid or username:
+        return None, (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "仅客服和超级管理员可使用报价小程序",
+                    "code": 403,
+                }
+            ),
+            403,
+        )
+    return None, (jsonify({"success": False, "error": "请先登录", "code": 401}), 401)
 
 
 @mp_bp.route("/wx/login", methods=["POST"])
@@ -112,12 +153,18 @@ def mp_categories():
 
 @mp_bp.route("/quote_data")
 def mp_quote_data():
+    _, err = _require_cs_or_forbidden()
+    if err:
+        return err
     res = _proxy_json("GET", "/api/quote_data")
     return jsonify(res)
 
 
 @mp_bp.route("/quote/calculate", methods=["POST"])
 def mp_quote_calculate():
+    _, err = _require_cs_or_forbidden()
+    if err:
+        return err
     payload = request.get_json(silent=True) or {}
     cat = (payload.get("product_category_code") or payload.get("type") or "").strip()
     # 映射 co 分类码 → 报价 type
@@ -207,9 +254,9 @@ def mp_cs_login():
     username = (data.get("username") or "").strip()
     password = (data.get("password") or "").strip()
     code = (data.get("code") or "").strip()
-    user = mp_auth.verify_cs_password(username, password)
+    user, auth_err = mp_auth.verify_quote_weapp_password(username, password)
     if not user:
-        return jsonify({"success": False, "error": "账号或密码错误，或无客服权限（须为客服/主管/管理员）"}), 401
+        return jsonify({"success": False, "error": auth_err or "登录失败"}), 401
     try:
         cs_staff_id = co_store.ensure_cs_staff_for_user(user)
     except ValueError as e:
@@ -232,6 +279,7 @@ def mp_cs_login():
             "username": username,
             "display_name": user.get("display_name") or username,
             "employee_name": en,
+            "role": user.get("role") or "",
             "cs_staff_id": cs_staff_id,
             "token": tok,
             "openid": openid,
@@ -260,6 +308,15 @@ def mp_cs_wx_login():
                     "error": "首次使用请绑定 3001 账号",
                 }
             ), 401
+        user = mp_auth.find_user_by_employee_name(staff.get("employee_name") or "")
+        if not mp_auth.user_can_use_quote_weapp(user):
+            return jsonify(
+                {
+                    "success": False,
+                    "error": "仅客服和超级管理员可使用报价小程序",
+                    "code": 403,
+                }
+            ), 403
         cs_staff_id = int(staff["id"])
         tok = mp_auth.cs_wx_token(openid, cs_staff_id)
         return jsonify(
@@ -270,6 +327,7 @@ def mp_cs_wx_login():
                 "token": tok,
                 "display_name": staff.get("employee_name") or "",
                 "employee_name": staff.get("employee_name") or "",
+                "role": (user or {}).get("role") or "",
                 "phone": staff.get("phone") or "",
                 "auth_mode": "wx",
             }
@@ -286,9 +344,9 @@ def mp_cs_wx_bind():
     password = (data.get("password") or "").strip()
     if not code:
         return jsonify({"success": False, "error": "code 必填"}), 400
-    user = mp_auth.verify_cs_password(username, password)
+    user, auth_err = mp_auth.verify_quote_weapp_password(username, password)
     if not user:
-        return jsonify({"success": False, "error": "账号或密码错误，或无客服权限（须为客服/主管/管理员）"}), 401
+        return jsonify({"success": False, "error": auth_err or "绑定失败"}), 401
     try:
         sess = mp_auth.wx_code_to_session(code, app="cs")
         openid = (sess.get("openid") or "").strip()
@@ -304,6 +362,7 @@ def mp_cs_wx_bind():
                 "token": tok,
                 "display_name": staff.get("employee_name") or en,
                 "employee_name": staff.get("employee_name") or en,
+                "role": user.get("role") or "",
                 "phone": staff.get("phone") or "",
                 "auth_mode": "wx",
             }
@@ -314,9 +373,10 @@ def mp_cs_wx_bind():
 
 @mp_bp.route("/cs/orders")
 def mp_cs_orders():
+    _, err = _require_cs_or_forbidden()
+    if err:
+        return err
     cs = _cs_from_request()
-    if not cs:
-        return jsonify({"success": False, "error": "请先登录", "code": 401}), 401
     status = (request.args.get("status") or "").strip()
     keyword = (request.args.get("keyword") or "").strip()
     cs_id = cs.get("cs_staff_id")
@@ -331,9 +391,10 @@ def mp_cs_orders():
 
 @mp_bp.route("/cs/order/<int:order_id>")
 def mp_cs_order_detail(order_id: int):
+    _, err = _require_cs_or_forbidden()
+    if err:
+        return err
     cs = _cs_from_request()
-    if not cs:
-        return jsonify({"success": False, "error": "请先登录", "code": 401}), 401
     item = co_store.get_order(order_id)
     if not item:
         return jsonify({"success": False, "error": "订单不存在"}), 404
@@ -345,9 +406,10 @@ def mp_cs_order_detail(order_id: int):
 
 @mp_bp.route("/cs/order/review", methods=["POST"])
 def mp_cs_order_review():
+    _, err = _require_cs_or_forbidden()
+    if err:
+        return err
     cs = _cs_from_request()
-    if not cs:
-        return jsonify({"success": False, "error": "请先登录", "code": 401}), 401
     data = request.get_json(silent=True) or {}
     oid = int(data.get("id") or data.get("order_id") or 0)
     if not oid:

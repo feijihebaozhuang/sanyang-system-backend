@@ -101,17 +101,24 @@ def wx_code_to_session(code: str, *, app: str = "customer") -> dict[str, Any]:
     }
 
 
-def verify_cs_password(username: str, password: str) -> dict | None:
-    """校验 users 表（与 3001 相同账号）。"""
-    import hashlib as _hl
+QUOTE_WEAPP_ROLES = frozenset({"客服", "超级管理员"})
 
+
+def user_can_use_quote_weapp(user: dict | None) -> bool:
+    if not user:
+        return False
+    if not user.get("enabled", 1):
+        return False
+    return (user.get("role") or "").strip() in QUOTE_WEAPP_ROLES
+
+
+def _load_user_row(username: str) -> dict | None:
     import pymysql
     from settings import get_db_config
 
     username = (username or "").strip()
-    if not username or not password:
+    if not username:
         return None
-    pwd_hash = _hl.sha256(password.encode()).hexdigest()
     cfg = dict(get_db_config())
     db = pymysql.connect(**cfg, cursorclass=pymysql.cursors.DictCursor)
     try:
@@ -121,15 +128,68 @@ def verify_cs_password(username: str, password: str) -> dict | None:
             "FROM users WHERE username=%s LIMIT 1",
             (username,),
         )
-        row = cur.fetchone()
-        cur.close()
+        return cur.fetchone()
     finally:
         db.close()
+
+
+def find_user_by_username(username: str) -> dict | None:
+    row = _load_user_row(username)
     if not row or not row.get("enabled", 1):
         return None
-    if row.get("password") != pwd_hash:
+    return dict(row)
+
+
+def find_user_by_employee_name(name: str) -> dict | None:
+    import pymysql
+    from settings import get_db_config
+
+    name = (name or "").strip()
+    if not name:
         return None
-    role = (row.get("role") or "").strip()
-    if role not in ("客服", "管理", "超级管理员", "管理员", "主管"):
+    cfg = dict(get_db_config())
+    db = pymysql.connect(**cfg, cursorclass=pymysql.cursors.DictCursor)
+    try:
+        cur = db.cursor()
+        cur.execute(
+            "SELECT username, password, display_name, role, employee_name, enabled "
+            "FROM users WHERE enabled=1 AND (employee_name=%s OR display_name=%s OR username=%s)",
+            (name, name, name),
+        )
+        rows = list(cur.fetchall() or [])
+    finally:
+        db.close()
+    for row in rows:
+        if user_can_use_quote_weapp(row):
+            return dict(row)
+    return dict(rows[0]) if rows else None
+
+
+def verify_user_password(username: str, password: str) -> dict | None:
+    import hashlib as _hl
+
+    username = (username or "").strip()
+    if not username or not password:
+        return None
+    row = _load_user_row(username)
+    if not row or not row.get("enabled", 1):
+        return None
+    if row.get("password") != _hl.sha256(password.encode()).hexdigest():
         return None
     return dict(row)
+
+
+def verify_quote_weapp_password(username: str, password: str) -> tuple[dict | None, str]:
+    """返回 (user, error)。error 非空表示密码对但角色不允许等。"""
+    user = verify_user_password(username, password)
+    if not user:
+        return None, "账号或密码错误"
+    if not user_can_use_quote_weapp(user):
+        return None, "仅客服和超级管理员可使用报价小程序"
+    return user, ""
+
+
+def verify_cs_password(username: str, password: str) -> dict | None:
+    """校验 users 表（与 3001 相同账号，报价小程序角色）。"""
+    user, err = verify_quote_weapp_password(username, password)
+    return user if not err else None
