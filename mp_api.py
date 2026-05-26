@@ -153,18 +153,14 @@ def mp_categories():
 
 @mp_bp.route("/quote_data")
 def mp_quote_data():
-    _, err = _require_cs_or_forbidden()
-    if err:
-        return err
+    # 客户下单小程序需匿名读报价配置；与 3001/3002 /api/quote_data 一致，不做客服鉴权
     res = _proxy_json("GET", "/api/quote_data")
     return jsonify(res)
 
 
 @mp_bp.route("/quote/calculate", methods=["POST"])
 def mp_quote_calculate():
-    _, err = _require_cs_or_forbidden()
-    if err:
-        return err
+    # 客户下单算价；客服报价小程序共用此接口
     payload = request.get_json(silent=True) or {}
     cat = (payload.get("product_category_code") or payload.get("type") or "").strip()
     # 映射 co 分类码 → 报价 type
