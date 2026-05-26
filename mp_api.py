@@ -81,7 +81,7 @@ def mp_wx_login():
     data = request.get_json(silent=True) or {}
     code = (data.get("code") or "").strip()
     try:
-        sess = mp_auth.wx_code_to_session(code)
+        sess = mp_auth.wx_code_to_session(code, app="customer")
         openid = sess["openid"]
         cust = co_store.ensure_customer_for_openid(
             openid,
@@ -217,7 +217,7 @@ def mp_cs_login():
     openid = ""
     if code:
         try:
-            sess = mp_auth.wx_code_to_session(code)
+            sess = mp_auth.wx_code_to_session(code, app="cs")
             openid = (sess.get("openid") or "").strip()
             if openid:
                 co_store.bind_cs_staff_openid(int(cs_staff_id), openid)
@@ -247,7 +247,7 @@ def mp_cs_wx_login():
     if not code:
         return jsonify({"success": False, "error": "code 必填"}), 400
     try:
-        sess = mp_auth.wx_code_to_session(code)
+        sess = mp_auth.wx_code_to_session(code, app="cs")
         openid = (sess.get("openid") or "").strip()
         staff = co_store.find_cs_staff_by_openid(openid)
         if not staff:
@@ -289,7 +289,7 @@ def mp_cs_wx_bind():
     if not user:
         return jsonify({"success": False, "error": "账号或密码错误，或无客服权限"}), 401
     try:
-        sess = mp_auth.wx_code_to_session(code)
+        sess = mp_auth.wx_code_to_session(code, app="cs")
         openid = (sess.get("openid") or "").strip()
         en = (user.get("employee_name") or user.get("display_name") or "").strip()
         cs_staff_id = co_store.find_cs_staff_id_by_name(en)

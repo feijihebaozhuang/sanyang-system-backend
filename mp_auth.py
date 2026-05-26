@@ -50,16 +50,25 @@ def verify_cs_token(username: str, cs_staff_id: int | None, token: str) -> bool:
     return token == cs_token(username, cs_staff_id)
 
 
-def wx_code_to_session(code: str) -> dict[str, Any]:
-    """wx.login code → openid/session_key；未配 AppSecret 时开发模式。"""
+def wx_code_to_session(code: str, *, app: str = "customer") -> dict[str, Any]:
+    """wx.login code → openid/session_key。
+
+    app=customer → 客户下单小程序（WX_MP_*）
+    app=cs       → 报价/客服小程序 quote-weapp（WX_CS_MP_*，缺省回退 WX_MP_*）
+    未配 AppSecret 时开发模式。
+    """
     code = (code or "").strip()
     if not code:
         raise ValueError("code 必填")
-    appid = os.getenv("WX_MP_APPID", "").strip()
-    secret = os.getenv("WX_MP_SECRET", "").strip()
+    if app == "cs":
+        appid = os.getenv("WX_CS_MP_APPID", "").strip() or os.getenv("WX_MP_APPID", "").strip()
+        secret = os.getenv("WX_CS_MP_SECRET", "").strip() or os.getenv("WX_MP_SECRET", "").strip()
+    else:
+        appid = os.getenv("WX_MP_APPID", "").strip()
+        secret = os.getenv("WX_MP_SECRET", "").strip()
     if not appid or not secret:
-        oid = f"dev_{hashlib.sha256(code.encode()).hexdigest()[:20]}"
-        return {"openid": oid, "session_key": "", "dev_mode": True}
+        oid = f"dev_{app}_{hashlib.sha256(code.encode()).hexdigest()[:20]}"
+        return {"openid": oid, "session_key": "", "dev_mode": True, "app": app}
     url = (
         "https://api.weixin.qq.com/sns/jscode2session"
         f"?appid={urllib.parse.quote(appid)}"
