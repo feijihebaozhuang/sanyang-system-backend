@@ -572,19 +572,27 @@ def mp_cs_order_review():
     if cs_id and existing.get("cs_staff_id") and int(existing["cs_staff_id"]) != int(cs_id):
         return jsonify({"success": False, "error": "无权审核此订单"}), 403
     payload = dict(existing)
-    payload["status"] = status
+    if data.get("unit_price") is not None:
+        payload["unit_price"] = float(data.get("unit_price") or 0)
+    if data.get("total_price") is not None:
+        payload["total_price"] = float(data.get("total_price") or 0)
+    elif payload.get("unit_price") and payload.get("qty"):
+        payload["total_price"] = round(float(payload["unit_price"]) * int(payload["qty"]), 2)
+    if status == "approved":
+        if float(payload.get("total_price") or 0) <= 0:
+            return jsonify({"success": False, "error": "请确认订单金额后再通过"}), 400
+        payload["status"] = "pending_payment"
+    else:
+        payload["status"] = status
     payload["remark"] = (data.get("remark") or existing.get("remark") or "").strip()
     if cs_id:
         payload["cs_staff_id"] = cs_id
     item = co_store.upsert_order(payload, created_by=f"cs:{cs.get('username')}")
-    km_push = None
-    if status == "approved":
-        import km_co_order_sync as kcos
-
-        km_push = kcos.push_co_order_to_km(oid, co_store=co_store)
-        if km_push.get("item"):
-            item = km_push["item"]
-    return jsonify({"success": True, "item": item, "km_push": km_push})
+    return jsonify({
+        "success": True,
+        "item": item,
+        "msg": "已确认价格，等待客户微信支付" if status == "approved" else "",
+    })
 
 
 @mp_bp.route("/cs/order/km-push", methods=["POST"])
@@ -627,8 +635,8 @@ def mp_cs_order_ship():
         user = _cs_user_from_session(cs)
         if (user or {}).get("role") != "超级管理员":
             return jsonify({"success": False, "error": "无权操作此订单"}), 403
-    if existing.get("status") not in ("approved", "in_production"):
-        return jsonify({"success": False, "error": "仅「已通过/生产中」的订单可发货"}), 400
+    if existing.get("status") not in ("paid", "in_production"):
+        return jsonify({"success": False, "error": "仅「已付款/生产中」的订单可发货"}), 400
     if (existing.get("km_push_status") or "") == "pushed" and not (existing.get("express_no") or "").strip():
         return jsonify({
             "success": False,
@@ -702,3 +710,100 @@ def mp_cs_order_wechat_contact():
         "msg": "已发送。请在手机微信打开「小程序客服助手」查看客户回复。",
         "dev_mode": res.get("dev_mode"),
     })
+
+
+def _after_order_paid(order_id: int) -> dict:
+    import km_co_order_sync as kcos
+
+    item = co_store.get_order(int(order_id)) or {}
+    km_push = kcos.push_co_order_to_km(int(order_id), co_store=co_store)
+    if km_push.get("item"):
+        item = km_push["item"]
+    return {"item": item, "km_push": km_push}
+
+
+@mp_bp.route("/order/pay/prepay", methods=["POST"])
+def mp_order_pay_prepay():
+    """客户对「待付款」订单发起微信支付。"""
+    cust = _customer_from_request()
+    if not cust:
+        return jsonify({"success": False, "error": "请先登录", "code": 401}), 401
+    data = request.get_json(silent=True) or {}
+    oid = int(data.get("id") or data.get("order_id") or 0)
+    if not oid:
+        return jsonify({"success": False, "error": "order_id 必填"}), 400
+    order = co_store.get_order(oid)
+    if not order or int(order.get("customer_id") or 0) != int(cust["id"]):
+        return jsonify({"success": False, "error": "订单不存在"}), 404
+    if (order.get("status") or "") != "pending_payment":
+        return jsonify({"success": False, "error": "当前订单不可支付"}), 400
+
+    openid = (cust.get("wx_openid") or "").strip()
+    if not openid:
+        return jsonify({"success": False, "error": "无法获取微信身份，请重新登录"}), 400
+
+    import mp_wxpay as wxpay
+
+    if not wxpay.wxpay_configured():
+        return jsonify({"success": False, "error": "微信支付尚未配置，请联系客服"}), 503
+
+    total_fen = int(round(float(order.get("total_price") or 0) * 100))
+    if total_fen < 1:
+        return jsonify({"success": False, "error": "订单金额无效"}), 400
+
+    import time as _t
+
+    out_trade_no = f"CO{oid}{int(_t.time())}"[-32:]
+    desc = f"三羊包装 {order.get('order_no') or oid}"
+    prep = wxpay.create_jsapi_prepay(
+        openid=openid,
+        out_trade_no=out_trade_no,
+        description=desc,
+        total_fen=total_fen,
+    )
+    if not prep.get("success"):
+        return jsonify({"success": False, "error": prep.get("error") or "下单失败"}), 400
+
+    co_store.set_order_pay_pending(oid, pay_out_trade_no=out_trade_no)
+    pay_params = wxpay.build_miniprogram_pay_params(prep["prepay_id"])
+    return jsonify({
+        "success": True,
+        "pay": pay_params,
+        "out_trade_no": out_trade_no,
+        "amount_fen": total_fen,
+    })
+
+
+@mp_bp.route("/pay/notify", methods=["POST"])
+def mp_pay_notify():
+    """微信支付结果通知（无需登录）。"""
+    body = request.get_json(silent=True) or {}
+    import mp_wxpay as wxpay
+
+    parsed = wxpay.parse_pay_notify(body)
+    if not parsed.get("success"):
+        return jsonify({"code": "FAIL", "message": parsed.get("error") or "fail"}), 400
+
+    out_no = parsed.get("out_trade_no") or ""
+    order = co_store.get_order_by_pay_out_trade_no(out_no)
+    if not order:
+        return jsonify({"code": "FAIL", "message": "order not found"}), 404
+
+    try:
+        paid = co_store.mark_order_paid(
+            int(order["id"]),
+            pay_out_trade_no=out_no,
+            wx_transaction_id=parsed.get("transaction_id") or "",
+            paid_amount_fen=parsed.get("amount_total"),
+        )
+    except ValueError as e:
+        if (order.get("status") or "") == "paid":
+            return jsonify({"code": "SUCCESS", "message": "OK"})
+        return jsonify({"code": "FAIL", "message": str(e)}), 400
+
+    try:
+        _after_order_paid(int(order["id"]))
+    except Exception:
+        pass
+
+    return jsonify({"code": "SUCCESS", "message": "OK"})

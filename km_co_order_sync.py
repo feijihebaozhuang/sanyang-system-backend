@@ -236,6 +236,9 @@ def push_co_order_to_km(order_id: int, *, co_store) -> dict[str, Any]:
     if (order.get("km_push_status") or "") == "pushed" and (order.get("km_sid") or ""):
         return {"success": True, "item": order, "msg": "已推送过快麦"}
 
+    if (order.get("status") or "") not in ("paid",):
+        return {"success": False, "error": "仅「已付款」订单可推快麦，请先完成微信支付"}
+
     try:
         payload = build_km_trade_payload(order, co_store=co_store)
     except ValueError as e:

@@ -58,6 +58,8 @@ _DEFAULT_CATEGORIES = [
 _ORDER_STATUSES = (
     "draft",
     "pending_review",
+    "pending_payment",
+    "paid",
     "approved",
     "rejected",
     "in_production",
@@ -271,6 +273,24 @@ def ensure_schema(cur) -> None:
         "co_order",
         "km_pushed_at",
         "km_pushed_at TIMESTAMP NULL DEFAULT NULL COMMENT '推快麦时间' AFTER km_push_error",
+    )
+    _ensure_column(
+        cur,
+        "co_order",
+        "pay_out_trade_no",
+        "pay_out_trade_no VARCHAR(64) NOT NULL DEFAULT '' COMMENT '微信支付商户单号' AFTER km_pushed_at",
+    )
+    _ensure_column(
+        cur,
+        "co_order",
+        "wx_transaction_id",
+        "wx_transaction_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT '微信支付单号' AFTER pay_out_trade_no",
+    )
+    _ensure_column(
+        cur,
+        "co_order",
+        "paid_at",
+        "paid_at TIMESTAMP NULL DEFAULT NULL COMMENT '支付完成时间' AFTER wx_transaction_id",
     )
 
 
@@ -970,7 +990,7 @@ def list_orders_pending_km_shipment(*, limit: int = 30) -> list[dict]:
             SELECT id, order_no, km_tid, km_sid, status, km_push_status
             FROM co_order
             WHERE km_push_status='pushed'
-              AND status IN ('approved', 'in_production')
+              AND status IN ('paid', 'in_production')
               AND (express_no IS NULL OR express_no='')
             ORDER BY km_pushed_at ASC, id ASC
             LIMIT %s
@@ -978,6 +998,84 @@ def list_orders_pending_km_shipment(*, limit: int = 30) -> list[dict]:
             (max(1, min(int(limit), 200)),),
         )
         return list(cur.fetchall() or [])
+    finally:
+        db.close()
+
+
+def get_order_by_pay_out_trade_no(out_trade_no: str) -> dict | None:
+    no = (out_trade_no or "").strip()
+    if not no:
+        return None
+    ensure_tables()
+    db = connect()
+    try:
+        cur = db.cursor()
+        cur.execute("SELECT * FROM co_order WHERE pay_out_trade_no=%s LIMIT 1", (no,))
+        row = cur.fetchone()
+        if not row:
+            return None
+        for k in ("length", "width", "height", "unit_price", "total_price"):
+            if k in row and row[k] is not None:
+                row[k] = float(row[k])
+        return row
+    finally:
+        db.close()
+
+
+def set_order_pay_pending(order_id: int, *, pay_out_trade_no: str) -> dict:
+    ensure_tables()
+    db = connect()
+    try:
+        cur = db.cursor()
+        cur.execute(
+            "UPDATE co_order SET pay_out_trade_no=%s WHERE id=%s",
+            ((pay_out_trade_no or "").strip(), int(order_id)),
+        )
+        db.commit()
+        return get_order(int(order_id)) or {}
+    finally:
+        db.close()
+
+
+def mark_order_paid(
+    order_id: int,
+    *,
+    pay_out_trade_no: str,
+    wx_transaction_id: str,
+    paid_amount_fen: int | None = None,
+) -> dict:
+    ensure_tables()
+    order = get_order(int(order_id))
+    if not order:
+        raise ValueError("订单不存在")
+    if (order.get("status") or "") == "paid":
+        return order
+    if (order.get("status") or "") not in ("pending_payment",):
+        raise ValueError(f"订单状态不可支付: {order.get('status')}")
+    if paid_amount_fen is not None:
+        expected = int(round(float(order.get("total_price") or 0) * 100))
+        if expected > 0 and int(paid_amount_fen) != expected:
+            raise ValueError("支付金额与订单不符")
+    db = connect()
+    try:
+        cur = db.cursor()
+        cur.execute(
+            """
+            UPDATE co_order SET
+              status='paid',
+              pay_out_trade_no=%s,
+              wx_transaction_id=%s,
+              paid_at=NOW()
+            WHERE id=%s AND status='pending_payment'
+            """,
+            (
+                (pay_out_trade_no or "").strip(),
+                (wx_transaction_id or "").strip(),
+                int(order_id),
+            ),
+        )
+        db.commit()
+        return get_order(int(order_id)) or {}
     finally:
         db.close()
 
