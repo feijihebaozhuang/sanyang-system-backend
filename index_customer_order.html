@@ -59,6 +59,14 @@ tr:hover td { background: #fafcff; }
 .subnav button { padding:6px 14px; border:1px solid #d9d9d9; background:#fafafa; border-radius:6px; cursor:pointer; font-size:13px; }
 .subnav button.active { background:#2980b9; color:#fff; border-color:#2980b9; }
 .perm-table-wrap { overflow-x:auto; max-height:520px; overflow-y:auto; }
+.main.embed-mode { max-width: none; width: 100%; padding: 0; flex: 1; display: flex; flex-direction: column; }
+.embed-bar { background: #fff; border-bottom: 1px solid #e8e8e8; padding: 8px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: #666; }
+.embed-bar a { color: #2980b9; text-decoration: none; }
+.embed-frame { flex: 1; width: 100%; min-height: calc(100vh - 104px); border: none; background: #fff; }
+.nav-divider { width: 1px; height: 24px; background: #e8e8e8; align-self: center; margin: 0 4px; }
+.nav button.nav-embed { color: #1a5276; }
+.nav button.nav-embed.active { color: #e67e22; border-bottom-color: #e67e22; }
+.empty { text-align: center; color: #aaa; padding: 40px; font-size: 14px; }
 </style>
 </head>
 <body>
@@ -76,7 +84,7 @@ tr:hover td { background: #fafcff; }
 
 <div id="appShell" class="hidden">
   <div class="topbar">
-    <h1>三羊客户下单 · 管理后台</h1>
+    <h1>三羊统一管理 · guanli</h1>
     <div>
       <span class="user-info" id="userLabel"></span>
       <button onclick="doLogout()">退出</button>
@@ -89,6 +97,10 @@ tr:hover td { background: #fafcff; }
     <button data-page="orders" onclick="switchPage('orders')">订单总览</button>
     <button data-page="cs_staff" onclick="switchPage('cs_staff')">客服员工</button>
     <button data-page="permissions" id="navPermissions" onclick="switchPage('permissions')">权限管理</button>
+    <span class="nav-divider"></span>
+    <button data-page="embed_cs" class="nav-embed" onclick="switchPage('embed_cs')">客服端</button>
+    <button data-page="embed_prod" class="nav-embed" onclick="switchPage('embed_prod')">生产端</button>
+    <button data-page="embed_km" class="nav-embed" onclick="switchPage('embed_km')">快麦ERP</button>
   </div>
   <div class="main" id="mainContent"></div>
 </div>
@@ -157,12 +169,25 @@ function doLogout() {
   });
 }
 
+var EMBED_URLS = {
+  embed_cs: { title: '客服端', url: 'https://zean.feijihe.top/' },
+  embed_prod: { title: '生产端', url: 'https://feijihe.top/' },
+  embed_km: { title: '快麦 ERP', url: 'https://erp.superboss.cc/index.html#/index/' }
+};
+
 function switchPage(page) {
   currentPage = page;
   document.querySelectorAll('.nav button').forEach(function(b) {
     b.classList.toggle('active', b.getAttribute('data-page') === page);
   });
   SY_AUTH.saveRoute(page, null);
+  var main = document.getElementById('mainContent');
+  if (page.indexOf('embed_') === 0) {
+    main.className = 'main embed-mode';
+    loadEmbed(page);
+    return;
+  }
+  main.className = 'main';
   var loaders = {
     dashboard: loadDashboard,
     categories: loadCategories,
@@ -172,6 +197,15 @@ function switchPage(page) {
     permissions: loadPermissions
   };
   (loaders[page] || loadDashboard)();
+}
+
+function loadEmbed(page) {
+  var cfg = EMBED_URLS[page];
+  if (!cfg) return;
+  document.getElementById('mainContent').innerHTML =
+    '<div class="embed-bar"><span>内嵌：<strong>' + esc(cfg.title) + '</strong>（若空白可能是对方禁止 iframe，请点右侧新窗口打开）</span>' +
+    '<a href="' + esc(cfg.url) + '" target="_blank" rel="noopener">新窗口打开 ↗</a></div>' +
+    '<iframe class="embed-frame" src="' + esc(cfg.url) + '" title="' + esc(cfg.title) + '"></iframe>';
 }
 
 function statusTag(s) {
@@ -194,9 +228,10 @@ function loadDashboard() {
       '</div>' +
       '<div class="card"><h2>系统说明</h2>' +
       '<p style="font-size:14px;line-height:1.8;color:#555;">' +
-      '本后台为<strong>三羊客户下单系统</strong>（端口 3003），与 3001 客服端、3002 生产端<strong>完全独立</strong>。<br>' +
-      '第一阶段：产品目录结构化配置、客户管理、订单总览、权限管理。<br>' +
-      '规格匹配只读查询 <code>km_sku_map</code>，自动新建 SKU 在客户小程序阶段实现。' +
+      '本页为<strong>三羊统一管理入口</strong>（guanli.feijihe.top / 3003）。<br>' +
+      '左侧导航可内嵌打开客服端、生产端、快麦 ERP；权限在此统一维护。<br>' +
+      '<strong>客户下单小程序</strong>：开发中，将对接本后台 API。<br>' +
+      'SKU 全量导入：在 87 执行 <code>scripts/sync_km_sku_map_from_km.py --resume</code>。' +
       '</p></div>';
   });
 }
