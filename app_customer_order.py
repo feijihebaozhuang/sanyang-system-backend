@@ -429,6 +429,186 @@ def api_sync_km_sku_status():
     return jsonify({"success": True, "row_count": kms.row_count(), "checkpoint": ck})
 
 
+# ---------- 员工主数据 / 回收站 / 报价 / 店铺（对齐 3001 权限页） ----------
+import admin_shared_store as admin_store
+import config_json
+
+
+@app.route("/api/employees")
+def api_employees_list():
+    err = require_admin()
+    if err:
+        return err
+    return jsonify(emp_store.list_employees_full())
+
+
+@app.route("/api/employee/add", methods=["POST"])
+def api_employee_add():
+    err = require_admin()
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    try:
+        item = emp_store.add_employee_full(
+            data.get("name") or "",
+            position=data.get("position") or "",
+            group=data.get("group") or "",
+            phone=data.get("phone") or "",
+            dept=data.get("dept") or "美丽湾工厂部",
+        )
+        return jsonify({"success": True, "message": "添加成功", "item": item})
+    except ValueError as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+
+
+@app.route("/api/employee/update", methods=["POST"])
+def api_employee_update():
+    err = require_admin()
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    try:
+        emp_store.update_employee_full(
+            data.get("old_name") or data.get("name") or "",
+            name=data.get("name") or "",
+            position=data.get("position") or "",
+            group=data.get("group") or "",
+            phone=data.get("phone") or "",
+            dept=data.get("dept") or "",
+        )
+        return jsonify({"success": True, "message": "更新成功"})
+    except ValueError as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+
+
+@app.route("/api/employee/delete", methods=["POST"])
+def api_employee_delete():
+    err = require_admin()
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"success": False, "message": "name 必填"}), 400
+    try:
+        emp_store.resign_employee(name, operator=session.get("username", "admin"))
+        return jsonify({"success": True, "message": "已标记为离职"})
+    except ValueError as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+
+
+@app.route("/api/employee/resigned")
+def api_employee_resigned():
+    err = require_admin()
+    if err:
+        return err
+    return jsonify({"employees": emp_store.load_resigned_employees()})
+
+
+@app.route("/api/employee/restore", methods=["POST"])
+def api_employee_restore():
+    err = require_admin()
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"success": False, "message": "name 必填"}), 400
+    emp_store.restore_resigned_employee(name)
+    return jsonify({"success": True, "message": "已恢复"})
+
+
+@app.route("/api/employee/delete_resigned", methods=["POST"])
+def api_employee_delete_resigned():
+    err = require_admin()
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"success": False, "message": "name 必填"}), 400
+    emp_store.delete_resigned_record(name)
+    return jsonify({"success": True, "message": "已删除"})
+
+
+@app.route("/api/quote_data")
+def api_quote_data():
+    err = require_admin()
+    if err:
+        return err
+    qd = admin_store.load_quote_data()
+    if not qd:
+        return jsonify({"success": False, "error": "报价数据未加载"})
+    return jsonify({"success": True, "data": qd})
+
+
+@app.route("/api/quote/save_config", methods=["POST"])
+def api_quote_save_config():
+    err = require_admin()
+    if err:
+        return err
+    patch = request.get_json(silent=True) or {}
+    from quote_config_merge import merge_quote_config
+
+    existing = admin_store.load_quote_data() or {}
+    merged = merge_quote_config(existing, patch)
+    if not admin_store.save_quote_data(merged):
+        return jsonify({"success": False, "error": "保存失败"}), 500
+    sync_detail = {}
+    if isinstance(patch, dict) and "material_mapping" in patch:
+        bundle = emp_store.load_permission_bundle()
+        sync_detail = config_json.sync_production_mapping_from_quote(
+            bundle, merged.get("material_mapping")
+        )
+        config_json.write_permission_overlay_detail(
+            bundle, keys=frozenset({"production_material_mapping"})
+        )
+    return jsonify({"success": True, "message": "报价配置已保存", **sync_detail})
+
+
+@app.route("/api/shop-config", methods=["GET"])
+def api_shop_config_get():
+    err = require_admin()
+    if err:
+        return err
+    config = admin_store.load_shop_config()
+    return jsonify({"success": True, "config": config, "shop_config": config})
+
+
+@app.route("/api/shop-config", methods=["POST"])
+def api_shop_config_add():
+    err = require_admin()
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    try:
+        item = admin_store.add_shop_item(data)
+        return jsonify({"success": True, "message": "已添加", "item": item})
+    except RuntimeError as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/shop-config/<config_id>", methods=["PUT"])
+def api_shop_config_update(config_id):
+    err = require_admin()
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    item = admin_store.update_shop_item(config_id, data)
+    if not item:
+        return jsonify({"success": False, "error": "未找到"}), 404
+    return jsonify({"success": True, "message": "已更新", "item": item})
+
+
+@app.route("/api/shop-config/<config_id>", methods=["DELETE"])
+def api_shop_config_delete(config_id):
+    err = require_admin()
+    if err:
+        return err
+    admin_store.delete_shop_item(config_id)
+    return jsonify({"success": True, "message": "已删除"})
+
+
 if __name__ == "__main__":
     port = int(os.getenv("CUSTOMER_ORDER_PORT", "3003"))
     app.run(host="0.0.0.0", port=port, debug=False)

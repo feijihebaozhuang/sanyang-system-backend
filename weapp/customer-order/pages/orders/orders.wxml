@@ -1,9 +1,0 @@
-<view class="page">
-  <view wx:if="{{loading}}" class="card">加载中…</view>
-  <view class="card" wx:for="{{orders}}" wx:key="id" bindtap="goDetail" data-id="{{item.id}}">
-    <view class="title">{{item.order_no}}</view>
-    <text>{{item.category_name || item.product_category_code}} · {{item.spec}} · {{item.qty}}个</text>
-    <view style="margin-top:8rpx;color:#2980b9;">{{item.statusLabel}}</view>
-  </view>
-  <view wx:if="{{!loading && !orders.length}}" class="card">暂无订单</view>
-</view>

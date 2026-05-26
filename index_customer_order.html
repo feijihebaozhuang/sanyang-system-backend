@@ -59,13 +59,9 @@ tr:hover td { background: #fafcff; }
 .subnav button { padding:6px 14px; border:1px solid #d9d9d9; background:#fafafa; border-radius:6px; cursor:pointer; font-size:13px; }
 .subnav button.active { background:#2980b9; color:#fff; border-color:#2980b9; }
 .perm-table-wrap { overflow-x:auto; max-height:520px; overflow-y:auto; }
-.main.embed-mode { max-width: none; width: 100%; padding: 0; flex: 1; display: flex; flex-direction: column; }
-.embed-bar { background: #fff; border-bottom: 1px solid #e8e8e8; padding: 8px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: #666; }
-.embed-bar a { color: #2980b9; text-decoration: none; }
-.embed-frame { flex: 1; width: 100%; min-height: calc(100vh - 104px); border: none; background: #fff; }
 .nav-divider { width: 1px; height: 24px; background: #e8e8e8; align-self: center; margin: 0 4px; }
-.nav button.nav-embed { color: #1a5276; }
-.nav button.nav-embed.active { color: #e67e22; border-bottom-color: #e67e22; }
+.nav a.nav-ext { display:inline-block; background:none; border:none; padding:12px 18px; font-size:14px; cursor:pointer; color:#1a5276; border-bottom:2px solid transparent; white-space:nowrap; text-decoration:none; }
+.nav a.nav-ext:hover { color:#e67e22; border-bottom-color:#e67e22; }
 .empty { text-align: center; color: #aaa; padding: 40px; font-size: 14px; }
 </style>
 </head>
@@ -98,9 +94,9 @@ tr:hover td { background: #fafcff; }
     <button data-page="cs_staff" onclick="switchPage('cs_staff')">客服员工</button>
     <button data-page="permissions" id="navPermissions" onclick="switchPage('permissions')">权限管理</button>
     <span class="nav-divider"></span>
-    <button data-page="embed_cs" class="nav-embed" onclick="switchPage('embed_cs')">客服端</button>
-    <button data-page="embed_prod" class="nav-embed" onclick="switchPage('embed_prod')">生产端</button>
-    <button data-page="embed_km" class="nav-embed" onclick="switchPage('embed_km')">快麦ERP</button>
+    <a class="nav-ext" href="https://zean.feijihe.top/" target="_blank" rel="noopener noreferrer">客服端 ↗</a>
+    <a class="nav-ext" href="https://feijihe.top/" target="_blank" rel="noopener noreferrer">生产端 ↗</a>
+    <a class="nav-ext" href="https://erp.superboss.cc/index.html#/index/" target="_blank" rel="noopener noreferrer">快麦ERP ↗</a>
   </div>
   <div class="main" id="mainContent"></div>
 </div>
@@ -169,25 +165,13 @@ function doLogout() {
   });
 }
 
-var EMBED_URLS = {
-  embed_cs: { title: '客服端', url: 'https://zean.feijihe.top/' },
-  embed_prod: { title: '生产端', url: 'https://feijihe.top/' },
-  embed_km: { title: '快麦 ERP', url: 'https://erp.superboss.cc/index.html#/index/' }
-};
-
 function switchPage(page) {
   currentPage = page;
-  document.querySelectorAll('.nav button').forEach(function(b) {
+  document.querySelectorAll('.nav button[data-page]').forEach(function(b) {
     b.classList.toggle('active', b.getAttribute('data-page') === page);
   });
   SY_AUTH.saveRoute(page, null);
-  var main = document.getElementById('mainContent');
-  if (page.indexOf('embed_') === 0) {
-    main.className = 'main embed-mode';
-    loadEmbed(page);
-    return;
-  }
-  main.className = 'main';
+  document.getElementById('mainContent').className = 'main';
   var loaders = {
     dashboard: loadDashboard,
     categories: loadCategories,
@@ -197,15 +181,6 @@ function switchPage(page) {
     permissions: loadPermissions
   };
   (loaders[page] || loadDashboard)();
-}
-
-function loadEmbed(page) {
-  var cfg = EMBED_URLS[page];
-  if (!cfg) return;
-  document.getElementById('mainContent').innerHTML =
-    '<div class="embed-bar"><span>内嵌：<strong>' + esc(cfg.title) + '</strong>（若空白可能是对方禁止 iframe，请点右侧新窗口打开）</span>' +
-    '<a href="' + esc(cfg.url) + '" target="_blank" rel="noopener">新窗口打开 ↗</a></div>' +
-    '<iframe class="embed-frame" src="' + esc(cfg.url) + '" title="' + esc(cfg.title) + '"></iframe>';
 }
 
 function statusTag(s) {
@@ -229,8 +204,8 @@ function loadDashboard() {
       '<div class="card"><h2>系统说明</h2>' +
       '<p style="font-size:14px;line-height:1.8;color:#555;">' +
       '本页为<strong>三羊统一管理入口</strong>（guanli.feijihe.top / 3003）。<br>' +
-      '左侧导航可内嵌打开客服端、生产端、快麦 ERP；权限在此统一维护。<br>' +
-      '<strong>客户下单小程序</strong>：开发中，将对接本后台 API。<br>' +
+      '顶部导航可新窗口打开客服端、生产端、快麦 ERP；权限在此统一维护。<br>' +
+      '<strong>客户下单小程序</strong>（weapp/customer-order）与<strong>客服小程序</strong>（weapp/cs-order）MVP 已提交，需微信后台配置域名后联调。<br>' +
       'SKU 全量导入：在 87 执行 <code>scripts/sync_km_sku_map_from_km.py --resume</code>。' +
       '</p></div>';
   });
@@ -578,7 +553,7 @@ function loadPermissions() {
     window._permFeatures = results[1].features || [];
     window._sysUsers = (results[2].items || []);
     window._kmSkuStatus = results[3] || {};
-    window._permSubTab = window._permSubTab || 'employees';
+    window._permSubTab = window._permSubTab || 'full_emp';
     renderPermissionsPage();
   });
 }
@@ -589,16 +564,24 @@ function setPermSubTab(tab) {
 }
 
 function renderPermissionsPage() {
-  var tab = window._permSubTab || 'employees';
+  var tab = window._permSubTab || 'full_emp';
   var html = '<div class="card"><h2>权限管理（统一入口，3001/3002 只读此配置）</h2>' +
     '<div class="subnav">' +
-    '<button class="' + (tab==='employees'?'active':'') + '" onclick="setPermSubTab(\'employees\')">员工 × 功能权限</button>' +
-    '<button class="' + (tab==='users'?'active':'') + '" onclick="setPermSubTab(\'users\')">客服/生产登录账号</button>' +
-    '<button class="' + (tab==='co_admin'?'active':'') + '" onclick="setPermSubTab(\'co_admin\')">3003 后台账号</button>' +
+    '<button class="' + (tab==='full_emp'?'active':'') + '" onclick="setPermSubTab(\'full_emp\')">👥 管理全部员工</button>' +
+    '<button class="' + (tab==='feature_perm'?'active':'') + '" onclick="setPermSubTab(\'feature_perm\')">🔐 功能权限</button>' +
+    '<button class="' + (tab==='resigned'?'active':'') + '" onclick="setPermSubTab(\'resigned\')">🗑️ 回收站</button>' +
+    '<button class="' + (tab==='quote'?'active':'') + '" onclick="setPermSubTab(\'quote\')">💰 报价参数</button>' +
+    '<button class="' + (tab==='shop'?'active':'') + '" onclick="setPermSubTab(\'shop\')">🏪 店铺客服</button>' +
+    '<button class="' + (tab==='users'?'active':'') + '" onclick="setPermSubTab(\'users\')">登录账号</button>' +
+    '<button class="' + (tab==='co_admin'?'active':'') + '" onclick="setPermSubTab(\'co_admin\')">3003 账号</button>' +
     '<button class="' + (tab==='km_sync'?'active':'') + '" onclick="setPermSubTab(\'km_sync\')">快麦 SKU 同步</button>' +
-    '</div><div id="permPanel"></div></div><div id="admFormArea"></div>';
+    '</div><div id="permPanel"><p class="empty">加载中…</p></div></div><div id="admFormArea"></div>';
   document.getElementById('mainContent').innerHTML = html;
-  if (tab === 'employees') renderPermEmployees();
+  if (tab === 'full_emp') renderPermFullEmployees();
+  else if (tab === 'feature_perm') renderPermEmployees();
+  else if (tab === 'resigned') renderPermResigned();
+  else if (tab === 'quote') renderPermQuote();
+  else if (tab === 'shop') renderPermShop();
   else if (tab === 'users') renderPermSysUsers();
   else if (tab === 'co_admin') renderPermCoAdmin();
   else renderPermKmSync();
@@ -633,6 +616,223 @@ function renderPermKmSync() {
     '</pre>' +
     '<p style="font-size:13px;color:#888;">断点：next_page=' + esc(ck.next_page || '-') +
     '，已写入 ' + esc(ck.total_written || 0) + ' 行</p>';
+}
+
+function deptLabel(dept) {
+  return dept === '洋坑塘运营部' ? '🏢 洋坑塘' : '🏭 美丽湾';
+}
+
+function renderPermFullEmployees() {
+  var panel = document.getElementById('permPanel');
+  apiFetch('/api/employees').then(function(employees) {
+    if (!Array.isArray(employees)) employees = employees.employees || [];
+    var html = '<div class="toolbar"><span style="font-size:13px;color:#666;">共 ' + employees.length + ' 人（含美丽湾/洋坑塘）</span>' +
+      '<button onclick="promptAddFullEmployee()">+ 新增员工</button></div>' +
+      '<div class="perm-table-wrap"><table><thead><tr><th>#</th><th>姓名</th><th>职务</th><th>组别</th><th>厂区</th><th>手机号</th><th>操作</th></tr></thead><tbody>';
+    employees.forEach(function(e, i) {
+      html += '<tr><td>' + (i+1) + '</td><td><strong>' + esc(e.name) + '</strong></td>' +
+        '<td>' + esc(e.position || '—') + '</td>' +
+        '<td><span class="tag tag-blue">' + esc(e.group || '—') + '</span></td>' +
+        '<td>' + deptLabel(e.dept) + '</td><td>' + esc(e.phone || '—') + '</td>' +
+        '<td><button class="btn secondary" onclick="editFullEmployee(' + JSON.stringify(e.name) + ')">编辑</button> ' +
+        '<button class="btn danger" onclick="deleteFullEmployee(' + JSON.stringify(e.name) + ')">删除</button></td></tr>';
+    });
+    html += '</tbody></table></div>';
+    panel.innerHTML = html;
+  }).catch(function(e) { panel.innerHTML = '<p class="empty">加载失败：' + esc(e.message) + '</p>'; });
+}
+
+function promptAddFullEmployee() {
+  var name = prompt('员工姓名：');
+  if (!name || !name.trim()) return;
+  var position = prompt('职务（如：手啤机-啤工）：') || '员工';
+  var group = prompt('组别（如：手啤机组）：') || '其他';
+  var deptIn = prompt('厂区（1=美丽湾工厂部, 2=洋坑塘运营部，默认美丽湾）：') || '1';
+  var dept = deptIn === '2' ? '洋坑塘运营部' : '美丽湾工厂部';
+  apiFetch('/api/employee/add', { method: 'POST', body: JSON.stringify({
+    name: name.trim(), position: position.trim(), group: group.trim(), phone: '', dept: dept
+  })}).then(function(d) {
+    toast(d.message || (d.success ? '已添加' : '失败'));
+    if (d.success) renderPermFullEmployees();
+  });
+}
+
+function editFullEmployee(name) {
+  apiFetch('/api/employees').then(function(employees) {
+    if (!Array.isArray(employees)) employees = employees.employees || [];
+    var emp = employees.find(function(e) { return e.name === name; });
+    if (!emp) { toast('未找到员工'); return; }
+    var newName = prompt('姓名：', emp.name);
+    if (!newName || !newName.trim()) return;
+    var newPos = prompt('职务：', emp.position || '') || '';
+    var newGroup = prompt('组别：', emp.group || '') || '';
+    var newPhone = prompt('手机号：', emp.phone || '') || '';
+    var deptPrompt = prompt('厂区（1=美丽湾, 2=洋坑塘）：', emp.dept === '洋坑塘运营部' ? '2' : '1') || '1';
+    var newDept = deptPrompt === '2' ? '洋坑塘运营部' : '美丽湾工厂部';
+    apiFetch('/api/employee/update', { method: 'POST', body: JSON.stringify({
+      old_name: name, name: newName.trim(), position: newPos.trim(), group: newGroup.trim(),
+      phone: newPhone.trim(), dept: newDept
+    })}).then(function(d) {
+      toast(d.message || (d.success ? '已更新' : '失败'));
+      if (d.success) renderPermFullEmployees();
+    });
+  });
+}
+
+function deleteFullEmployee(name) {
+  if (!confirm('确认将「' + name + '」移入离职回收站？')) return;
+  apiFetch('/api/employee/delete', { method: 'POST', body: JSON.stringify({ name: name }) })
+    .then(function(d) {
+      toast(d.message || (d.success ? '已离职' : '失败'));
+      if (d.success) renderPermFullEmployees();
+    });
+}
+
+function renderPermResigned() {
+  var panel = document.getElementById('permPanel');
+  apiFetch('/api/employee/resigned').then(function(data) {
+    var employees = data.employees || [];
+    var html = '<div class="toolbar"><span style="font-size:13px;color:#666;">离职 ' + employees.length + ' 人</span></div>' +
+      '<div class="perm-table-wrap"><table><thead><tr><th>姓名</th><th>职务</th><th>组别</th><th>厂区</th><th>离职时间</th><th>操作</th></tr></thead><tbody>';
+    if (!employees.length) {
+      html += '<tr><td colspan="6" class="empty">暂无离职员工</td></tr>';
+    } else {
+      employees.forEach(function(e) {
+        html += '<tr><td><strong>' + esc(e.name) + '</strong></td><td>' + esc(e.position || '—') + '</td>' +
+          '<td>' + esc(e.group || '—') + '</td><td>' + deptLabel(e.dept) + '</td>' +
+          '<td style="font-size:12px;color:#888;">' + esc(e.resigned_time || '—') + '</td>' +
+          '<td><button class="btn" onclick="restoreResigned(' + JSON.stringify(e.name) + ')">恢复</button> ' +
+          '<button class="btn danger" onclick="purgeResigned(' + JSON.stringify(e.name) + ')">彻底删除</button></td></tr>';
+      });
+    }
+    html += '</tbody></table></div>';
+    panel.innerHTML = html;
+  });
+}
+
+function restoreResigned(name) {
+  if (!confirm('恢复「' + name + '」到在职列表？')) return;
+  apiFetch('/api/employee/restore', { method: 'POST', body: JSON.stringify({ name: name }) })
+    .then(function(d) { toast(d.message || '已恢复'); if (d.success) renderPermResigned(); });
+}
+
+function purgeResigned(name) {
+  if (!confirm('彻底删除「' + name + '」的离职记录？')) return;
+  apiFetch('/api/employee/delete_resigned', { method: 'POST', body: JSON.stringify({ name: name }) })
+    .then(function(d) { toast(d.message || '已删除'); if (d.success) renderPermResigned(); });
+}
+
+function renderPermQuote() {
+  var panel = document.getElementById('permPanel');
+  panel.innerHTML = '<p class="empty">加载报价参数…</p>';
+  apiFetch('/api/quote_data').then(function(res) {
+    if (!res.success || !res.data) {
+      panel.innerHTML = '<p class="empty">加载失败</p>';
+      return;
+    }
+    var qd = res.data;
+    var html = '<p style="font-size:13px;color:#666;margin-bottom:12px;">修改后点保存写入 MySQL（与 3001 共用 quote_config）</p>' +
+      '<div class="form-grid" style="margin-bottom:16px;">' +
+      '<div><label>零售利润倍率</label><input type="number" id="cfgRetailMult" step="0.1" value="' + (qd.profit && qd.profit.retail_multiplier || 2) + '"></div>' +
+      '<div><label>红线底价倍率</label><input type="number" id="cfgRedlineMult" step="0.01" value="' + (qd.profit && qd.profit.redline_multiplier || 1.35) + '"></div>' +
+      '</div>';
+    var groups = [
+      { key: 'airbox', label: '飞机盒材料单价' },
+      { key: 'koudi', label: '扣底/双插材料单价' },
+      { key: 'carton', label: '纸箱材料单价' }
+    ];
+    groups.forEach(function(g) {
+      var mats = (qd.materials && qd.materials[g.key] && qd.materials[g.key].materials) || {};
+      html += '<h3 style="font-size:14px;margin:12px 0 8px;">' + g.label + '</h3><div class="form-grid">';
+      Object.keys(mats).forEach(function(k) {
+        var mat = mats[k];
+        html += '<div><label>' + esc(mat.name || k) + '</label>' +
+          '<input type="number" class="cfg-price" data-group="' + g.key + '" data-key="' + esc(k) + '" step="0.01" value="' + (mat.price || 0) + '"></div>';
+      });
+      html += '</div>';
+    });
+    html += '<div class="form-actions"><button class="btn" onclick="savePermQuote()">💾 保存配置</button>' +
+      '<span id="cfgSaveStatus" style="font-size:13px;color:#666;"></span></div>';
+    panel.innerHTML = html;
+  });
+}
+
+function savePermQuote() {
+  var patch = { profit: {}, materials: {} };
+  patch.profit.retail_multiplier = parseFloat(document.getElementById('cfgRetailMult').value) || 2;
+  patch.profit.redline_multiplier = parseFloat(document.getElementById('cfgRedlineMult').value) || 1.35;
+  document.querySelectorAll('.cfg-price').forEach(function(input) {
+    var group = input.getAttribute('data-group');
+    var key = input.getAttribute('data-key');
+    if (!patch.materials[group]) patch.materials[group] = { materials: {} };
+    if (!patch.materials[group].materials[key]) patch.materials[group].materials[key] = {};
+    patch.materials[group].materials[key].price = parseFloat(input.value) || 0;
+  });
+  var st = document.getElementById('cfgSaveStatus');
+  if (st) st.textContent = '保存中…';
+  apiFetch('/api/quote/save_config', { method: 'POST', body: JSON.stringify(patch) })
+    .then(function(d) {
+      if (st) st.textContent = d.success ? '✅ 已保存' : ('❌ ' + (d.error || '失败'));
+      if (d.success) toast('报价参数已保存');
+    });
+}
+
+function renderPermShop() {
+  var panel = document.getElementById('permPanel');
+  panel.innerHTML = '<p class="empty">加载店铺配置…</p>';
+  apiFetch('/api/shop-config').then(function(data) {
+    var configs = data.shop_config || data.config || [];
+    var groups = {};
+    configs.forEach(function(c) {
+      var plat = c.platform || '其他';
+      if (!groups[plat]) groups[plat] = [];
+      groups[plat].push(c);
+    });
+    var html = '<div class="toolbar"><span style="font-size:13px;color:#666;">共 ' + configs.length + ' 个店铺</span></div>';
+    ['1688', 'tmall', 'taobao', 'other', '其他'].forEach(function(plat) {
+      var items = groups[plat] || [];
+      if (!items.length) return;
+      html += '<h3 style="font-size:14px;margin:16px 0 8px;">' + esc(plat) + '</h3>' +
+        '<div class="perm-table-wrap"><table><thead><tr><th>店铺名</th><th>客服</th><th>排序</th><th>操作</th></tr></thead><tbody>';
+      items.forEach(function(c) {
+        html += '<tr><td>' + esc(c.shop_name) + '</td>' +
+          '<td><input style="width:120px;padding:4px 6px;font-size:12px;" value="' + esc(c.customer_service || '') + '" onchange="updateShopKefu(' + JSON.stringify(c.id) + ', this.value)"></td>' +
+          '<td><input type="number" style="width:60px;padding:4px 6px;font-size:12px;" value="' + (c.sort_order || 0) + '" onchange="updateShopOrder(' + JSON.stringify(c.id) + ', this.value)"></td>' +
+          '<td><button class="btn danger" onclick="deleteShopRow(' + JSON.stringify(c.id) + ')">删除</button></td></tr>';
+      });
+      html += '</tbody></table></div>';
+    });
+    html += '<div style="margin-top:20px;padding-top:16px;border-top:1px solid #eee;">' +
+      '<h3 style="font-size:14px;margin-bottom:8px;">添加店铺</h3>' +
+      '<div class="toolbar">' +
+      '<select id="newShopPlatform"><option value="1688">1688</option><option value="tmall">天猫</option><option value="taobao">淘宝</option><option value="other">其他</option></select>' +
+      '<input id="newShopName" placeholder="店铺名">' +
+      '<input id="newShopKefu" placeholder="客服名">' +
+      '<button class="btn" onclick="addShopRow()">添加</button></div></div>';
+    panel.innerHTML = html;
+  });
+}
+
+function updateShopKefu(id, val) {
+  apiFetch('/api/shop-config/' + encodeURIComponent(id), { method: 'PUT', body: JSON.stringify({ customer_service: val }) });
+}
+
+function updateShopOrder(id, val) {
+  apiFetch('/api/shop-config/' + encodeURIComponent(id), { method: 'PUT', body: JSON.stringify({ sort_order: parseInt(val, 10) || 0 }) });
+}
+
+function deleteShopRow(id) {
+  if (!confirm('确定删除？')) return;
+  apiFetch('/api/shop-config/' + encodeURIComponent(id), { method: 'DELETE' }).then(function() { renderPermShop(); });
+}
+
+function addShopRow() {
+  var plat = document.getElementById('newShopPlatform').value;
+  var name = document.getElementById('newShopName').value.trim();
+  var kefu = document.getElementById('newShopKefu').value.trim();
+  if (!name) { toast('请输入店铺名'); return; }
+  apiFetch('/api/shop-config', { method: 'POST', body: JSON.stringify({ platform: plat, shop_name: name, customer_service: kefu }) })
+    .then(function(d) { if (d.success) renderPermShop(); else toast(d.error || '失败'); });
 }
 
 function renderPermSysUsers() {

@@ -230,6 +230,29 @@ def refresh_permission_from_vault(permission_data: dict) -> None:
     reload_permission_memory(permission_data)
 
 
+def write_data_json_partial(
+    updates: dict[str, Any],
+    *,
+    base_dir: str | Path | None = None,
+) -> bool:
+    """写入 data.json 顶层键（如 employees_master、resigned_employees），不覆盖其它键。"""
+    if not updates:
+        return True
+    path = data_json_path(base_dir)
+    existing: dict[str, Any] = read_json_file(path, {})
+    if not isinstance(existing, dict):
+        existing = {}
+    for key, val in updates.items():
+        existing[key] = copy.deepcopy(val)
+    try:
+        with path.open("w", encoding="utf-8") as f:
+            json.dump(existing, f, ensure_ascii=False, indent=2)
+        return True
+    except OSError as e:
+        print(f"[config_json] write_data_json_partial 失败 {path}: {e}")
+        return False
+
+
 def _write_permission_data_local(
     permission_data: dict,
     *,

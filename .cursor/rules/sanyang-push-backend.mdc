@@ -1,0 +1,17 @@
+---
+description: 三羊系统后端改动后必须自动推 Gitee
+globs:
+  - app_cs.py
+  - app_production.py
+  - app_customer_order.py
+  - "**/*_store.py"
+  - index_*.html
+  - deploy.sh
+  - scripts/sync_km_sku_map_from_km.py
+---
+
+# 三羊后端（3001/3002/3003）推送规则
+
+- 修改上述范围内的代码后，**在同一会话内完成 `git commit` + `git push origin main`**，不要等用户提醒。
+- **小程序**（`weapp/`、桌面 `quote-weapp`、`customer-order-weapp`）**只放本地，不提交、不推送**。
+- 提交时不要包含 `.env`、密钥、`data.json` 等业务数据文件。

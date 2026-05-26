@@ -1,5 +1,8 @@
 .env
+feishu_dify.local.url
 km_token.json
+# 小程序仅本地维护，不推 Gitee（桌面 quote-weapp / customer-order-weapp）
+weapp/
 .cursor/mcp.json
 alibaba_shops.json
 __pycache__/

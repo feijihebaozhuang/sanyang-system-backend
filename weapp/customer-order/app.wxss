@@ -1,8 +1,0 @@
-page { background: #f0f2f5; font-size: 28rpx; color: #333; }
-.card { background: #fff; margin: 24rpx; padding: 28rpx; border-radius: 16rpx; box-shadow: 0 4rpx 16rpx rgba(0,0,0,.04); }
-.title { font-size: 34rpx; font-weight: 600; color: #1a5276; margin-bottom: 16rpx; }
-.btn-primary { background: #2980b9; color: #fff; border-radius: 12rpx; margin: 24rpx; }
-.btn-secondary { background: #fff; color: #2980b9; border: 1px solid #2980b9; border-radius: 12rpx; margin: 24rpx; }
-.label { font-size: 24rpx; color: #888; margin-bottom: 8rpx; }
-.input { border: 1px solid #e0e0e0; border-radius: 8rpx; padding: 16rpx; margin-bottom: 16rpx; }
-.err { color: #e74c3c; font-size: 24rpx; padding: 0 24rpx; }
