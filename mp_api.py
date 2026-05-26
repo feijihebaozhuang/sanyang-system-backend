@@ -209,11 +209,11 @@ def mp_cs_login():
     code = (data.get("code") or "").strip()
     user = mp_auth.verify_cs_password(username, password)
     if not user:
-        return jsonify({"success": False, "error": "账号或密码错误，或无客服权限"}), 401
-    en = (user.get("employee_name") or user.get("display_name") or "").strip()
-    cs_staff_id = co_store.find_cs_staff_id_by_name(en)
-    if not cs_staff_id:
-        return jsonify({"success": False, "error": "未在客服员工表中找到对应姓名，请联系管理员"}), 403
+        return jsonify({"success": False, "error": "账号或密码错误，或无客服权限（须为客服/主管/管理员）"}), 401
+    try:
+        cs_staff_id = co_store.ensure_cs_staff_for_user(user)
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 403
     openid = ""
     if code:
         try:
@@ -223,6 +223,7 @@ def mp_cs_login():
                 co_store.bind_cs_staff_openid(int(cs_staff_id), openid)
         except (ValueError, RuntimeError) as e:
             return jsonify({"success": False, "error": str(e)}), 400
+    en = (user.get("employee_name") or user.get("display_name") or "").strip()
     tok = mp_auth.cs_token(username, cs_staff_id)
     wx_tok = mp_auth.cs_wx_token(openid, int(cs_staff_id)) if openid else ""
     return jsonify(
@@ -287,15 +288,13 @@ def mp_cs_wx_bind():
         return jsonify({"success": False, "error": "code 必填"}), 400
     user = mp_auth.verify_cs_password(username, password)
     if not user:
-        return jsonify({"success": False, "error": "账号或密码错误，或无客服权限"}), 401
+        return jsonify({"success": False, "error": "账号或密码错误，或无客服权限（须为客服/主管/管理员）"}), 401
     try:
         sess = mp_auth.wx_code_to_session(code, app="cs")
         openid = (sess.get("openid") or "").strip()
-        en = (user.get("employee_name") or user.get("display_name") or "").strip()
-        cs_staff_id = co_store.find_cs_staff_id_by_name(en)
-        if not cs_staff_id:
-            return jsonify({"success": False, "error": "未在客服员工表中找到对应姓名"}), 403
+        cs_staff_id = co_store.ensure_cs_staff_for_user(user)
         staff = co_store.bind_cs_staff_openid(int(cs_staff_id), openid)
+        en = (user.get("employee_name") or user.get("display_name") or "").strip()
         tok = mp_auth.cs_wx_token(openid, int(cs_staff_id))
         return jsonify(
             {

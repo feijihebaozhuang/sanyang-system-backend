@@ -61,8 +61,15 @@ def wx_code_to_session(code: str, *, app: str = "customer") -> dict[str, Any]:
     if not code:
         raise ValueError("code 必填")
     if app == "cs":
-        appid = os.getenv("WX_CS_MP_APPID", "").strip() or os.getenv("WX_MP_APPID", "").strip()
-        secret = os.getenv("WX_CS_MP_SECRET", "").strip() or os.getenv("WX_MP_SECRET", "").strip()
+        appid = os.getenv("WX_CS_MP_APPID", "").strip() or "wxa1d9f876327af0c0"
+        secret = os.getenv("WX_CS_MP_SECRET", "").strip()
+        cust_appid = os.getenv("WX_MP_APPID", "").strip()
+        if not secret and appid == cust_appid:
+            secret = os.getenv("WX_MP_SECRET", "").strip()
+        if not secret:
+            raise RuntimeError(
+                "未配置报价小程序 AppSecret：请在 87 服务器 .env 设置 WX_CS_MP_SECRET"
+            )
     else:
         appid = os.getenv("WX_MP_APPID", "").strip()
         secret = os.getenv("WX_MP_SECRET", "").strip()

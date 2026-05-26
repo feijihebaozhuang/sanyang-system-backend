@@ -620,6 +620,29 @@ def find_cs_staff_id_by_name(employee_name: str) -> int | None:
         db.close()
 
 
+def ensure_cs_staff_for_user(user: dict) -> int:
+    """3001 账号绑定微信时：按 employee_name / display_name / username 匹配 co_cs_staff，没有则自动创建。"""
+    candidates: list[str] = []
+    for key in ("employee_name", "display_name", "username"):
+        val = (user.get(key) or "").strip()
+        if val and val not in candidates:
+            candidates.append(val)
+    if not candidates:
+        raise ValueError("账号缺少员工姓名，请在 3003 权限管理补全 employee_name")
+
+    for name in candidates:
+        sid = find_cs_staff_id_by_name(name)
+        if sid:
+            return sid
+
+    primary = candidates[0]
+    staff = upsert_cs_staff({"employee_name": primary, "phone": "", "enabled": True, "remark": "小程序绑定自动创建"})
+    sid = int(staff.get("id") or 0)
+    if not sid:
+        raise ValueError("创建客服员工记录失败")
+    return sid
+
+
 def list_customers(
     *,
     assigned_cs_id: int | None = None,
