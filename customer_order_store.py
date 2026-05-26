@@ -224,6 +224,18 @@ def ensure_schema(cur) -> None:
         "ship_address",
         "ship_address VARCHAR(512) NOT NULL DEFAULT '' COMMENT '收货地址' AFTER ship_phone",
     )
+    _ensure_column(
+        cur,
+        "co_order",
+        "express_company",
+        "express_company VARCHAR(64) NOT NULL DEFAULT '' COMMENT '快递公司' AFTER ship_address",
+    )
+    _ensure_column(
+        cur,
+        "co_order",
+        "express_no",
+        "express_no VARCHAR(128) NOT NULL DEFAULT '' COMMENT '快递单号' AFTER express_company",
+    )
 
 
 def ensure_tables() -> None:
@@ -903,6 +915,8 @@ def upsert_order(data: dict, *, created_by: str = "admin") -> dict:
     ship_contact = (data.get("ship_contact") or data.get("contact_name") or "").strip()
     ship_phone = (data.get("ship_phone") or data.get("phone") or "").strip()
     ship_address = (data.get("ship_address") or data.get("address") or "").strip()
+    express_company = (data.get("express_company") or "").strip()
+    express_no = (data.get("express_no") or "").strip()
     cs_staff_id = data.get("cs_staff_id") or None
     if cs_staff_id == "":
         cs_staff_id = None
@@ -922,14 +936,16 @@ def upsert_order(data: dict, *, created_by: str = "admin") -> dict:
                   customer_id=%s, cs_staff_id=%s, product_category_code=%s,
                   length=%s, width=%s, height=%s, material=%s, dim_kind=%s,
                   outer_id=%s, qty=%s, unit_price=%s, total_price=%s,
-                  status=%s, remark=%s, ship_contact=%s, ship_phone=%s, ship_address=%s
+                  status=%s, remark=%s, ship_contact=%s, ship_phone=%s, ship_address=%s,
+                  express_company=%s, express_no=%s
                 WHERE id=%s
                 """,
                 (
                     customer_id, cs_staff_id, product_category_code,
                     length, width, height, material, dim_kind,
                     outer_id, qty, unit_price, total_price,
-                    status, remark, ship_contact, ship_phone, ship_address, oid,
+                    status, remark, ship_contact, ship_phone, ship_address,
+                    express_company, express_no, oid,
                 ),
             )
         else:
@@ -940,14 +956,16 @@ def upsert_order(data: dict, *, created_by: str = "admin") -> dict:
                   order_no, customer_id, cs_staff_id, product_category_code,
                   length, width, height, material, dim_kind, outer_id,
                   qty, unit_price, total_price, status, remark,
-                  ship_contact, ship_phone, ship_address, created_by
-                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                  ship_contact, ship_phone, ship_address,
+                  express_company, express_no, created_by
+                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """,
                 (
                     order_no, customer_id, cs_staff_id, product_category_code,
                     length, width, height, material, dim_kind, outer_id,
                     qty, unit_price, total_price, status, remark,
-                    ship_contact, ship_phone, ship_address, created_by,
+                    ship_contact, ship_phone, ship_address,
+                    express_company, express_no, created_by,
                 ),
             )
             oid = cur.lastrowid

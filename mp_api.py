@@ -578,3 +578,41 @@ def mp_cs_order_review():
         payload["cs_staff_id"] = cs_id
     item = co_store.upsert_order(payload, created_by=f"cs:{cs.get('username')}")
     return jsonify({"success": True, "item": item})
+
+
+@mp_bp.route("/cs/order/ship", methods=["POST"])
+def mp_cs_order_ship():
+    """客服发货：填写快递公司/单号，订单变为已完成，客户小程序可查看。"""
+    _, err = _require_cs_or_forbidden()
+    if err:
+        return err
+    cs = _cs_from_request()
+    data = request.get_json(silent=True) or {}
+    oid = int(data.get("id") or data.get("order_id") or 0)
+    if not oid:
+        return jsonify({"success": False, "error": "order_id 必填"}), 400
+    express_no = (data.get("express_no") or data.get("tracking_no") or "").strip()
+    if not express_no:
+        return jsonify({"success": False, "error": "请填写快递单号"}), 400
+    express_company = (data.get("express_company") or data.get("logistics_company") or "快递").strip()
+    existing = co_store.get_order(oid)
+    if not existing:
+        return jsonify({"success": False, "error": "订单不存在"}), 404
+    cs_id = cs.get("cs_staff_id")
+    if cs_id and existing.get("cs_staff_id") and int(existing["cs_staff_id"]) != int(cs_id):
+        user = _cs_user_from_session(cs)
+        if (user or {}).get("role") != "超级管理员":
+            return jsonify({"success": False, "error": "无权操作此订单"}), 403
+    if existing.get("status") not in ("approved", "in_production"):
+        return jsonify({"success": False, "error": "仅「已通过/生产中」的订单可发货"}), 400
+    payload = dict(existing)
+    payload["express_company"] = express_company
+    payload["express_no"] = express_no
+    payload["status"] = "completed"
+    if cs_id:
+        payload["cs_staff_id"] = cs_id
+    remark = (data.get("remark") or existing.get("remark") or "").strip()
+    if remark:
+        payload["remark"] = remark
+    item = co_store.upsert_order(payload, created_by=f"cs:{cs.get('username')}")
+    return jsonify({"success": True, "item": item})
