@@ -16,6 +16,95 @@ mp_bp = Blueprint("mp", __name__, url_prefix="/api/mp")
 
 _QUOTE_PROXY = os.getenv("MP_QUOTE_PROXY_BASE", "http://127.0.0.1:3001").rstrip("/")
 
+# 内径 → 外径（与 3001 calculate_quote 一致，cm）
+_INNER_TO_OUTER_DELTA = (1.5, 0.5, 0.5)
+
+# 客户小程序算价响应中隐藏成本字段
+_CUSTOMER_QUOTE_HIDE = frozenset(
+    {
+        "material_cost_per_unit",
+        "total_cost",
+        "unit_price",
+        "suggested_multiplier",
+        "suggested_price",
+        "batch_multiplier",
+        "batch_suggested_price",
+        "paper_l_cm",
+        "paper_w_cm",
+        "paper_l_inch",
+        "paper_w_inch",
+        "gram_weight",
+    }
+)
+
+
+def _inner_to_outer(l: float, w: float, h: float) -> tuple[float, float, float]:
+    dl, dw, dh = _INNER_TO_OUTER_DELTA
+    return l + dl, w + dw, h + dh
+
+
+def _prepare_quote_payload(raw: dict) -> dict:
+    """客户/小程序分类码 + 内外径 → 3001 报价 type 与尺寸。"""
+    payload = dict(raw or {})
+    cat = (payload.get("product_category_code") or payload.get("type") or "").strip()
+    dim_kind = (payload.get("dim_kind") or "outer").strip() or "outer"
+    is_inner = dim_kind == "inner"
+
+    payload.setdefault("customer_type", "guangdong_retail")
+    payload.setdefault("discount", 100)
+
+    if cat in ("zhenzhenmian", "pe"):
+        payload["type"] = "pe"
+        return payload
+
+    type_map = {
+        "zhengsquare": "zhengsquare-outer",
+        "daikou": "daikou",
+        "koudi": "koudi",
+        "shuangcha": "shuangcha",
+        "juxing": "qita",
+    }
+
+    if cat == "zhengsquare":
+        payload["type"] = "zhengsquare-inner" if is_inner else "zhengsquare-outer"
+        if is_inner:
+            l = float(payload.get("length") or 0)
+            w = float(payload.get("width") or 0)
+            h = float(payload.get("height") or 0)
+            if l > 0 and w > 0 and h > 0:
+                payload["_inner_dims"] = {"length": l, "width": w, "height": h}
+    elif cat in type_map:
+        payload["type"] = type_map[cat]
+        if is_inner:
+            l = float(payload.get("length") or 0)
+            w = float(payload.get("width") or 0)
+            h = float(payload.get("height") or 0)
+            if l > 0 and w > 0 and h > 0:
+                ol, ow, oh = _inner_to_outer(l, w, h)
+                payload["length"] = ol
+                payload["width"] = ow
+                payload["height"] = oh
+                payload["_inner_dims"] = {"length": l, "width": w, "height": h}
+    elif cat.endswith("-inner") or cat.endswith("-outer"):
+        payload["type"] = cat
+    elif cat:
+        payload["type"] = cat
+
+    return payload
+
+
+def _sanitize_customer_quote(res: dict) -> dict:
+    if not res.get("success"):
+        return res
+    detail = res.get("detail")
+    if not isinstance(detail, dict):
+        return res
+    out = dict(res)
+    cleaned = {k: v for k, v in detail.items() if k not in _CUSTOMER_QUOTE_HIDE}
+    cleaned["price_kind"] = "retail"
+    out["detail"] = cleaned
+    return out
+
 
 def _proxy_json(method: str, path: str, payload: dict | None = None) -> dict:
     url = _QUOTE_PROXY + path
@@ -161,21 +250,33 @@ def mp_quote_data():
 @mp_bp.route("/quote/calculate", methods=["POST"])
 def mp_quote_calculate():
     # 客户下单算价；客服报价小程序共用此接口
-    payload = request.get_json(silent=True) or {}
-    cat = (payload.get("product_category_code") or payload.get("type") or "").strip()
-    # 映射 co 分类码 → 报价 type
-    type_map = {
-        "zhengsquare": "zhengsquare-outer",
-        "daikou": "daikou",
-        "koudi": "koudi",
-        "shuangcha": "shuangcha",
-        "juxing": "qita",
-        "zhenzhenmian": "pe",
-    }
-    if cat in type_map:
-        payload = dict(payload)
-        payload["type"] = type_map.get(cat, payload.get("type", "zhengsquare-outer"))
+    raw = request.get_json(silent=True) or {}
+    for_customer = (raw.get("client") or "").strip() == "customer"
+    payload = _prepare_quote_payload(raw)
+    payload.pop("client", None)
+    payload.pop("product_category_code", None)
+    payload.pop("dim_kind", None)
+    inner_dims = payload.pop("_inner_dims", None)
     res = _proxy_json("POST", "/api/quote/calculate", payload)
+    if res.get("success") and isinstance(res.get("detail"), dict):
+        detail = dict(res["detail"])
+        if inner_dims:
+            detail["inner_length"] = inner_dims.get("length")
+            detail["inner_width"] = inner_dims.get("width")
+            detail["inner_height"] = inner_dims.get("height")
+            ol, ow, oh = _inner_to_outer(
+                float(inner_dims.get("length") or 0),
+                float(inner_dims.get("width") or 0),
+                float(inner_dims.get("height") or 0),
+            )
+            detail["outer_length"] = round(ol, 2)
+            detail["outer_width"] = round(ow, 2)
+            detail["outer_height"] = round(oh, 2)
+            detail["dimension_label"] = "内径转外径"
+        res = dict(res)
+        res["detail"] = detail
+    if for_customer:
+        res = _sanitize_customer_quote(res)
     return jsonify(res)
 
 
