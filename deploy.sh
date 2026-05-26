@@ -138,6 +138,8 @@ if [ "$USE_SYSTEMD" -eq 1 ]; then
     _run_systemctl restart sanyang-cs.service sanyang-production.service sanyang-customer-order.service \
         || { err "systemctl restart 失败，请检查 /etc/systemd/system/*.service 的 ExecStart"; exit 1; }
     sleep 3
+    log "[3b] MP API 路由检查..."
+    python3 "$TARGET_DIR/scripts/verify_mp_api.py" || warn "  3002 无 /api/mp 时请执行: sudo bash $REPO_DIR/deploy/install-feijihe-mp-proxy.sh"
 else
     log "[3/5] Stop old processes (no systemd units)..."
     for app in cs prod customer; do

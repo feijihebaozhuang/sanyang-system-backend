@@ -8,11 +8,21 @@
 
 ## 临时方案（已做）
 
-- 小程序 API 同时注册在 **3002** → `https://feijihe.top/api/mp/*`
-- quote-weapp / customer-order 的 API 地址改为 **`https://feijihe.top`**
-- 微信后台 request 合法域名只需 **`https://feijihe.top`**（报价小程序本来就有）
+- 小程序 API 走 **`https://feijihe.top/api/mp/*`**
+- 87 上执行 **`bash deploy/install-feijihe-mp-proxy.sh`**，把 `/api/mp/` 反代到 **3003**
+- 或 `git pull && bash deploy.sh` 重启 **sanyang-production**（3002 也挂载 mp 路由）
 
-部署：`git pull && bash deploy.sh` 后重启 **sanyang-production** 与 **sanyang-customer-order**。
+绑定若报 **HTTP 405**：说明 feijihe 尚未反代 /api/mp，按上面脚本修复。
+
+## 账号说明
+
+绑定用的是 **zean.feijihe.top 客服端账号**（MySQL `users` 表），不是 3003 guanli 网页的 admin。
+
+| 账号 | 密码 | 角色 | 能否用报价小程序 |
+|------|------|------|------------------|
+| admin | admin888 | 超级管理员 | ✅ |
+| sushiting 等 | … | 客服 | ✅ |
+| manager | … | 管理 | ❌ |
 
 ## 正式修复 guanli（小马哥）
 
