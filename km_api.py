@@ -1822,6 +1822,247 @@ def km_product_dims_from_sku_record(sku: dict[str, Any] | None) -> dict[str, Any
     }
 
 
+def _km_item_list_ok(res: dict[str, Any]) -> bool:
+    if res.get("success") is False:
+        return False
+    code = str(res.get("code") or "").strip()
+    if code and code not in ("0", "200", "success", ""):
+        if "items" not in res:
+            return False
+    return True
+
+
+def _km_item_list_payload(res: dict[str, Any]) -> tuple[list[dict], int]:
+    if not _km_item_list_ok(res):
+        return [], 0
+    items = res.get("items")
+    if not isinstance(items, list):
+        body = res.get("body")
+        if isinstance(body, dict):
+            items = body.get("items") or []
+        elif isinstance(body, str):
+            try:
+                parsed = json.loads(body)
+                items = parsed.get("items") if isinstance(parsed, dict) else []
+            except json.JSONDecodeError:
+                items = []
+        else:
+            items = []
+    total = res.get("total")
+    if total is None and isinstance(res.get("body"), dict):
+        total = res["body"].get("total")
+    try:
+        total_n = int(total or 0)
+    except (TypeError, ValueError):
+        total_n = 0
+    return list(items or []), total_n
+
+
+def km_item_list_query(
+    *,
+    page_no: int = 1,
+    page_size: int = 200,
+    active_status: int | None = 1,
+    start_modified: str = "",
+    end_modified: str = "",
+    item_type: int | None = None,
+) -> dict[str, Any]:
+    """item.list.query — 分页拉快麦商品档案（含 skus 子列表）。"""
+    page_size = max(20, min(200, int(page_size)))
+    biz: dict[str, Any] = {
+        "pageNo": str(max(1, int(page_no))),
+        "pageSize": str(page_size),
+    }
+    if active_status is not None:
+        biz["activeStatus"] = str(int(active_status))
+    if start_modified:
+        biz["startModified"] = start_modified
+    if end_modified:
+        biz["endModified"] = end_modified
+    if item_type is not None:
+        biz["type"] = str(int(item_type))
+    res = km_request("item.list.query", biz)
+    if _km_item_list_ok(res):
+        return res
+    # 部分环境 method 带 erp 前缀
+    res2 = km_request("erp.item.list.query", biz)
+    return res2
+
+
+def km_item_sku_list_get(
+    *,
+    sys_item_id: int | str | None = None,
+    outer_id: str = "",
+) -> list[dict[str, Any]]:
+    """erp.item.sku.list.get — 单主商品下全部 SKU。"""
+    biz: dict[str, Any] = {}
+    if sys_item_id not in (None, ""):
+        biz["sysItemId"] = int(sys_item_id)
+    elif (outer_id or "").strip():
+        biz["outerId"] = str(outer_id).strip()
+    else:
+        return []
+    res = km_request("erp.item.sku.list.get", biz)
+    if not res.get("success") and res.get("success") is not False:
+        if "itemSkus" in res:
+            pass
+        else:
+            return []
+    elif res.get("success") is False:
+        return []
+    rows = res.get("itemSkus") or res.get("itemSku") or []
+    if isinstance(rows, dict):
+        return [rows]
+    return list(rows or [])
+
+
+def km_infer_product_type_from_title(title: str, *, l: float = 0, w: float = 0) -> str:
+    import km_sku_map_store as kms
+
+    t = (title or "").lower()
+    if "珍珠棉" in title or "zhenzhen" in t:
+        return "zhenzhenmian"
+    if "扣底" in title:
+        return "koudi"
+    if "带扣" in title or "daikou" in t:
+        return "daikou"
+    if "双插" in title:
+        return "shuangcha"
+    if "飞机盒" in title or "飞机" in title:
+        return "zhengsquare"
+    if "纸箱" in title:
+        return "juxing"
+    return kms.normalize_product_type("", l=l, w=w)
+
+
+def km_sku_record_to_map_row(
+    sku: dict[str, Any],
+    *,
+    item_title: str = "",
+) -> dict[str, Any] | None:
+    """快麦 SKU / 主商品记录 → km_sku_map 行。"""
+    import km_sku_map_store as kms
+
+    outer_id = str(
+        sku.get("skuOuterId") or sku.get("outerId") or sku.get("itemOuterId") or ""
+    ).strip()
+    if not outer_id:
+        return None
+    dims = km_product_dims_from_sku_record(sku)
+    alias = (
+        (sku.get("propertiesAlias") or sku.get("propertiesName") or "").strip()
+    )
+    title = (sku.get("shortTitle") or item_title or sku.get("title") or "").strip()
+    if dims:
+        l, w, h = dims["length"], dims["width"], dims["height"]
+        product_type = dims.get("product_type") or "juxing"
+    else:
+        try:
+            l = float(sku.get("x") or 0)
+            w = float(sku.get("y") or 0)
+            h = float(sku.get("z") or 0)
+        except (TypeError, ValueError):
+            l = w = h = 0.0
+        product_type = km_infer_product_type_from_title(title or alias, l=l, w=w)
+    material = ""
+    if alias:
+        pl, pw, ph, mat = kms.parse_spec_alias_dims(alias.replace("，", "").replace(",", "x"))
+        if mat:
+            material = mat
+        if pl and pw and not l:
+            l, w, h = pl, pw, ph
+    dim_kind = kms.normalize_dim_kind(alias)
+    if not product_type or product_type == "juxing":
+        product_type = km_infer_product_type_from_title(title or alias, l=l, w=w)
+    return {
+        "outer_id": outer_id,
+        "spec_alias": alias or title,
+        "product_type": product_type,
+        "length": l,
+        "width": w,
+        "height": h,
+        "dim_kind": dim_kind,
+        "material": material,
+        "km_title": title,
+    }
+
+
+def km_catalog_rows_from_item(item: dict[str, Any]) -> list[dict[str, Any]]:
+    """从 item.list.query 单条主商品提取全部 km_sku_map 行。"""
+    if not isinstance(item, dict):
+        return []
+    title = (item.get("title") or item.get("shortTitle") or "").strip()
+    rows: list[dict[str, Any]] = []
+    skus = item.get("skus")
+    if isinstance(skus, list) and skus:
+        for sku in skus:
+            if not isinstance(sku, dict):
+                continue
+            row = km_sku_record_to_map_row(sku, item_title=title)
+            if row:
+                rows.append(row)
+        return rows
+    row = km_sku_record_to_map_row(item, item_title=title)
+    if row:
+        rows.append(row)
+    return rows
+
+
+def km_iter_catalog_map_rows(
+    *,
+    page_size: int = 200,
+    active_status: int | None = 1,
+    start_page: int = 1,
+    max_pages: int | None = None,
+    sleep_sec: float = 0.25,
+    fetch_missing_skus: bool = True,
+) -> Iterator[dict[str, Any]]:
+    """分页遍历快麦商品库，yield km_sku_map 行。"""
+    import time as _time
+
+    page = max(1, int(start_page))
+    pages_done = 0
+    seen_outer: set[str] = set()
+    while True:
+        if max_pages is not None and pages_done >= max_pages:
+            break
+        res = km_item_list_query(page_no=page, page_size=page_size, active_status=active_status)
+        items, total = _km_item_list_payload(res)
+        if not items:
+            if page == 1 and not _km_item_list_ok(res):
+                raise RuntimeError(res.get("msg") or res.get("subMsg") or "item.list.query 失败")
+            break
+        for item in items:
+            batch = km_catalog_rows_from_item(item)
+            if (
+                fetch_missing_skus
+                and not batch
+                and int(item.get("isSkuItem") or 0) == 1
+            ):
+                sid = item.get("sysItemId")
+                if sid:
+                    for sku in km_item_sku_list_get(sys_item_id=sid):
+                        row = km_sku_record_to_map_row(sku, item_title=item.get("title") or "")
+                        if row:
+                            batch.append(row)
+                    if sleep_sec:
+                        _time.sleep(sleep_sec)
+            for row in batch:
+                oid = row.get("outer_id") or ""
+                if oid in seen_outer:
+                    continue
+                seen_outer.add(oid)
+                yield row
+        pages_done += 1
+        if total and page * page_size >= total:
+            break
+        if len(items) < page_size:
+            break
+        page += 1
+        if sleep_sec:
+            _time.sleep(sleep_sec)
+
+
 def km_extract_line_product_dims(it: dict[str, Any]) -> dict[str, Any] | None:
     """订单子单若 API 已带 x/y/z 或 length/width/height，直接取用。"""
     if not isinstance(it, dict):

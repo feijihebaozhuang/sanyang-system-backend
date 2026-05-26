@@ -317,6 +317,113 @@ def api_admin_users_save():
         return jsonify({"success": False, "error": str(e)}), 400
 
 
+# ---------- 员工 / 功能权限（与 3001/3002 共用 MySQL + data.json） ----------
+import employee_perm_store as emp_store
+
+PERM_FEATURES = emp_store.PERM_FEATURES
+
+
+@app.route("/api/perm/data")
+def api_perm_data():
+    err = require_admin()
+    if err:
+        return err
+    bundle = emp_store.load_permission_bundle()
+    return jsonify({"success": True, "data": bundle, "features": PERM_FEATURES})
+
+
+@app.route("/api/perm/save", methods=["POST"])
+def api_perm_save():
+    err = require_admin()
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    payload = data.get("data") if isinstance(data.get("data"), dict) else data
+    try:
+        result = emp_store.save_permission_bundle(payload)
+        return jsonify({"success": True, **result})
+    except RuntimeError as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/perm/employees/save", methods=["POST"])
+def api_perm_employee_save():
+    err = require_admin()
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    try:
+        item = emp_store.upsert_employee(
+            data.get("name") or "",
+            data.get("position") or "",
+            enabled=bool(data.get("enabled", True)),
+        )
+        return jsonify({"success": True, "item": item})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
+
+@app.route("/api/perm/employees/delete", methods=["POST"])
+def api_perm_employee_delete():
+    err = require_admin()
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"success": False, "error": "name 必填"}), 400
+    emp_store.delete_employee(name)
+    return jsonify({"success": True})
+
+
+@app.route("/api/perm/users")
+def api_perm_users():
+    err = require_admin()
+    if err:
+        return err
+    return jsonify({"success": True, "items": emp_store.list_users()})
+
+
+@app.route("/api/perm/users/save", methods=["POST"])
+def api_perm_users_save():
+    err = require_admin()
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    try:
+        item = emp_store.upsert_user(
+            data.get("username") or "",
+            password=(data.get("password") or "").strip(),
+            display_name=(data.get("display_name") or "").strip(),
+            role=(data.get("role") or "员工").strip(),
+            employee_name=(data.get("employee_name") or "").strip(),
+            enabled=bool(data.get("enabled", True)),
+        )
+        return jsonify({"success": True, "item": item})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
+
+@app.route("/api/admin/sync_km_sku/status")
+def api_sync_km_sku_status():
+    err = require_admin()
+    if err:
+        return err
+    import km_sku_map_store as kms
+    from pathlib import Path
+
+    ck_path = Path(__file__).resolve().parent / "data" / "km_sku_sync_checkpoint.json"
+    ck = {}
+    if ck_path.is_file():
+        try:
+            import json
+
+            ck = json.loads(ck_path.read_text(encoding="utf-8"))
+        except Exception:
+            ck = {}
+    return jsonify({"success": True, "row_count": kms.row_count(), "checkpoint": ck})
+
+
 if __name__ == "__main__":
     port = int(os.getenv("CUSTOMER_ORDER_PORT", "3003"))
     app.run(host="0.0.0.0", port=port, debug=False)

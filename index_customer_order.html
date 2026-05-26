@@ -55,7 +55,10 @@ tr:hover td { background: #fafcff; }
 .toast.show { opacity: 1; }
 .match-box { background: #f8fffe; border: 1px solid #a9dfbf; border-radius: 6px; padding: 10px 12px; font-size: 13px; margin-top: 10px; }
 .match-box.none { background: #fef9f9; border-color: #f5b7b1; }
-.empty { text-align: center; color: #aaa; padding: 40px; font-size: 14px; }
+.subnav { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
+.subnav button { padding:6px 14px; border:1px solid #d9d9d9; background:#fafafa; border-radius:6px; cursor:pointer; font-size:13px; }
+.subnav button.active { background:#2980b9; color:#fff; border-color:#2980b9; }
+.perm-table-wrap { overflow-x:auto; max-height:520px; overflow-y:auto; }
 </style>
 </head>
 <body>
@@ -529,22 +532,195 @@ function saveOrder(id) {
 
 function loadPermissions() {
   if (currentUser.role !== 'admin') { toast('无权限'); return; }
-  apiFetch('/api/admin_users').then(function(d) {
-    if (!d.success) return;
-    var items = d.items || [];
-    var html = '<div class="card"><h2>权限管理（3003 后台账号）</h2>' +
-      '<div class="toolbar"><button onclick="editAdmin(null)">+ 新增账号</button></div>' +
-      '<table><thead><tr><th>账号</th><th>显示名</th><th>角色</th><th>状态</th><th>操作</th></tr></thead><tbody>';
-    items.forEach(function(u) {
-      html += '<tr><td>' + esc(u.username) + '</td><td>' + esc(u.display_name) + '</td>' +
-        '<td>' + (u.role === 'admin' ? '<span class="tag tag-blue">管理员</span>' : '<span class="tag tag-gray">只读</span>') + '</td>' +
-        '<td>' + (u.enabled ? '<span class="tag tag-green">启用</span>' : '<span class="tag tag-gray">停用</span>') + '</td>' +
-        '<td><button class="btn secondary" onclick="editAdmin(' + u.id + ')">编辑</button></td></tr>';
-    });
-    html += '</tbody></table></div><div id="admFormArea"></div>';
-    document.getElementById('mainContent').innerHTML = html;
-    window._adminUsers = items;
+  Promise.all([
+    apiFetch('/api/admin_users'),
+    apiFetch('/api/perm/data'),
+    apiFetch('/api/perm/users'),
+    apiFetch('/api/admin/sync_km_sku/status')
+  ]).then(function(results) {
+    window._adminUsers = (results[0].items || []);
+    window._permBundle = (results[1].data || {});
+    window._permFeatures = results[1].features || [];
+    window._sysUsers = (results[2].items || []);
+    window._kmSkuStatus = results[3] || {};
+    window._permSubTab = window._permSubTab || 'employees';
+    renderPermissionsPage();
   });
+}
+
+function setPermSubTab(tab) {
+  window._permSubTab = tab;
+  renderPermissionsPage();
+}
+
+function renderPermissionsPage() {
+  var tab = window._permSubTab || 'employees';
+  var html = '<div class="card"><h2>权限管理（统一入口，3001/3002 只读此配置）</h2>' +
+    '<div class="subnav">' +
+    '<button class="' + (tab==='employees'?'active':'') + '" onclick="setPermSubTab(\'employees\')">员工 × 功能权限</button>' +
+    '<button class="' + (tab==='users'?'active':'') + '" onclick="setPermSubTab(\'users\')">客服/生产登录账号</button>' +
+    '<button class="' + (tab==='co_admin'?'active':'') + '" onclick="setPermSubTab(\'co_admin\')">3003 后台账号</button>' +
+    '<button class="' + (tab==='km_sync'?'active':'') + '" onclick="setPermSubTab(\'km_sync\')">快麦 SKU 同步</button>' +
+    '</div><div id="permPanel"></div></div><div id="admFormArea"></div>';
+  document.getElementById('mainContent').innerHTML = html;
+  if (tab === 'employees') renderPermEmployees();
+  else if (tab === 'users') renderPermSysUsers();
+  else if (tab === 'co_admin') renderPermCoAdmin();
+  else renderPermKmSync();
+}
+
+function renderPermCoAdmin() {
+  var items = window._adminUsers || [];
+  var html = '<div class="toolbar"><button onclick="editAdmin(null)">+ 新增 3003 账号</button></div>' +
+    '<table><thead><tr><th>账号</th><th>显示名</th><th>角色</th><th>状态</th><th>操作</th></tr></thead><tbody>';
+  items.forEach(function(u) {
+    html += '<tr><td>' + esc(u.username) + '</td><td>' + esc(u.display_name) + '</td>' +
+      '<td>' + (u.role === 'admin' ? '<span class="tag tag-blue">管理员</span>' : '<span class="tag tag-gray">只读</span>') + '</td>' +
+      '<td>' + (u.enabled ? '<span class="tag tag-green">启用</span>' : '<span class="tag tag-gray">停用</span>') + '</td>' +
+      '<td><button class="btn secondary" onclick="editAdmin(' + u.id + ')">编辑</button></td></tr>';
+  });
+  html += '</tbody></table>';
+  document.getElementById('permPanel').innerHTML = html;
+}
+
+function renderPermKmSync() {
+  var st = window._kmSkuStatus || {};
+  var ck = st.checkpoint || {};
+  document.getElementById('permPanel').innerHTML =
+    '<p style="font-size:14px;line-height:1.8;color:#555;margin-bottom:12px;">' +
+    '当前 <code>km_sku_map</code> 表：<strong>' + (st.row_count || 0) + '</strong> 行。<br>' +
+    '全量同步在 87 服务器执行（需数小时，支持断点续跑）：</p>' +
+    '<pre style="background:#f6f8fa;padding:12px;border-radius:6px;font-size:12px;overflow:auto;">' +
+    'cd /www/feijihe/stable\n' +
+    'source venv/bin/activate\n' +
+    'python3 scripts/sync_km_sku_map_from_km.py --resume\n' +
+    '# 可选：python3 scripts/sync_km_sku_map_from_km.py --enrich-order-cache' +
+    '</pre>' +
+    '<p style="font-size:13px;color:#888;">断点：next_page=' + esc(ck.next_page || '-') +
+    '，已写入 ' + esc(ck.total_written || 0) + ' 行</p>';
+}
+
+function renderPermSysUsers() {
+  var items = window._sysUsers || [];
+  var html = '<div class="toolbar"><button onclick="editSysUser(null)">+ 新增登录账号</button></div>' +
+    '<table><thead><tr><th>账号</th><th>显示名</th><th>角色</th><th>绑定员工</th><th>状态</th><th>操作</th></tr></thead><tbody>';
+  items.forEach(function(u) {
+    html += '<tr><td>' + esc(u.username) + '</td><td>' + esc(u.display_name) + '</td><td>' + esc(u.role) + '</td>' +
+      '<td>' + esc(u.employee_name || '-') + '</td>' +
+      '<td>' + (u.enabled ? '<span class="tag tag-green">启用</span>' : '<span class="tag tag-gray">停用</span>') + '</td>' +
+      '<td><button class="btn secondary" onclick="editSysUser(\'' + esc(u.username).replace(/'/g, "\\'") + '\')">编辑</button></td></tr>';
+  });
+  html += '</tbody></table>';
+  document.getElementById('permPanel').innerHTML = html;
+}
+
+function editSysUser(username) {
+  var u = username ? (window._sysUsers || []).find(function(x) { return x.username === username; }) : { username:'', display_name:'', role:'员工', employee_name:'', enabled:true };
+  document.getElementById('admFormArea').innerHTML =
+    '<div class="card"><h2>' + (username ? '编辑登录账号' : '新增登录账号') + '</h2>' +
+    '<div class="form-grid">' +
+    field('登录账号', 'suUser', u.username, username ? '不可改' : '') +
+    field('显示名', 'suName', u.display_name) +
+    field('密码', 'suPwd', '', username ? '留空不改' : '新建必填') +
+    field('角色', 'suRole', u.role) +
+    field('绑定员工名', 'suEmp', u.employee_name) +
+    selectField('状态', 'suEnabled', u.enabled ? '1' : '0', [{v:'1',l:'启用'},{v:'0',l:'停用'}]) +
+    '</div><div class="form-actions">' +
+    '<button class="btn" onclick="saveSysUser()">保存</button>' +
+    '<button class="btn secondary" onclick="document.getElementById(\'admFormArea\').innerHTML=\'\'">取消</button></div></div>';
+  if (username) document.getElementById('suUser').readOnly = true;
+}
+
+function saveSysUser() {
+  var data = {
+    username: document.getElementById('suUser').value.trim(),
+    display_name: document.getElementById('suName').value.trim(),
+    role: document.getElementById('suRole').value.trim(),
+    employee_name: document.getElementById('suEmp').value.trim(),
+    enabled: document.getElementById('suEnabled').value === '1'
+  };
+  var pwd = document.getElementById('suPwd').value;
+  if (pwd) data.password = pwd;
+  apiFetch('/api/perm/users/save', { method: 'POST', body: JSON.stringify(data) })
+    .then(function(d) {
+      if (d.success) { toast('已保存'); document.getElementById('admFormArea').innerHTML=''; loadPermissions(); }
+      else toast(d.error || '保存失败');
+    });
+}
+
+function renderPermEmployees() {
+  var data = window._permBundle || {};
+  var features = window._permFeatures || [];
+  var employees = (data.employees || []).map(function(e) { return e.name || e; });
+  var perms = data.permissions || {};
+  var enabledMap = data.employee_enabled || {};
+  var html = '<div class="toolbar">' +
+    '<button onclick="addPermEmployee()">+ 新增员工</button>' +
+    '<button class="btn" onclick="savePermMatrix()">💾 保存员工权限</button></div>' +
+    '<div class="perm-table-wrap"><table><thead><tr><th>启用</th><th>员工</th><th>岗位</th>';
+  features.forEach(function(f) { html += '<th style="font-size:11px;min-width:52px;text-align:center;">' + esc(f) + '</th>'; });
+  html += '</tr></thead><tbody>';
+  employees.forEach(function(name) {
+    var emp = (data.employees || []).find(function(e) { return (e.name||e) === name; }) || { name: name, position: '' };
+    var row = perms[name] || {};
+    var on = enabledMap[name] !== false;
+    html += '<tr><td style="text-align:center;"><input type="checkbox" data-emp-en="' + esc(name) + '" ' + (on?'checked':'') + '></td>' +
+      '<td style="font-weight:500;">' + esc(name) + '</td><td><input style="width:80px;font-size:12px;padding:4px;" data-emp-pos="' + esc(name) + '" value="' + esc(emp.position||'') + '"></td>';
+    features.forEach(function(f) {
+      var checked = row[f] ? 'checked' : '';
+      html += '<td style="text-align:center;"><input type="checkbox" data-emp="' + esc(name) + '" data-feat="' + esc(f) + '" ' + checked + '></td>';
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  document.getElementById('permPanel').innerHTML = html;
+}
+
+function addPermEmployee() {
+  var name = prompt('员工姓名');
+  if (!name) return;
+  var pos = prompt('岗位（可选）') || '';
+  apiFetch('/api/perm/employees/save', { method: 'POST', body: JSON.stringify({ name: name.trim(), position: pos.trim() }) })
+    .then(function(d) {
+      if (d.success) { toast('已添加'); loadPermissions(); }
+      else toast(d.error || '失败');
+    });
+}
+
+function savePermMatrix() {
+  var data = window._permBundle || {};
+  var features = window._permFeatures || [];
+  var employees = [];
+  document.querySelectorAll('[data-emp-pos]').forEach(function(el) {
+    var name = el.getAttribute('data-emp-pos');
+    employees.push({ name: name, position: el.value.trim() });
+  });
+  var permissions = {};
+  var employee_enabled = {};
+  document.querySelectorAll('[data-emp-en]').forEach(function(el) {
+    employee_enabled[el.getAttribute('data-emp-en')] = el.checked;
+  });
+  employees.forEach(function(e) { permissions[e.name] = {}; });
+  document.querySelectorAll('[data-emp][data-feat]').forEach(function(el) {
+    var n = el.getAttribute('data-emp');
+    var f = el.getAttribute('data-feat');
+    if (!permissions[n]) permissions[n] = {};
+    permissions[n][f] = el.checked;
+  });
+  var payload = {
+    employees: employees,
+    permissions: permissions,
+    employee_enabled: employee_enabled,
+    processes: data.processes,
+    positions: data.positions,
+    role_permissions: data.role_permissions,
+    employee_roles: data.employee_roles
+  };
+  apiFetch('/api/perm/save', { method: 'POST', body: JSON.stringify({ data: payload }) })
+    .then(function(d) {
+      if (d.success) toast('权限已保存（MySQL + data.json + vault）');
+      else toast(d.error || '保存失败');
+    });
 }
 
 function editAdmin(id) {
@@ -574,7 +750,7 @@ function saveAdmin(id) {
   if (pwd) data.password = pwd;
   apiFetch('/api/admin_users/save', { method: 'POST', body: JSON.stringify(data) })
     .then(function(d) {
-      if (d.success) { toast('已保存'); loadPermissions(); }
+      if (d.success) { toast('已保存'); document.getElementById('admFormArea').innerHTML=''; loadPermissions(); }
       else toast(d.error || '保存失败');
     });
 }

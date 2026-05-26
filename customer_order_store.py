@@ -47,6 +47,12 @@ _DEFAULT_CATEGORIES = [
         "sort_order": 50,
         "spec_fields": ["length", "width", "height", "material", "dim_kind"],
     },
+    {
+        "code": "zhenzhenmian",
+        "name": "珍珠棉",
+        "sort_order": 60,
+        "spec_fields": ["length", "width", "height", "material", "dim_kind"],
+    },
 ]
 
 _ORDER_STATUSES = (
@@ -213,6 +219,23 @@ def _seed_defaults(cur) -> None:
     cur.execute("SELECT COUNT(*) AS c FROM co_product_category")
     if (cur.fetchone() or {}).get("c", 0) == 0:
         for cat in _DEFAULT_CATEGORIES:
+            cur.execute(
+                """
+                INSERT INTO co_product_category (code, name, sort_order, spec_fields_json, enabled)
+                VALUES (%s, %s, %s, %s, 1)
+                """,
+                (
+                    cat["code"],
+                    cat["name"],
+                    cat["sort_order"],
+                    json.dumps(cat["spec_fields"], ensure_ascii=False),
+                ),
+            )
+    else:
+        for cat in _DEFAULT_CATEGORIES:
+            cur.execute("SELECT id FROM co_product_category WHERE code=%s LIMIT 1", (cat["code"],))
+            if cur.fetchone():
+                continue
             cur.execute(
                 """
                 INSERT INTO co_product_category (code, name, sort_order, spec_fields_json, enabled)
