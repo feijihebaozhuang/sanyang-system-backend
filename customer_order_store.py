@@ -84,6 +84,12 @@ def password_hash(plain: str) -> str:
     return hashlib.sha256(plain.encode()).hexdigest()
 
 
+def _ensure_column(cur, table: str, column: str, ddl: str) -> None:
+    cur.execute(f"SHOW COLUMNS FROM `{table}` LIKE %s", (column,))
+    if not cur.fetchone():
+        cur.execute(f"ALTER TABLE `{table}` ADD COLUMN {ddl}")
+
+
 def ensure_schema(cur) -> None:
     cur.execute(
         """
@@ -125,14 +131,22 @@ def ensure_schema(cur) -> None:
           id INT UNSIGNED NOT NULL AUTO_INCREMENT,
           employee_name VARCHAR(64) NOT NULL,
           phone VARCHAR(32) NOT NULL DEFAULT '',
+          wx_openid VARCHAR(128) NOT NULL DEFAULT '',
           enabled TINYINT(1) NOT NULL DEFAULT 1,
           remark VARCHAR(512) NOT NULL DEFAULT '',
           created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
           PRIMARY KEY (id),
-          UNIQUE KEY uk_employee_name (employee_name)
+          UNIQUE KEY uk_employee_name (employee_name),
+          KEY idx_wx_openid (wx_openid)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """
+    )
+    _ensure_column(
+        cur,
+        "co_cs_staff",
+        "wx_openid",
+        "wx_openid VARCHAR(128) NOT NULL DEFAULT '' COMMENT '客服小程序微信openid' AFTER phone",
     )
     cur.execute(
         """
@@ -543,6 +557,51 @@ def ensure_customer_for_openid(
     return get_customer_by_id(int(cid)) or {"id": cid, "name": label, "wx_openid": openid}
 
 
+def find_cs_staff_by_openid(openid: str) -> dict | None:
+    openid = (openid or "").strip()
+    if not openid:
+        return None
+    ensure_tables()
+    db = connect()
+    try:
+        cur = db.cursor()
+        cur.execute(
+            "SELECT * FROM co_cs_staff WHERE wx_openid=%s AND enabled=1 LIMIT 1",
+            (openid,),
+        )
+        return cur.fetchone()
+    finally:
+        db.close()
+
+
+def bind_cs_staff_openid(cs_staff_id: int, openid: str) -> dict:
+    openid = (openid or "").strip()
+    if not openid:
+        raise ValueError("openid 必填")
+    ensure_tables()
+    db = connect()
+    try:
+        cur = db.cursor()
+        cur.execute(
+            "SELECT id FROM co_cs_staff WHERE wx_openid=%s AND id<>%s LIMIT 1",
+            (openid, int(cs_staff_id)),
+        )
+        if cur.fetchone():
+            raise ValueError("该微信已绑定其他客服")
+        cur.execute(
+            "UPDATE co_cs_staff SET wx_openid=%s WHERE id=%s",
+            (openid, int(cs_staff_id)),
+        )
+        db.commit()
+        cur.execute("SELECT * FROM co_cs_staff WHERE id=%s", (int(cs_staff_id),))
+        row = cur.fetchone()
+        if not row:
+            raise ValueError("客服不存在")
+        return row
+    finally:
+        db.close()
+
+
 def find_cs_staff_id_by_name(employee_name: str) -> int | None:
     employee_name = (employee_name or "").strip()
     if not employee_name:
@@ -703,6 +762,7 @@ def list_orders(
         cur.execute(
             f"""
             SELECT o.*, c.name AS customer_name, c.phone AS customer_phone,
+                   c.contact_name AS customer_contact, c.wx_openid AS customer_wx_openid,
                    s.employee_name AS cs_name, pc.name AS category_name
             FROM co_order o
             LEFT JOIN co_customer c ON c.id = o.customer_id
@@ -732,6 +792,7 @@ def get_order(order_id: int) -> dict | None:
         cur.execute(
             """
             SELECT o.*, c.name AS customer_name, c.phone AS customer_phone,
+                   c.contact_name AS customer_contact, c.wx_openid AS customer_wx_openid,
                    s.employee_name AS cs_name, pc.name AS category_name
             FROM co_order o
             LEFT JOIN co_customer c ON c.id = o.customer_id

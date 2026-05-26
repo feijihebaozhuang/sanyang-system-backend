@@ -27,6 +27,17 @@ def cs_token(username: str, cs_staff_id: int | None) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 
+def cs_wx_token(openid: str, cs_staff_id: int) -> str:
+    raw = f"mp_cs_wx:{_mp_secret()}:{openid}:{cs_staff_id}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:32]
+
+
+def verify_cs_wx_token(openid: str, cs_staff_id: int, token: str) -> bool:
+    if not openid or not cs_staff_id or not token:
+        return False
+    return token == cs_wx_token(openid, cs_staff_id)
+
+
 def verify_customer_token(openid: str, customer_id: int, token: str) -> bool:
     if not openid or not customer_id or not token:
         return False

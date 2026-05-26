@@ -58,11 +58,21 @@ def _cs_from_request():
     token = (request.headers.get("Authorization") or "").replace("Bearer ", "").strip()
     if not token:
         token = (body.get("token") or request.headers.get("X-Mp-Token") or "").strip()
-    username = (body.get("username") or request.headers.get("X-Mp-User") or "").strip()
+    openid = (body.get("openid") or request.headers.get("X-Mp-Openid") or "").strip()
     cs_id_raw = body.get("cs_staff_id") or request.headers.get("X-Mp-Cs-Id") or ""
     cs_id = int(cs_id_raw) if cs_id_raw not in ("", None) else None
+    if openid and cs_id and token and mp_auth.verify_cs_wx_token(openid, int(cs_id), token):
+        staff = co_store.find_cs_staff_by_openid(openid)
+        if staff and int(staff.get("id") or 0) == int(cs_id):
+            return {
+                "username": staff.get("employee_name") or "",
+                "cs_staff_id": cs_id,
+                "openid": openid,
+                "auth_mode": "wx",
+            }
+    username = (body.get("username") or request.headers.get("X-Mp-User") or "").strip()
     if username and token and mp_auth.verify_cs_token(username, cs_id, token):
-        return {"username": username, "cs_staff_id": cs_id}
+        return {"username": username, "cs_staff_id": cs_id, "auth_mode": "pwd"}
     return None
 
 
@@ -147,6 +157,20 @@ def mp_order_create():
         return jsonify({"success": False, "error": "请先登录", "code": 401}), 401
     data = request.get_json(silent=True) or {}
     data["customer_id"] = cust["id"]
+    phone = (data.get("phone") or data.get("customer_phone") or "").strip()
+    if phone:
+        co_store.upsert_customer(
+            {
+                "id": cust["id"],
+                "name": cust.get("name") or "",
+                "contact_name": cust.get("contact_name") or "",
+                "phone": phone,
+                "company": cust.get("company") or "",
+                "assigned_cs_id": cust.get("assigned_cs_id"),
+                "status": cust.get("status") or "active",
+                "remark": cust.get("remark") or "",
+            }
+        )
     if not data.get("cs_staff_id") and cust.get("assigned_cs_id"):
         data["cs_staff_id"] = cust["assigned_cs_id"]
     data.setdefault("status", "pending_review")
@@ -182,12 +206,25 @@ def mp_cs_login():
     data = request.get_json(silent=True) or {}
     username = (data.get("username") or "").strip()
     password = (data.get("password") or "").strip()
+    code = (data.get("code") or "").strip()
     user = mp_auth.verify_cs_password(username, password)
     if not user:
         return jsonify({"success": False, "error": "账号或密码错误，或无客服权限"}), 401
     en = (user.get("employee_name") or user.get("display_name") or "").strip()
     cs_staff_id = co_store.find_cs_staff_id_by_name(en)
+    if not cs_staff_id:
+        return jsonify({"success": False, "error": "未在客服员工表中找到对应姓名，请联系管理员"}), 403
+    openid = ""
+    if code:
+        try:
+            sess = mp_auth.wx_code_to_session(code)
+            openid = (sess.get("openid") or "").strip()
+            if openid:
+                co_store.bind_cs_staff_openid(int(cs_staff_id), openid)
+        except (ValueError, RuntimeError) as e:
+            return jsonify({"success": False, "error": str(e)}), 400
     tok = mp_auth.cs_token(username, cs_staff_id)
+    wx_tok = mp_auth.cs_wx_token(openid, int(cs_staff_id)) if openid else ""
     return jsonify(
         {
             "success": True,
@@ -196,8 +233,84 @@ def mp_cs_login():
             "employee_name": en,
             "cs_staff_id": cs_staff_id,
             "token": tok,
+            "openid": openid,
+            "wx_token": wx_tok,
+            "wx_bound": bool(openid),
         }
     )
+
+
+@mp_bp.route("/cs/wx/login", methods=["POST"])
+def mp_cs_wx_login():
+    data = request.get_json(silent=True) or {}
+    code = (data.get("code") or "").strip()
+    if not code:
+        return jsonify({"success": False, "error": "code 必填"}), 400
+    try:
+        sess = mp_auth.wx_code_to_session(code)
+        openid = (sess.get("openid") or "").strip()
+        staff = co_store.find_cs_staff_by_openid(openid)
+        if not staff:
+            return jsonify(
+                {
+                    "success": False,
+                    "need_bind": True,
+                    "openid": openid,
+                    "error": "首次使用请绑定 3001 账号",
+                }
+            ), 401
+        cs_staff_id = int(staff["id"])
+        tok = mp_auth.cs_wx_token(openid, cs_staff_id)
+        return jsonify(
+            {
+                "success": True,
+                "openid": openid,
+                "cs_staff_id": cs_staff_id,
+                "token": tok,
+                "display_name": staff.get("employee_name") or "",
+                "employee_name": staff.get("employee_name") or "",
+                "phone": staff.get("phone") or "",
+                "auth_mode": "wx",
+            }
+        )
+    except (ValueError, RuntimeError) as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
+
+@mp_bp.route("/cs/wx/bind", methods=["POST"])
+def mp_cs_wx_bind():
+    data = request.get_json(silent=True) or {}
+    code = (data.get("code") or "").strip()
+    username = (data.get("username") or "").strip()
+    password = (data.get("password") or "").strip()
+    if not code:
+        return jsonify({"success": False, "error": "code 必填"}), 400
+    user = mp_auth.verify_cs_password(username, password)
+    if not user:
+        return jsonify({"success": False, "error": "账号或密码错误，或无客服权限"}), 401
+    try:
+        sess = mp_auth.wx_code_to_session(code)
+        openid = (sess.get("openid") or "").strip()
+        en = (user.get("employee_name") or user.get("display_name") or "").strip()
+        cs_staff_id = co_store.find_cs_staff_id_by_name(en)
+        if not cs_staff_id:
+            return jsonify({"success": False, "error": "未在客服员工表中找到对应姓名"}), 403
+        staff = co_store.bind_cs_staff_openid(int(cs_staff_id), openid)
+        tok = mp_auth.cs_wx_token(openid, int(cs_staff_id))
+        return jsonify(
+            {
+                "success": True,
+                "openid": openid,
+                "cs_staff_id": cs_staff_id,
+                "token": tok,
+                "display_name": staff.get("employee_name") or en,
+                "employee_name": staff.get("employee_name") or en,
+                "phone": staff.get("phone") or "",
+                "auth_mode": "wx",
+            }
+        )
+    except (ValueError, RuntimeError) as e:
+        return jsonify({"success": False, "error": str(e)}), 400
 
 
 @mp_bp.route("/cs/orders")
@@ -215,6 +328,20 @@ def mp_cs_orders():
     else:
         items, total = co_store.list_orders(status=status or "pending_review", keyword=keyword, limit=200)
     return jsonify({"success": True, "items": items, "total": total})
+
+
+@mp_bp.route("/cs/order/<int:order_id>")
+def mp_cs_order_detail(order_id: int):
+    cs = _cs_from_request()
+    if not cs:
+        return jsonify({"success": False, "error": "请先登录", "code": 401}), 401
+    item = co_store.get_order(order_id)
+    if not item:
+        return jsonify({"success": False, "error": "订单不存在"}), 404
+    cs_id = cs.get("cs_staff_id")
+    if cs_id and item.get("cs_staff_id") and int(item["cs_staff_id"]) != int(cs_id):
+        return jsonify({"success": False, "error": "无权查看此订单"}), 403
+    return jsonify({"success": True, "item": item})
 
 
 @mp_bp.route("/cs/order/review", methods=["POST"])

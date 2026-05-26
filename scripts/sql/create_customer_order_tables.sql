@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS `co_product_category` (
 CREATE TABLE IF NOT EXISTS `co_cs_staff` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `employee_name` VARCHAR(64) NOT NULL COMMENT '姓名',
-  `phone` VARCHAR(32) NOT NULL DEFAULT '',
+  `phone` VARCHAR(32) NOT NULL DEFAULT '' COMMENT '微信同号（手机号）',
+  `wx_openid` VARCHAR(128) NOT NULL DEFAULT '' COMMENT '客服小程序绑定的微信openid',
   `enabled` TINYINT(1) NOT NULL DEFAULT 1,
   `remark` VARCHAR(512) NOT NULL DEFAULT '',
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
