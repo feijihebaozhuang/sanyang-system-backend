@@ -646,3 +646,59 @@ def mp_cs_order_ship():
         payload["remark"] = remark
     item = co_store.upsert_order(payload, created_by=f"cs:{cs.get('username')}")
     return jsonify({"success": True, "item": item})
+
+
+@mp_bp.route("/cs/order/wechat-contact", methods=["POST"])
+def mp_cs_order_wechat_contact():
+    """向客户下发小程序客服消息，客户可在微信内回复；客服在手机「小程序客服助手」接待。"""
+    _, err = _require_cs_or_forbidden()
+    if err:
+        return err
+    cs = _cs_from_request()
+    data = request.get_json(silent=True) or {}
+    oid = int(data.get("id") or data.get("order_id") or 0)
+    if not oid:
+        return jsonify({"success": False, "error": "order_id 必填"}), 400
+    existing = co_store.get_order(oid)
+    if not existing:
+        return jsonify({"success": False, "error": "订单不存在"}), 404
+    cs_id = cs.get("cs_staff_id")
+    if cs_id and existing.get("cs_staff_id") and int(existing["cs_staff_id"]) != int(cs_id):
+        user = _cs_user_from_session(cs)
+        if (user or {}).get("role") != "超级管理员":
+            return jsonify({"success": False, "error": "无权操作此订单"}), 403
+
+    openid = (existing.get("customer_wx_openid") or "").strip()
+    if not openid:
+        return jsonify({
+            "success": False,
+            "error": "该客户未绑定微信，无法发起小程序对话。请拨打电话或复制手机号添加微信。",
+            "fallback": "phone",
+        }), 400
+
+    custom = (data.get("message") or data.get("content") or "").strip()
+    order_no = existing.get("order_no") or str(oid)
+    spec = f"{existing.get('length')}×{existing.get('width')}×{existing.get('height')}"
+    if not custom:
+        custom = (
+            f"您好，我是三羊包装客服，关于您的订单 {order_no}（{spec} ×{existing.get('qty') or 1}），"
+            f"如有问题请直接回复本条消息。"
+        )
+    else:
+        custom = f"【订单 {order_no}】{custom}"
+
+    import mp_wechat as mwx
+
+    res = mwx.send_customer_service_text(openid, custom)
+    if not res.get("success"):
+        return jsonify({
+            "success": False,
+            "error": res.get("error") or "发送失败",
+            "errcode": res.get("errcode"),
+            "fallback": "phone",
+        }), 400
+    return jsonify({
+        "success": True,
+        "msg": "已发送。请在手机微信打开「小程序客服助手」查看客户回复。",
+        "dev_mode": res.get("dev_mode"),
+    })
