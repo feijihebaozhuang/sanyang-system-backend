@@ -60,6 +60,8 @@ def connect():
     if not pymysql:
         raise RuntimeError("缺少 pymysql")
     cfg = _get_db_config()
+    # settings 已经包含 autocommit，移除避免重复
+    cfg.pop("autocommit", None)
     return pymysql.connect(
         **cfg, autocommit=False, cursorclass=pymysql.cursors.DictCursor
     )
