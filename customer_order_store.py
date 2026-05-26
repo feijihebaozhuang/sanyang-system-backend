@@ -461,6 +461,106 @@ def upsert_cs_staff(data: dict) -> dict:
         db.close()
 
 
+def get_customer_by_id(customer_id: int) -> dict | None:
+    ensure_tables()
+    db = connect()
+    try:
+        cur = db.cursor()
+        cur.execute(
+            """
+            SELECT c.*, s.employee_name AS assigned_cs_name
+            FROM co_customer c
+            LEFT JOIN co_cs_staff s ON s.id = c.assigned_cs_id
+            WHERE c.id=%s
+            """,
+            (int(customer_id),),
+        )
+        return cur.fetchone()
+    finally:
+        db.close()
+
+
+def get_customer_by_openid(openid: str) -> dict | None:
+    openid = (openid or "").strip()
+    if not openid:
+        return None
+    ensure_tables()
+    db = connect()
+    try:
+        cur = db.cursor()
+        cur.execute(
+            """
+            SELECT c.*, s.employee_name AS assigned_cs_name
+            FROM co_customer c
+            LEFT JOIN co_cs_staff s ON s.id = c.assigned_cs_id
+            WHERE c.wx_openid=%s LIMIT 1
+            """,
+            (openid,),
+        )
+        return cur.fetchone()
+    finally:
+        db.close()
+
+
+def ensure_customer_for_openid(
+    openid: str,
+    *,
+    name: str = "",
+    phone: str = "",
+) -> dict:
+    existing = get_customer_by_openid(openid)
+    if existing:
+        if name or phone:
+            return upsert_customer(
+                {
+                    "id": existing["id"],
+                    "name": name or existing.get("name"),
+                    "phone": phone or existing.get("phone"),
+                    "contact_name": existing.get("contact_name") or "",
+                    "company": existing.get("company") or "",
+                    "assigned_cs_id": existing.get("assigned_cs_id"),
+                    "status": existing.get("status") or "active",
+                    "remark": existing.get("remark") or "",
+                }
+            )
+        return existing
+    label = name or f"微信客户{openid[-6:]}"
+    ensure_tables()
+    db = connect()
+    try:
+        cur = db.cursor()
+        cur.execute(
+            """
+            INSERT INTO co_customer (name, phone, wx_openid, status)
+            VALUES (%s, %s, %s, 'active')
+            """,
+            (label, phone, openid),
+        )
+        cid = cur.lastrowid
+        db.commit()
+    finally:
+        db.close()
+    return get_customer_by_id(int(cid)) or {"id": cid, "name": label, "wx_openid": openid}
+
+
+def find_cs_staff_id_by_name(employee_name: str) -> int | None:
+    employee_name = (employee_name or "").strip()
+    if not employee_name:
+        return None
+    ensure_tables()
+    db = connect()
+    try:
+        cur = db.cursor()
+        cur.execute(
+            "SELECT id FROM co_cs_staff WHERE employee_name=%s AND enabled=1 LIMIT 1",
+            (employee_name,),
+        )
+        row = cur.fetchone()
+        return int(row["id"]) if row else None
+    finally:
+        db.close()
+
+
 def list_customers(
     *,
     assigned_cs_id: int | None = None,

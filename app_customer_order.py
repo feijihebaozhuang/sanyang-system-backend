@@ -109,6 +109,11 @@ def static_files(filename):
     return send_from_directory("static", filename)
 
 
+from mp_api import mp_bp
+
+app.register_blueprint(mp_bp)
+
+
 @app.route("/api/login", methods=["POST"])
 def login():
     data = request.get_json(silent=True) or {}

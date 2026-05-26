@@ -1,0 +1,10 @@
+{
+  "pages": ["pages/login/login", "pages/orders/orders", "pages/detail/detail"],
+  "window": {
+    "navigationBarTitleText": "三羊客服",
+    "navigationBarBackgroundColor": "#1a5276",
+    "navigationBarTextStyle": "white"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

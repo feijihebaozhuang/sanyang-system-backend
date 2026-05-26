@@ -1,0 +1,13 @@
+{
+  "description": "三羊客户下单小程序",
+  "packOptions": { "ignore": [], "include": [] },
+  "setting": {
+    "urlCheck": true,
+    "es6": true,
+    "minified": true
+  },
+  "compileType": "miniprogram",
+  "appid": "wxa1d9f876327af0c0",
+  "projectname": "sanyang-customer-order",
+  "libVersion": "3.3.4"
+}

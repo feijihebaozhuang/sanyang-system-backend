@@ -1,0 +1,12 @@
+<view class="page" wx:if="{{item}}">
+  <view class="card">
+    <view class="title">{{item.order_no}}</view>
+    <view>客户：{{item.customer_name}} {{item.customer_phone}}</view>
+    <view>规格：{{item.length}}×{{item.width}}×{{item.height}} {{item.material}}</view>
+    <view>数量：{{item.qty}} · 金额：¥{{item.total_price || 0}}</view>
+    <view wx:if="{{item.outer_id}}">SKU：{{item.outer_id}}</view>
+    <textarea class="input" placeholder="审核备注" value="{{remark}}" bindinput="onRemark" />
+  </view>
+  <button class="btn" bindtap="approve">通过</button>
+  <button style="background:#e74c3c;color:#fff;margin:24rpx;border-radius:12rpx;" bindtap="reject">驳回</button>
+</view>

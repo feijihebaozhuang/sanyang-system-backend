@@ -1,0 +1,16 @@
+<view class="page">
+  <view class="card">
+    <view class="title">三羊包装 · 客户下单</view>
+    <text style="font-size:24rpx;color:#888;">选分类 → 填规格 → 自动匹配 → 下单</text>
+  </view>
+
+  <view wx:if="{{loading}}" class="card">加载中…</view>
+  <view wx:if="{{error}}" class="err">{{error}}</view>
+
+  <view class="card" wx:for="{{categories}}" wx:key="code" bindtap="goCreate" data-code="{{item.code}}" data-name="{{item.name}}">
+    <view class="title">{{item.name}}</view>
+    <text style="font-size:24rpx;color:#999;">{{item.code}}</text>
+  </view>
+
+  <button class="btn-secondary" bindtap="goOrders">我的订单</button>
+</view>
