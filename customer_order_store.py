@@ -169,6 +169,12 @@ def ensure_schema(cur) -> None:
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """
     )
+    _ensure_column(
+        cur,
+        "co_customer",
+        "address",
+        "address VARCHAR(512) NOT NULL DEFAULT '' COMMENT '默认收货地址' AFTER company",
+    )
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS co_order (
@@ -199,6 +205,24 @@ def ensure_schema(cur) -> None:
           KEY idx_created (created_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """
+    )
+    _ensure_column(
+        cur,
+        "co_order",
+        "ship_contact",
+        "ship_contact VARCHAR(64) NOT NULL DEFAULT '' COMMENT '收货人' AFTER remark",
+    )
+    _ensure_column(
+        cur,
+        "co_order",
+        "ship_phone",
+        "ship_phone VARCHAR(32) NOT NULL DEFAULT '' COMMENT '收货电话' AFTER ship_contact",
+    )
+    _ensure_column(
+        cur,
+        "co_order",
+        "ship_address",
+        "ship_address VARCHAR(512) NOT NULL DEFAULT '' COMMENT '收货地址' AFTER ship_phone",
     )
 
 
@@ -532,6 +556,7 @@ def ensure_customer_for_openid(
                     "phone": phone or existing.get("phone"),
                     "contact_name": existing.get("contact_name") or "",
                     "company": existing.get("company") or "",
+                    "address": existing.get("address") or "",
                     "assigned_cs_id": existing.get("assigned_cs_id"),
                     "status": existing.get("status") or "active",
                     "remark": existing.get("remark") or "",
@@ -707,6 +732,7 @@ def upsert_customer(data: dict) -> dict:
     contact_name = (data.get("contact_name") or "").strip()
     phone = (data.get("phone") or "").strip()
     company = (data.get("company") or "").strip()
+    address = (data.get("address") or "").strip()
     assigned_cs_id = data.get("assigned_cs_id") or None
     if assigned_cs_id == "":
         assigned_cs_id = None
@@ -721,20 +747,20 @@ def upsert_customer(data: dict) -> dict:
             cur.execute(
                 """
                 UPDATE co_customer
-                SET name=%s, contact_name=%s, phone=%s, company=%s,
+                SET name=%s, contact_name=%s, phone=%s, company=%s, address=%s,
                     assigned_cs_id=%s, status=%s, remark=%s
                 WHERE id=%s
                 """,
-                (name, contact_name, phone, company, assigned_cs_id, status, remark, cid),
+                (name, contact_name, phone, company, address, assigned_cs_id, status, remark, cid),
             )
         else:
             cur.execute(
                 """
                 INSERT INTO co_customer
-                (name, contact_name, phone, company, assigned_cs_id, status, remark)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                (name, contact_name, phone, company, address, assigned_cs_id, status, remark)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """,
-                (name, contact_name, phone, company, assigned_cs_id, status, remark),
+                (name, contact_name, phone, company, address, assigned_cs_id, status, remark),
             )
             cid = cur.lastrowid
         db.commit()
@@ -761,6 +787,7 @@ def list_orders(
     status: str = "",
     customer_id: int | None = None,
     cs_staff_id: int | None = None,
+    cs_include_unassigned: bool = False,
     keyword: str = "",
     limit: int = 100,
     offset: int = 0,
@@ -777,9 +804,13 @@ def list_orders(
         if customer_id:
             where.append("o.customer_id=%s")
             params.append(customer_id)
-        if cs_staff_id:
-            where.append("o.cs_staff_id=%s")
-            params.append(cs_staff_id)
+        if cs_staff_id is not None:
+            if cs_include_unassigned:
+                where.append("(o.cs_staff_id IS NULL OR o.cs_staff_id=%s)")
+                params.append(int(cs_staff_id))
+            else:
+                where.append("o.cs_staff_id=%s")
+                params.append(int(cs_staff_id))
         if keyword:
             where.append("(o.order_no LIKE %s OR c.name LIKE %s OR o.outer_id LIKE %s)")
             kw = f"%{keyword}%"
@@ -869,6 +900,9 @@ def upsert_order(data: dict, *, created_by: str = "admin") -> dict:
     if status not in _ORDER_STATUSES:
         raise ValueError(f"无效 status: {status}")
     remark = (data.get("remark") or "").strip()
+    ship_contact = (data.get("ship_contact") or data.get("contact_name") or "").strip()
+    ship_phone = (data.get("ship_phone") or data.get("phone") or "").strip()
+    ship_address = (data.get("ship_address") or data.get("address") or "").strip()
     cs_staff_id = data.get("cs_staff_id") or None
     if cs_staff_id == "":
         cs_staff_id = None
@@ -888,14 +922,14 @@ def upsert_order(data: dict, *, created_by: str = "admin") -> dict:
                   customer_id=%s, cs_staff_id=%s, product_category_code=%s,
                   length=%s, width=%s, height=%s, material=%s, dim_kind=%s,
                   outer_id=%s, qty=%s, unit_price=%s, total_price=%s,
-                  status=%s, remark=%s
+                  status=%s, remark=%s, ship_contact=%s, ship_phone=%s, ship_address=%s
                 WHERE id=%s
                 """,
                 (
                     customer_id, cs_staff_id, product_category_code,
                     length, width, height, material, dim_kind,
                     outer_id, qty, unit_price, total_price,
-                    status, remark, oid,
+                    status, remark, ship_contact, ship_phone, ship_address, oid,
                 ),
             )
         else:
@@ -905,13 +939,15 @@ def upsert_order(data: dict, *, created_by: str = "admin") -> dict:
                 INSERT INTO co_order (
                   order_no, customer_id, cs_staff_id, product_category_code,
                   length, width, height, material, dim_kind, outer_id,
-                  qty, unit_price, total_price, status, remark, created_by
-                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                  qty, unit_price, total_price, status, remark,
+                  ship_contact, ship_phone, ship_address, created_by
+                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """,
                 (
                     order_no, customer_id, cs_staff_id, product_category_code,
                     length, width, height, material, dim_kind, outer_id,
-                    qty, unit_price, total_price, status, remark, created_by,
+                    qty, unit_price, total_price, status, remark,
+                    ship_contact, ship_phone, ship_address, created_by,
                 ),
             )
             oid = cur.lastrowid

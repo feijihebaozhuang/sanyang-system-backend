@@ -152,6 +152,14 @@ def _cs_session_allowed(cs: dict) -> bool:
     return mp_auth.user_can_use_quote_weapp(user)
 
 
+def _cs_user_from_session(cs: dict) -> dict | None:
+    if cs.get("auth_mode") == "pwd":
+        return mp_auth.find_user_by_username(cs.get("username") or "")
+    staff = co_store.get_cs_staff(int(cs.get("cs_staff_id") or 0))
+    en = (staff.get("employee_name") if staff else "") or cs.get("username") or ""
+    return mp_auth.find_user_by_employee_name(en)
+
+
 def _cs_from_request():
     body = request.get_json(silent=True) or {}
     token = (request.headers.get("Authorization") or "").replace("Bearer ", "").strip()
@@ -294,6 +302,35 @@ def mp_match():
     return jsonify({"success": True, "match": match, "matched": bool(match)})
 
 
+@mp_bp.route("/customer/profile", methods=["GET", "POST"])
+def mp_customer_profile():
+    cust = _customer_from_request()
+    if not cust:
+        return jsonify({"success": False, "error": "请先登录", "code": 401}), 401
+    cid = int(cust["id"])
+    if request.method == "GET":
+        row = co_store.get_customer_by_id(cid)
+        return jsonify({"success": True, "customer": row})
+    data = request.get_json(silent=True) or {}
+    phone = (data.get("phone") or "").strip()
+    contact_name = (data.get("contact_name") or "").strip()
+    address = (data.get("address") or "").strip()
+    updated = co_store.upsert_customer(
+        {
+            "id": cid,
+            "name": cust.get("name") or "",
+            "contact_name": contact_name or cust.get("contact_name") or "",
+            "phone": phone or cust.get("phone") or "",
+            "address": address or cust.get("address") or "",
+            "company": cust.get("company") or "",
+            "assigned_cs_id": cust.get("assigned_cs_id"),
+            "status": cust.get("status") or "active",
+            "remark": cust.get("remark") or "",
+        }
+    )
+    return jsonify({"success": True, "customer": updated})
+
+
 @mp_bp.route("/order/create", methods=["POST"])
 def mp_order_create():
     cust = _customer_from_request()
@@ -301,20 +338,26 @@ def mp_order_create():
         return jsonify({"success": False, "error": "请先登录", "code": 401}), 401
     data = request.get_json(silent=True) or {}
     data["customer_id"] = cust["id"]
-    phone = (data.get("phone") or data.get("customer_phone") or "").strip()
-    if phone:
+    phone = (data.get("phone") or data.get("ship_phone") or data.get("customer_phone") or "").strip()
+    contact_name = (data.get("contact_name") or data.get("ship_contact") or "").strip()
+    address = (data.get("address") or data.get("ship_address") or "").strip()
+    if phone or contact_name or address:
         co_store.upsert_customer(
             {
                 "id": cust["id"],
                 "name": cust.get("name") or "",
-                "contact_name": cust.get("contact_name") or "",
-                "phone": phone,
+                "contact_name": contact_name or cust.get("contact_name") or "",
+                "phone": phone or cust.get("phone") or "",
+                "address": address or cust.get("address") or "",
                 "company": cust.get("company") or "",
                 "assigned_cs_id": cust.get("assigned_cs_id"),
                 "status": cust.get("status") or "active",
                 "remark": cust.get("remark") or "",
             }
         )
+    data["ship_phone"] = phone
+    data["ship_contact"] = contact_name
+    data["ship_address"] = address
     if not data.get("cs_staff_id") and cust.get("assigned_cs_id"):
         data["cs_staff_id"] = cust["assigned_cs_id"]
     data.setdefault("status", "pending_review")
@@ -474,15 +517,23 @@ def mp_cs_orders():
     if err:
         return err
     cs = _cs_from_request()
-    status = (request.args.get("status") or "").strip()
+    status = (request.args.get("status") or "").strip() or "pending_review"
     keyword = (request.args.get("keyword") or "").strip()
-    cs_id = cs.get("cs_staff_id")
-    if cs_id:
+    user = _cs_user_from_session(cs) if cs else None
+    is_super = (user or {}).get("role") == "超级管理员"
+    cs_id = cs.get("cs_staff_id") if cs else None
+    if is_super:
+        items, total = co_store.list_orders(status=status, keyword=keyword, limit=200)
+    elif cs_id:
         items, total = co_store.list_orders(
-            cs_staff_id=int(cs_id), status=status, keyword=keyword, limit=200
+            cs_staff_id=int(cs_id),
+            cs_include_unassigned=(status == "pending_review"),
+            status=status,
+            keyword=keyword,
+            limit=200,
         )
     else:
-        items, total = co_store.list_orders(status=status or "pending_review", keyword=keyword, limit=200)
+        items, total = co_store.list_orders(status=status, keyword=keyword, limit=200)
     return jsonify({"success": True, "items": items, "total": total})
 
 
