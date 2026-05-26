@@ -5,7 +5,7 @@ set -euo pipefail
 STABLE="${STABLE_DIR:-/www/feijihe/stable}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-for unit in sanyang-cs.service sanyang-production.service; do
+for unit in sanyang-cs.service sanyang-production.service sanyang-customer-order.service; do
   src="$SCRIPT_DIR/systemd/$unit"
   [ -f "$src" ] || { echo "缺少 $src"; exit 1; }
   sed "s|/www/feijihe/stable|$STABLE|g" "$src" > "/etc/systemd/system/$unit"
@@ -13,7 +13,7 @@ for unit in sanyang-cs.service sanyang-production.service; do
 done
 
 systemctl daemon-reload
-systemctl enable sanyang-cs.service sanyang-production.service
-systemctl restart sanyang-cs.service sanyang-production.service
-systemctl --no-pager status sanyang-cs.service sanyang-production.service || true
+systemctl enable sanyang-cs.service sanyang-production.service sanyang-customer-order.service
+systemctl restart sanyang-cs.service sanyang-production.service sanyang-customer-order.service
+systemctl --no-pager status sanyang-cs.service sanyang-production.service sanyang-customer-order.service || true
 echo "完成：ExecStart 使用 $STABLE/venv/bin/python3"

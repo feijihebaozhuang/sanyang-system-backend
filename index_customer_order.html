@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>三羊客户下单 · 管理后台</title>
+<script src="/static/auth_session.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif; background: #f0f2f5; color: #333; }
+.hidden { display: none !important; }
+#loginPage { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #1a5276, #2980b9); }
+.login-box { background: #fff; padding: 36px 40px; border-radius: 12px; width: 360px; box-shadow: 0 8px 32px rgba(0,0,0,.15); }
+.login-box h1 { font-size: 20px; margin-bottom: 6px; color: #1a5276; }
+.login-box p { font-size: 13px; color: #888; margin-bottom: 24px; }
+.login-box input { width: 100%; padding: 10px 12px; margin-bottom: 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px; }
+.login-box button { width: 100%; padding: 11px; background: #2980b9; color: #fff; border: none; border-radius: 6px; font-size: 15px; cursor: pointer; }
+.login-box button:hover { background: #1a5276; }
+.login-err { color: #e74c3c; font-size: 13px; margin-top: 8px; min-height: 18px; }
+#appShell { min-height: 100vh; display: flex; flex-direction: column; }
+.topbar { background: #1a5276; color: #fff; padding: 0 20px; height: 52px; display: flex; align-items: center; justify-content: space-between; }
+.topbar h1 { font-size: 17px; font-weight: 600; }
+.topbar .user-info { font-size: 13px; opacity: .9; }
+.topbar button { background: rgba(255,255,255,.15); border: none; color: #fff; padding: 6px 14px; border-radius: 4px; cursor: pointer; margin-left: 10px; font-size: 13px; }
+.nav { background: #fff; border-bottom: 1px solid #e8e8e8; display: flex; padding: 0 16px; gap: 4px; overflow-x: auto; }
+.nav button { background: none; border: none; padding: 12px 18px; font-size: 14px; cursor: pointer; color: #666; border-bottom: 2px solid transparent; white-space: nowrap; }
+.nav button.active { color: #2980b9; border-bottom-color: #2980b9; font-weight: 600; }
+.main { flex: 1; padding: 20px; max-width: 1400px; width: 100%; margin: 0 auto; }
+.card { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.card h2 { font-size: 16px; margin-bottom: 16px; color: #1a5276; }
+.stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.stat-box { background: #fff; border-radius: 8px; padding: 16px; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.stat-box .num { font-size: 28px; font-weight: 700; color: #2980b9; }
+.stat-box .lbl { font-size: 12px; color: #888; margin-top: 4px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; align-items: center; }
+.toolbar input, .toolbar select { padding: 7px 10px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 13px; }
+.toolbar button, .btn { padding: 7px 14px; background: #2980b9; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.toolbar button.secondary, .btn.secondary { background: #fff; color: #333; border: 1px solid #d9d9d9; }
+.toolbar button.danger { background: #e74c3c; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 9px 10px; text-align: left; border-bottom: 1px solid #f0f0f0; }
+th { background: #fafafa; font-weight: 600; color: #555; }
+tr:hover td { background: #fafcff; }
+.tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+.tag-green { background: #e8f8f0; color: #27ae60; }
+.tag-orange { background: #fef5e7; color: #e67e22; }
+.tag-gray { background: #f0f0f0; color: #888; }
+.tag-blue { background: #ebf5fb; color: #2980b9; }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.form-grid label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; }
+.form-grid input, .form-grid select, .form-grid textarea { width: 100%; padding: 8px 10px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 13px; }
+.form-grid textarea { min-height: 60px; resize: vertical; }
+.form-actions { margin-top: 14px; display: flex; gap: 8px; }
+.toast { position: fixed; bottom: 24px; right: 24px; background: #333; color: #fff; padding: 10px 18px; border-radius: 6px; font-size: 13px; z-index: 9999; opacity: 0; transition: opacity .3s; }
+.toast.show { opacity: 1; }
+.match-box { background: #f8fffe; border: 1px solid #a9dfbf; border-radius: 6px; padding: 10px 12px; font-size: 13px; margin-top: 10px; }
+.match-box.none { background: #fef9f9; border-color: #f5b7b1; }
+.empty { text-align: center; color: #aaa; padding: 40px; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<div id="loginPage">
+  <div class="login-box">
+    <h1>三羊客户下单系统</h1>
+    <p>3003 管理后台 · admin / 戴雅利</p>
+    <input id="loginUser" placeholder="账号" autocomplete="username">
+    <input id="loginPwd" type="password" placeholder="密码" autocomplete="current-password">
+    <button onclick="doLogin()">登录</button>
+    <div class="login-err" id="loginErr"></div>
+  </div>
+</div>
+
+<div id="appShell" class="hidden">
+  <div class="topbar">
+    <h1>三羊客户下单 · 管理后台</h1>
+    <div>
+      <span class="user-info" id="userLabel"></span>
+      <button onclick="doLogout()">退出</button>
+    </div>
+  </div>
+  <div class="nav" id="navBar">
+    <button data-page="dashboard" class="active" onclick="switchPage('dashboard')">概览</button>
+    <button data-page="categories" onclick="switchPage('categories')">产品目录</button>
+    <button data-page="customers" onclick="switchPage('customers')">客户管理</button>
+    <button data-page="orders" onclick="switchPage('orders')">订单总览</button>
+    <button data-page="cs_staff" onclick="switchPage('cs_staff')">客服员工</button>
+    <button data-page="permissions" id="navPermissions" onclick="switchPage('permissions')">权限管理</button>
+  </div>
+  <div class="main" id="mainContent"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+var currentUser = null;
+var currentPage = 'dashboard';
+var csStaffCache = [];
+var categoriesCache = [];
+var customersCache = [];
+
+var STATUS_LABELS = {
+  draft: '草稿', pending_review: '待审核', approved: '已通过',
+  rejected: '已驳回', in_production: '生产中', completed: '已完成', cancelled: '已取消'
+};
+
+function toast(msg) {
+  var el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(function() { el.classList.remove('show'); }, 2500);
+}
+
+function apiFetch(url, opts) {
+  return SY_AUTH.apiFetch(url, opts).then(function(r) {
+    if (r.status === 401) { showLogin(); throw new Error('未登录'); }
+    return r.json();
+  });
+}
+
+function showLogin() {
+  document.getElementById('loginPage').classList.remove('hidden');
+  document.getElementById('appShell').classList.add('hidden');
+}
+
+function showApp() {
+  document.getElementById('loginPage').classList.add('hidden');
+  document.getElementById('appShell').classList.remove('hidden');
+  document.getElementById('userLabel').textContent =
+    (currentUser.display_name || currentUser.username) + ' · ' + (currentUser.role === 'admin' ? '管理员' : '只读');
+  document.getElementById('navPermissions').classList.toggle('hidden', currentUser.role !== 'admin');
+}
+
+function doLogin() {
+  var u = document.getElementById('loginUser').value.trim();
+  var p = document.getElementById('loginPwd').value;
+  document.getElementById('loginErr').textContent = '';
+  apiFetch('/api/login', { method: 'POST', body: JSON.stringify({ username: u, password: p }) })
+    .then(function(d) {
+      if (!d.success) { document.getElementById('loginErr').textContent = d.message || '登录失败'; return; }
+      currentUser = d.user;
+      SY_AUTH.saveAuthCredentials(d.user.username, d.user.auth_token);
+      showApp();
+      switchPage('dashboard');
+    })
+    .catch(function(e) { document.getElementById('loginErr').textContent = e.message || '网络错误'; });
+}
+
+function doLogout() {
+  apiFetch('/api/logout', { method: 'POST' }).finally(function() {
+    SY_AUTH.clearAuthCredentials();
+    currentUser = null;
+    showLogin();
+  });
+}
+
+function switchPage(page) {
+  currentPage = page;
+  document.querySelectorAll('.nav button').forEach(function(b) {
+    b.classList.toggle('active', b.getAttribute('data-page') === page);
+  });
+  SY_AUTH.saveRoute(page, null);
+  var loaders = {
+    dashboard: loadDashboard,
+    categories: loadCategories,
+    customers: loadCustomers,
+    orders: loadOrders,
+    cs_staff: loadCsStaff,
+    permissions: loadPermissions
+  };
+  (loaders[page] || loadDashboard)();
+}
+
+function statusTag(s) {
+  var cls = s === 'approved' || s === 'completed' ? 'tag-green' :
+    s === 'pending_review' ? 'tag-orange' : 'tag-gray';
+  return '<span class="tag ' + cls + '">' + (STATUS_LABELS[s] || s) + '</span>';
+}
+
+function loadDashboard() {
+  apiFetch('/api/dashboard').then(function(d) {
+    if (!d.success) return;
+    var s = d.stats;
+    document.getElementById('mainContent').innerHTML =
+      '<div class="stats">' +
+      statBox(s.customers_active, '活跃客户') +
+      statBox(s.categories_enabled, '产品分类') +
+      statBox(s.cs_staff_enabled, '客服员工') +
+      statBox(s.orders_total, '订单总数') +
+      statBox(s.orders_pending_review, '待审核') +
+      '</div>' +
+      '<div class="card"><h2>系统说明</h2>' +
+      '<p style="font-size:14px;line-height:1.8;color:#555;">' +
+      '本后台为<strong>三羊客户下单系统</strong>（端口 3003），与 3001 客服端、3002 生产端<strong>完全独立</strong>。<br>' +
+      '第一阶段：产品目录结构化配置、客户管理、订单总览、权限管理。<br>' +
+      '规格匹配只读查询 <code>km_sku_map</code>，自动新建 SKU 在客户小程序阶段实现。' +
+      '</p></div>';
+  });
+}
+
+function statBox(n, lbl) {
+  return '<div class="stat-box"><div class="num">' + (n || 0) + '</div><div class="lbl">' + lbl + '</div></div>';
+}
+
+function loadCategories() {
+  apiFetch('/api/categories?all=1').then(function(d) {
+    if (!d.success) return;
+    categoriesCache = d.items || [];
+    var canEdit = currentUser.role === 'admin';
+    var html = '<div class="card"><h2>产品目录配置</h2>';
+    if (canEdit) {
+      html += '<div class="toolbar"><button onclick="editCategory(null)">+ 新增分类</button></div>';
+    }
+    html += '<table><thead><tr><th>排序</th><th>代码</th><th>名称</th><th>规格字段</th><th>状态</th>';
+    if (canEdit) html += '<th>操作</th>';
+    html += '</tr></thead><tbody>';
+    if (!categoriesCache.length) html += '<tr><td colspan="6" class="empty">暂无分类</td></tr>';
+    categoriesCache.forEach(function(c) {
+      html += '<tr><td>' + c.sort_order + '</td><td><code>' + esc(c.code) + '</code></td><td>' + esc(c.name) + '</td>' +
+        '<td>' + esc((c.spec_fields || []).join(', ')) + '</td>' +
+        '<td>' + (c.enabled ? '<span class="tag tag-green">启用</span>' : '<span class="tag tag-gray">停用</span>') + '</td>';
+      if (canEdit) html += '<td><button class="btn secondary" onclick="editCategory(' + c.id + ')">编辑</button></td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table></div><div id="catFormArea"></div>';
+    document.getElementById('mainContent').innerHTML = html;
+  });
+}
+
+function editCategory(id) {
+  var c = id ? categoriesCache.find(function(x) { return x.id === id; }) : {
+    code: '', name: '', sort_order: 0, spec_fields: ['length','width','height','material','dim_kind'], enabled: true, remark: ''
+  };
+  document.getElementById('catFormArea').innerHTML =
+    '<div class="card"><h2>' + (id ? '编辑分类' : '新增分类') + '</h2>' +
+    '<div class="form-grid">' +
+    field('分类代码', 'catCode', c.code, '如 zhengsquare') +
+    field('显示名称', 'catName', c.name, '如 标准飞机盒') +
+    field('排序', 'catSort', c.sort_order, '', 'number') +
+    field('备注', 'catRemark', c.remark || '') +
+    selectField('状态', 'catEnabled', c.enabled ? '1' : '0', [{v:'1',l:'启用'},{v:'0',l:'停用'}]) +
+    '</div><div class="form-actions">' +
+    '<button class="btn" onclick="saveCategory(' + (id || 'null') + ')">保存</button>' +
+    '<button class="btn secondary" onclick="document.getElementById(\'catFormArea\').innerHTML=\'\'">取消</button></div></div>';
+}
+
+function saveCategory(id) {
+  var data = {
+    id: id || undefined,
+    code: document.getElementById('catCode').value.trim(),
+    name: document.getElementById('catName').value.trim(),
+    sort_order: parseInt(document.getElementById('catSort').value) || 0,
+    remark: document.getElementById('catRemark').value.trim(),
+    enabled: document.getElementById('catEnabled').value === '1',
+    spec_fields: ['length','width','height','material','dim_kind']
+  };
+  apiFetch('/api/categories/save', { method: 'POST', body: JSON.stringify(data) })
+    .then(function(d) {
+      if (d.success) { toast('已保存'); loadCategories(); }
+      else toast(d.error || '保存失败');
+    });
+}
+
+function loadCsStaff() {
+  apiFetch('/api/cs_staff?all=1').then(function(d) {
+    if (!d.success) return;
+    csStaffCache = d.items || [];
+    var canEdit = currentUser.role === 'admin';
+    var html = '<div class="card"><h2>客服员工（≤15人，小程序阶段使用）</h2>';
+    if (canEdit) html += '<div class="toolbar"><button onclick="editCsStaff(null)">+ 新增客服</button></div>';
+    html += '<table><thead><tr><th>姓名</th><th>电话</th><th>状态</th><th>备注</th>';
+    if (canEdit) html += '<th>操作</th>';
+    html += '</tr></thead><tbody>';
+    csStaffCache.forEach(function(s) {
+      html += '<tr><td>' + esc(s.employee_name) + '</td><td>' + esc(s.phone) + '</td>' +
+        '<td>' + (s.enabled ? '<span class="tag tag-green">启用</span>' : '<span class="tag tag-gray">停用</span>') + '</td>' +
+        '<td>' + esc(s.remark) + '</td>';
+      if (canEdit) html += '<td><button class="btn secondary" onclick="editCsStaff(' + s.id + ')">编辑</button></td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table></div><div id="csFormArea"></div>';
+    document.getElementById('mainContent').innerHTML = html;
+  });
+}
+
+function editCsStaff(id) {
+  var s = id ? csStaffCache.find(function(x) { return x.id === id; }) : { employee_name: '', phone: '', enabled: true, remark: '' };
+  document.getElementById('csFormArea').innerHTML =
+    '<div class="card"><h2>' + (id ? '编辑客服' : '新增客服') + '</h2>' +
+    '<div class="form-grid">' +
+    field('姓名', 'csName', s.employee_name) +
+    field('电话', 'csPhone', s.phone) +
+    selectField('状态', 'csEnabled', s.enabled ? '1' : '0', [{v:'1',l:'启用'},{v:'0',l:'停用'}]) +
+    field('备注', 'csRemark', s.remark || '') +
+    '</div><div class="form-actions">' +
+    '<button class="btn" onclick="saveCsStaff(' + (id || 'null') + ')">保存</button>' +
+    '<button class="btn secondary" onclick="document.getElementById(\'csFormArea\').innerHTML=\'\'">取消</button></div></div>';
+}
+
+function saveCsStaff(id) {
+  apiFetch('/api/cs_staff/save', { method: 'POST', body: JSON.stringify({
+    id: id || undefined,
+    employee_name: document.getElementById('csName').value.trim(),
+    phone: document.getElementById('csPhone').value.trim(),
+    enabled: document.getElementById('csEnabled').value === '1',
+    remark: document.getElementById('csRemark').value.trim()
+  })}).then(function(d) {
+    if (d.success) { toast('已保存'); loadCsStaff(); }
+    else toast(d.error || '保存失败');
+  });
+}
+
+function loadCustomers() {
+  Promise.all([
+    apiFetch('/api/cs_staff'),
+    apiFetch('/api/customers?limit=500')
+  ]).then(function(results) {
+    csStaffCache = results[0].items || [];
+    customersCache = results[1].items || [];
+    var html = '<div class="card"><h2>客户管理</h2>' +
+      '<div class="toolbar">' +
+      '<input id="custKw" placeholder="搜索客户/电话/公司" onkeydown="if(event.key===\'Enter\')searchCustomers()">' +
+      '<select id="custCsFilter"><option value="">全部客服</option>' +
+      csStaffCache.map(function(s) { return '<option value="' + s.id + '">' + esc(s.employee_name) + '</option>'; }).join('') +
+      '</select>' +
+      '<button onclick="searchCustomers()">搜索</button>' +
+      '<button onclick="editCustomer(null)">+ 新增客户</button>' +
+      '</div><table><thead><tr><th>客户名</th><th>联系人</th><th>电话</th><th>公司</th><th>归属客服</th><th>状态</th><th>操作</th></tr></thead><tbody id="custTbody">';
+    renderCustomerRows(customersCache);
+    html += '</tbody></table></div><div id="custFormArea"></div>';
+    document.getElementById('mainContent').innerHTML = html;
+  });
+}
+
+function renderCustomerRows(items) {
+  var tbody = document.getElementById('custTbody');
+  if (!tbody) return;
+  if (!items.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无客户</td></tr>'; return; }
+  tbody.innerHTML = items.map(function(c) {
+    return '<tr><td>' + esc(c.name) + '</td><td>' + esc(c.contact_name) + '</td><td>' + esc(c.phone) + '</td>' +
+      '<td>' + esc(c.company) + '</td><td>' + esc(c.assigned_cs_name || '-') + '</td>' +
+      '<td>' + (c.status === 'active' ? '<span class="tag tag-green">正常</span>' : '<span class="tag tag-gray">停用</span>') + '</td>' +
+      '<td><button class="btn secondary" onclick="editCustomer(' + c.id + ')">编辑</button></td></tr>';
+  }).join('');
+}
+
+function searchCustomers() {
+  var kw = (document.getElementById('custKw') || {}).value || '';
+  var cs = (document.getElementById('custCsFilter') || {}).value || '';
+  var url = '/api/customers?limit=500&keyword=' + encodeURIComponent(kw);
+  if (cs) url += '&assigned_cs_id=' + cs;
+  apiFetch(url).then(function(d) {
+    if (d.success) renderCustomerRows(d.items || []);
+  });
+}
+
+function editCustomer(id) {
+  var c = id ? customersCache.find(function(x) { return x.id === id; }) : {
+    name: '', contact_name: '', phone: '', company: '', assigned_cs_id: '', status: 'active', remark: ''
+  };
+  var csOpts = '<option value="">未分配</option>' + csStaffCache.map(function(s) {
+    return '<option value="' + s.id + '"' + (String(c.assigned_cs_id) === String(s.id) ? ' selected' : '') + '>' + esc(s.employee_name) + '</option>';
+  }).join('');
+  document.getElementById('custFormArea').innerHTML =
+    '<div class="card"><h2>' + (id ? '编辑客户' : '新增客户') + '</h2>' +
+    '<div class="form-grid">' +
+    field('客户名', 'cuName', c.name) +
+    field('联系人', 'cuContact', c.contact_name) +
+    field('电话', 'cuPhone', c.phone) +
+    field('公司', 'cuCompany', c.company) +
+    '<div><label>归属客服</label><select id="cuCs">' + csOpts + '</select></div>' +
+    selectField('状态', 'cuStatus', c.status, [{v:'active',l:'正常'},{v:'disabled',l:'停用'}]) +
+    '<div style="grid-column:1/-1"><label>备注</label><textarea id="cuRemark">' + esc(c.remark || '') + '</textarea></div>' +
+    '</div><div class="form-actions">' +
+    '<button class="btn" onclick="saveCustomer(' + (id || 'null') + ')">保存</button>' +
+    '<button class="btn secondary" onclick="document.getElementById(\'custFormArea\').innerHTML=\'\'">取消</button></div></div>';
+}
+
+function saveCustomer(id) {
+  apiFetch('/api/customers/save', { method: 'POST', body: JSON.stringify({
+    id: id || undefined,
+    name: document.getElementById('cuName').value.trim(),
+    contact_name: document.getElementById('cuContact').value.trim(),
+    phone: document.getElementById('cuPhone').value.trim(),
+    company: document.getElementById('cuCompany').value.trim(),
+    assigned_cs_id: document.getElementById('cuCs').value || null,
+    status: document.getElementById('cuStatus').value,
+    remark: document.getElementById('cuRemark').value.trim()
+  })}).then(function(d) {
+    if (d.success) { toast('已保存'); loadCustomers(); }
+    else toast(d.error || '保存失败');
+  });
+}
+
+function loadOrders() {
+  Promise.all([
+    apiFetch('/api/categories'),
+    apiFetch('/api/customers?limit=500'),
+    apiFetch('/api/cs_staff'),
+    apiFetch('/api/orders?limit=200')
+  ]).then(function(results) {
+    categoriesCache = results[0].items || [];
+    customersCache = results[1].items || [];
+    csStaffCache = results[2].items || [];
+    var orders = results[3].items || [];
+    var html = '<div class="card"><h2>订单总览</h2>' +
+      '<div class="toolbar">' +
+      '<select id="ordStatus"><option value="">全部状态</option>' +
+      Object.keys(STATUS_LABELS).map(function(k) { return '<option value="' + k + '">' + STATUS_LABELS[k] + '</option>'; }).join('') +
+      '</select>' +
+      '<input id="ordKw" placeholder="单号/客户/SKU">' +
+      '<button onclick="searchOrders()">筛选</button>' +
+      '<button onclick="editOrder(null)">+ 新建订单</button>' +
+      '</div><table><thead><tr><th>单号</th><th>客户</th><th>分类</th><th>规格</th><th>数量</th><th>金额</th><th>SKU</th><th>状态</th><th>操作</th></tr></thead><tbody id="ordTbody">';
+    html += renderOrderRows(orders) + '</tbody></table></div><div id="ordFormArea"></div>';
+    document.getElementById('mainContent').innerHTML = html;
+  });
+}
+
+function renderOrderRows(items) {
+  if (!items.length) return '<tr><td colspan="9" class="empty">暂无订单</td></tr>';
+  return items.map(function(o) {
+    var spec = o.length + '×' + o.width + '×' + o.height + (o.material ? ' ' + o.material : '');
+    return '<tr><td><code>' + esc(o.order_no) + '</code></td><td>' + esc(o.customer_name) + '</td>' +
+      '<td>' + esc(o.category_name || o.product_category_code) + '</td>' +
+      '<td>' + esc(spec) + '</td><td>' + o.qty + '</td><td>' + (o.total_price || 0) + '</td>' +
+      '<td>' + esc(o.outer_id || '-') + '</td><td>' + statusTag(o.status) + '</td>' +
+      '<td><button class="btn secondary" onclick="editOrder(' + o.id + ')">编辑</button></td></tr>';
+  }).join('');
+}
+
+function searchOrders() {
+  var st = document.getElementById('ordStatus').value;
+  var kw = document.getElementById('ordKw').value.trim();
+  var url = '/api/orders?limit=200';
+  if (st) url += '&status=' + st;
+  if (kw) url += '&keyword=' + encodeURIComponent(kw);
+  apiFetch(url).then(function(d) {
+    if (d.success) document.getElementById('ordTbody').innerHTML = renderOrderRows(d.items || []);
+  });
+}
+
+function editOrder(id) {
+  var loadP = id ? apiFetch('/api/orders/' + id) : Promise.resolve({ success: true, item: null });
+  loadP.then(function(res) {
+    var o = res.item || {
+      customer_id: '', product_category_code: categoriesCache[0] ? categoriesCache[0].code : 'zhengsquare',
+      length: '', width: '', height: '', material: '', dim_kind: 'outer',
+      qty: 1, unit_price: 0, total_price: 0, status: 'draft', remark: '', cs_staff_id: ''
+    };
+    var custOpts = customersCache.map(function(c) {
+      return '<option value="' + c.id + '"' + (String(o.customer_id) === String(c.id) ? ' selected' : '') + '>' + esc(c.name) + '</option>';
+    }).join('');
+    var catOpts = categoriesCache.map(function(c) {
+      return '<option value="' + c.code + '"' + (o.product_category_code === c.code ? ' selected' : '') + '>' + esc(c.name) + '</option>';
+    }).join('');
+    var csOpts = '<option value="">未指定</option>' + csStaffCache.map(function(s) {
+      return '<option value="' + s.id + '"' + (String(o.cs_staff_id) === String(s.id) ? ' selected' : '') + '>' + esc(s.employee_name) + '</option>';
+    }).join('');
+    var stOpts = Object.keys(STATUS_LABELS).map(function(k) {
+      return '<option value="' + k + '"' + (o.status === k ? ' selected' : '') + '>' + STATUS_LABELS[k] + '</option>';
+    }).join('');
+    document.getElementById('ordFormArea').innerHTML =
+      '<div class="card"><h2>' + (id ? '编辑订单 ' + esc(o.order_no) : '新建订单') + '</h2>' +
+      '<div class="form-grid">' +
+      '<div><label>客户</label><select id="oCustomer">' + custOpts + '</select></div>' +
+      '<div><label>产品分类</label><select id="oCategory">' + catOpts + '</select></div>' +
+      field('长(cm)', 'oLen', o.length, '', 'number') +
+      field('宽(cm)', 'oWid', o.width, '', 'number') +
+      field('高(cm)', 'oHei', o.height, '', 'number') +
+      field('材质', 'oMat', o.material) +
+      selectField('尺寸类型', 'oDim', o.dim_kind || 'outer', [{v:'outer',l:'外径'},{v:'inner',l:'内径'}]) +
+      field('数量', 'oQty', o.qty, '', 'number') +
+      field('单价', 'oUnit', o.unit_price, '', 'number') +
+      field('总价', 'oTotal', o.total_price, '', 'number') +
+      '<div><label>归属客服</label><select id="oCs">' + csOpts + '</select></div>' +
+      '<div><label>状态</label><select id="oStatus">' + stOpts + '</select></div>' +
+      '<div style="grid-column:1/-1"><label>备注</label><textarea id="oRemark">' + esc(o.remark || '') + '</textarea></div>' +
+      '</div>' +
+      '<div class="form-actions">' +
+      '<button class="btn secondary" onclick="matchSkuPreview()">匹配 SKU 预览</button>' +
+      '<button class="btn" onclick="saveOrder(' + (id || 'null') + ')">保存</button>' +
+      '<button class="btn secondary" onclick="document.getElementById(\'ordFormArea\').innerHTML=\'\'">取消</button></div>' +
+      '<div id="matchPreview"></div></div>';
+  });
+}
+
+function matchSkuPreview() {
+  apiFetch('/api/sku/match', { method: 'POST', body: JSON.stringify({
+    product_category_code: document.getElementById('oCategory').value,
+    length: parseFloat(document.getElementById('oLen').value) || 0,
+    width: parseFloat(document.getElementById('oWid').value) || 0,
+    height: parseFloat(document.getElementById('oHei').value) || 0,
+    material: document.getElementById('oMat').value.trim(),
+    dim_kind: document.getElementById('oDim').value
+  })}).then(function(d) {
+    var el = document.getElementById('matchPreview');
+    if (!d.matched) {
+      el.innerHTML = '<div class="match-box none">未在 km_sku_map 中找到匹配（小程序阶段可自动新建）</div>';
+      return;
+    }
+    var m = d.match;
+    el.innerHTML = '<div class="match-box">已匹配：<strong>' + esc(m.outer_id) + '</strong> · ' +
+      esc(m.km_title || m.spec_alias) + ' · ' + m.length + '×' + m.width + '×' + m.height + '</div>';
+  });
+}
+
+function saveOrder(id) {
+  apiFetch('/api/orders/save', { method: 'POST', body: JSON.stringify({
+    id: id || undefined,
+    customer_id: parseInt(document.getElementById('oCustomer').value),
+    product_category_code: document.getElementById('oCategory').value,
+    length: parseFloat(document.getElementById('oLen').value) || 0,
+    width: parseFloat(document.getElementById('oWid').value) || 0,
+    height: parseFloat(document.getElementById('oHei').value) || 0,
+    material: document.getElementById('oMat').value.trim(),
+    dim_kind: document.getElementById('oDim').value,
+    qty: parseInt(document.getElementById('oQty').value) || 0,
+    unit_price: parseFloat(document.getElementById('oUnit').value) || 0,
+    total_price: parseFloat(document.getElementById('oTotal').value) || 0,
+    cs_staff_id: document.getElementById('oCs').value || null,
+    status: document.getElementById('oStatus').value,
+    remark: document.getElementById('oRemark').value.trim()
+  })}).then(function(d) {
+    if (d.success) { toast('已保存 · SKU: ' + (d.item.outer_id || '未匹配')); loadOrders(); }
+    else toast(d.error || '保存失败');
+  });
+}
+
+function loadPermissions() {
+  if (currentUser.role !== 'admin') { toast('无权限'); return; }
+  apiFetch('/api/admin_users').then(function(d) {
+    if (!d.success) return;
+    var items = d.items || [];
+    var html = '<div class="card"><h2>权限管理（3003 后台账号）</h2>' +
+      '<div class="toolbar"><button onclick="editAdmin(null)">+ 新增账号</button></div>' +
+      '<table><thead><tr><th>账号</th><th>显示名</th><th>角色</th><th>状态</th><th>操作</th></tr></thead><tbody>';
+    items.forEach(function(u) {
+      html += '<tr><td>' + esc(u.username) + '</td><td>' + esc(u.display_name) + '</td>' +
+        '<td>' + (u.role === 'admin' ? '<span class="tag tag-blue">管理员</span>' : '<span class="tag tag-gray">只读</span>') + '</td>' +
+        '<td>' + (u.enabled ? '<span class="tag tag-green">启用</span>' : '<span class="tag tag-gray">停用</span>') + '</td>' +
+        '<td><button class="btn secondary" onclick="editAdmin(' + u.id + ')">编辑</button></td></tr>';
+    });
+    html += '</tbody></table></div><div id="admFormArea"></div>';
+    document.getElementById('mainContent').innerHTML = html;
+    window._adminUsers = items;
+  });
+}
+
+function editAdmin(id) {
+  var u = id ? (window._adminUsers || []).find(function(x) { return x.id === id; }) : { username: '', display_name: '', role: 'viewer', enabled: true };
+  document.getElementById('admFormArea').innerHTML =
+    '<div class="card"><h2>' + (id ? '编辑账号' : '新增账号') + '</h2>' +
+    '<div class="form-grid">' +
+    field('登录账号', 'admUser', u.username) +
+    field('显示名', 'admName', u.display_name) +
+    field('密码', 'admPwd', '', id ? '留空则不修改' : '必填') +
+    selectField('角色', 'admRole', u.role, [{v:'admin',l:'管理员'},{v:'viewer',l:'只读'}]) +
+    selectField('状态', 'admEnabled', u.enabled ? '1' : '0', [{v:'1',l:'启用'},{v:'0',l:'停用'}]) +
+    '</div><div class="form-actions">' +
+    '<button class="btn" onclick="saveAdmin(' + (id || 'null') + ')">保存</button>' +
+    '<button class="btn secondary" onclick="document.getElementById(\'admFormArea\').innerHTML=\'\'">取消</button></div></div>';
+}
+
+function saveAdmin(id) {
+  var data = {
+    id: id || undefined,
+    username: document.getElementById('admUser').value.trim(),
+    display_name: document.getElementById('admName').value.trim(),
+    role: document.getElementById('admRole').value,
+    enabled: document.getElementById('admEnabled').value === '1'
+  };
+  var pwd = document.getElementById('admPwd').value;
+  if (pwd) data.password = pwd;
+  apiFetch('/api/admin_users/save', { method: 'POST', body: JSON.stringify(data) })
+    .then(function(d) {
+      if (d.success) { toast('已保存'); loadPermissions(); }
+      else toast(d.error || '保存失败');
+    });
+}
+
+function field(label, id, val, ph, type) {
+  return '<div><label>' + label + '</label><input id="' + id + '" value="' + esc(val == null ? '' : val) + '" placeholder="' + esc(ph || '') + '"' + (type ? ' type="' + type + '"' : '') + '></div>';
+}
+
+function selectField(label, id, val, opts) {
+  return '<div><label>' + label + '</label><select id="' + id + '">' +
+    opts.map(function(o) { return '<option value="' + o.v + '"' + (String(val) === String(o.v) ? ' selected' : '') + '>' + o.l + '</option>'; }).join('') +
+    '</select></div>';
+}
+
+function esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+document.getElementById('loginPwd').addEventListener('keydown', function(e) { if (e.key === 'Enter') doLogin(); });
+
+apiFetch('/api/me').then(function(d) {
+  if (d.success) {
+    currentUser = d.user;
+    SY_AUTH.saveAuthCredentials(d.user.username, d.user.auth_token);
+    showApp();
+    var route = SY_AUTH.readRoute();
+    switchPage(route.top || 'dashboard');
+  } else {
+    showLogin();
+  }
+}).catch(function() { showLogin(); });
+</script>
+</body>
+</html>
