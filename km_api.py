@@ -607,6 +607,18 @@ def km_outstock_simple_page(
     return km_request("erp.trade.outstock.simple.query", biz)
 
 
+def km_trade_create_new(payload: dict[str, Any]) -> dict[str, Any]:
+    """erp.trade.create.new — 自建平台店铺推单（客户下单审核后推快麦打单）。"""
+    biz = dict(payload)
+    orders = biz.get("orders")
+    if isinstance(orders, (list, dict)):
+        biz["orders"] = json.dumps(orders, ensure_ascii=False, separators=(",", ":"))
+    trades = biz.get("trades")
+    if isinstance(trades, (list, dict)):
+        biz["trades"] = json.dumps(trades, ensure_ascii=False, separators=(",", ":"))
+    return km_request("erp.trade.create.new", biz)
+
+
 def km_fetch_trades_outstock(
     days_back: int = 14,
     *,

@@ -56,7 +56,7 @@ def apply_webhook_payload(body: dict[str, Any]) -> dict[str, Any]:
     import order_cache_store as ocs
     import order_sync as osync
 
-    report: dict[str, Any] = {"upserted": 0, "removed": 0, "errors": []}
+    report: dict[str, Any] = {"upserted": 0, "removed": 0, "co_updated": 0, "errors": []}
     if not body:
         return {**report, "msg": "empty body"}
 
@@ -65,8 +65,9 @@ def apply_webhook_payload(body: dict[str, Any]) -> dict[str, Any]:
         return {**report, "success": False, "msg": "sign invalid"}
 
     shops = km_api.km_shop_lookup()
+    trades = _extract_trades(body)
     orders: list[dict] = []
-    for trade in _extract_trades(body):
+    for trade in trades:
         try:
             o = km_api.km_trade_to_cache_order(trade, shops)
             o["shop_name"] = osync.normalize_shop_display(o.get("shop_name") or "")
@@ -75,6 +76,19 @@ def apply_webhook_payload(body: dict[str, Any]) -> dict[str, Any]:
             orders.append(o)
         except Exception as ex:
             report["errors"].append(str(ex))
+
+    try:
+        import customer_order_store as co_store
+        import km_co_order_sync as kcos
+
+        for trade in trades:
+            try:
+                if kcos.apply_km_trade_to_co_order(trade, co_store=co_store):
+                    report["co_updated"] += 1
+            except Exception as ex:
+                report["errors"].append(f"co_order: {ex}")
+    except Exception as ex:
+        report["errors"].append(f"co_order sync: {ex}")
 
     pending = [o for o in orders if osync._is_pending_cache_order(o)]
     removed = [o for o in orders if o not in pending]

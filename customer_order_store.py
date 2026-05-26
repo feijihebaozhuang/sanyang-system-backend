@@ -236,6 +236,42 @@ def ensure_schema(cur) -> None:
         "express_no",
         "express_no VARCHAR(128) NOT NULL DEFAULT '' COMMENT '快递单号' AFTER express_company",
     )
+    _ensure_column(
+        cur,
+        "co_order",
+        "km_user_id",
+        "km_user_id VARCHAR(32) NOT NULL DEFAULT '' COMMENT '快麦店铺 userId' AFTER express_no",
+    )
+    _ensure_column(
+        cur,
+        "co_order",
+        "km_tid",
+        "km_tid VARCHAR(64) NOT NULL DEFAULT '' COMMENT '推快麦平台单号(通常=order_no)' AFTER km_user_id",
+    )
+    _ensure_column(
+        cur,
+        "co_order",
+        "km_sid",
+        "km_sid VARCHAR(64) NOT NULL DEFAULT '' COMMENT '快麦系统单号 sid' AFTER km_tid",
+    )
+    _ensure_column(
+        cur,
+        "co_order",
+        "km_push_status",
+        "km_push_status VARCHAR(32) NOT NULL DEFAULT '' COMMENT '快麦推单: pushed/failed/skipped' AFTER km_sid",
+    )
+    _ensure_column(
+        cur,
+        "co_order",
+        "km_push_error",
+        "km_push_error VARCHAR(512) NOT NULL DEFAULT '' COMMENT '快麦推单失败原因' AFTER km_push_status",
+    )
+    _ensure_column(
+        cur,
+        "co_order",
+        "km_pushed_at",
+        "km_pushed_at TIMESTAMP NULL DEFAULT NULL COMMENT '推快麦时间' AFTER km_push_error",
+    )
 
 
 def ensure_tables() -> None:
@@ -888,6 +924,105 @@ def get_order(order_id: int) -> dict | None:
             if k in row and row[k] is not None:
                 row[k] = float(row[k])
         return row
+    finally:
+        db.close()
+
+
+def get_order_by_km_tid(km_tid: str) -> dict | None:
+    tid = (km_tid or "").strip()
+    if not tid:
+        return None
+    ensure_tables()
+    db = connect()
+    try:
+        cur = db.cursor()
+        cur.execute(
+            """
+            SELECT o.*,
+                   c.name AS customer_name, c.phone AS customer_phone,
+                   c.contact_name AS customer_contact
+            FROM co_order o
+            LEFT JOIN co_customer c ON c.id = o.customer_id
+            WHERE o.km_tid=%s OR o.order_no=%s
+            ORDER BY o.id DESC
+            LIMIT 1
+            """,
+            (tid, tid),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        for k in ("length", "width", "height", "unit_price", "total_price"):
+            if k in row and row[k] is not None:
+                row[k] = float(row[k])
+        return row
+    finally:
+        db.close()
+
+
+def list_orders_pending_km_shipment(*, limit: int = 30) -> list[dict]:
+    ensure_tables()
+    db = connect()
+    try:
+        cur = db.cursor()
+        cur.execute(
+            """
+            SELECT id, order_no, km_tid, km_sid, status, km_push_status
+            FROM co_order
+            WHERE km_push_status='pushed'
+              AND status IN ('approved', 'in_production')
+              AND (express_no IS NULL OR express_no='')
+            ORDER BY km_pushed_at ASC, id ASC
+            LIMIT %s
+            """,
+            (max(1, min(int(limit), 200)),),
+        )
+        return list(cur.fetchall() or [])
+    finally:
+        db.close()
+
+
+def update_order_km_fields(
+    order_id: int,
+    *,
+    km_user_id: str | None = None,
+    km_tid: str | None = None,
+    km_sid: str | None = None,
+    km_push_status: str | None = None,
+    km_push_error: str | None = None,
+    km_pushed_at: bool | None = None,
+    express_company: str | None = None,
+    express_no: str | None = None,
+    status: str | None = None,
+) -> dict:
+    ensure_tables()
+    sets: list[str] = []
+    params: list[Any] = []
+    mapping = {
+        "km_user_id": km_user_id,
+        "km_tid": km_tid,
+        "km_sid": km_sid,
+        "km_push_status": km_push_status,
+        "km_push_error": km_push_error,
+        "express_company": express_company,
+        "express_no": express_no,
+        "status": status,
+    }
+    for col, val in mapping.items():
+        if val is not None:
+            sets.append(f"{col}=%s")
+            params.append(val)
+    if km_pushed_at:
+        sets.append("km_pushed_at=NOW()")
+    if not sets:
+        return get_order(int(order_id)) or {}
+    params.append(int(order_id))
+    db = connect()
+    try:
+        cur = db.cursor()
+        cur.execute(f"UPDATE co_order SET {', '.join(sets)} WHERE id=%s", params)
+        db.commit()
+        return get_order(int(order_id)) or {}
     finally:
         db.close()
 

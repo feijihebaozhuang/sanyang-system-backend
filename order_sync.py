@@ -248,6 +248,15 @@ def _sync_orders_to_cache_impl(
         _set_sync_phase("done", "写入 MySQL")
         n_pending = _write_mysql_snapshot(merged, report, shops, partial=False)
         report["pending_count"] = n_pending
+
+        try:
+            import customer_order_store as co_store
+            import km_co_order_sync as kcos
+
+            co_rep = kcos.sync_pending_shipments(co_store=co_store)
+            report["co_km_shipment"] = co_rep
+        except Exception as ex:
+            report["errors"].append({"msg": f"客户单快麦回写: {ex}"})
         print(
             f"[订单同步] 完成: 待发货 {n_pending} 条 "
             f"(快麦={report['km_outstock_count']})"

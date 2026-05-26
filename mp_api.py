@@ -577,7 +577,31 @@ def mp_cs_order_review():
     if cs_id:
         payload["cs_staff_id"] = cs_id
     item = co_store.upsert_order(payload, created_by=f"cs:{cs.get('username')}")
-    return jsonify({"success": True, "item": item})
+    km_push = None
+    if status == "approved":
+        import km_co_order_sync as kcos
+
+        km_push = kcos.push_co_order_to_km(oid, co_store=co_store)
+        if km_push.get("item"):
+            item = km_push["item"]
+    return jsonify({"success": True, "item": item, "km_push": km_push})
+
+
+@mp_bp.route("/cs/order/km-push", methods=["POST"])
+def mp_cs_order_km_push():
+    """重试推送客户单到快麦（审核通过但推单失败时）。"""
+    _, err = _require_cs_or_forbidden()
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    oid = int(data.get("id") or data.get("order_id") or 0)
+    if not oid:
+        return jsonify({"success": False, "error": "order_id 必填"}), 400
+    import km_co_order_sync as kcos
+
+    res = kcos.push_co_order_to_km(oid, co_store=co_store)
+    code = 200 if res.get("success") or res.get("skipped") else 400
+    return jsonify(res), code
 
 
 @mp_bp.route("/cs/order/ship", methods=["POST"])
@@ -605,6 +629,12 @@ def mp_cs_order_ship():
             return jsonify({"success": False, "error": "无权操作此订单"}), 403
     if existing.get("status") not in ("approved", "in_production"):
         return jsonify({"success": False, "error": "仅「已通过/生产中」的订单可发货"}), 400
+    if (existing.get("km_push_status") or "") == "pushed" and not (existing.get("express_no") or "").strip():
+        return jsonify({
+            "success": False,
+            "error": "此单已推快麦，请在快麦打单发货；物流单号将自动回写。若需手工填单请稍后再试或联系管理员。",
+            "km_sid": existing.get("km_sid") or "",
+        }), 400
     payload = dict(existing)
     payload["express_company"] = express_company
     payload["express_no"] = express_no
