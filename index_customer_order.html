@@ -63,6 +63,17 @@ tr:hover td { background: #fafcff; }
 .nav a.nav-ext { display:inline-block; background:none; border:none; padding:12px 18px; font-size:14px; cursor:pointer; color:#1a5276; border-bottom:2px solid transparent; white-space:nowrap; text-decoration:none; }
 .nav a.nav-ext:hover { color:#e67e22; border-bottom-color:#e67e22; }
 .empty { text-align: center; color: #aaa; padding: 40px; font-size: 14px; }
+.info-box { background: #fffbe6; border: 1px solid #ffe58f; border-radius: 6px; padding: 10px 14px; font-size: 13px; color: #614700; margin-bottom: 14px; line-height: 1.65; }
+.info-box strong { color: #ad6800; }
+.process-panel { border: 1px solid #eee; border-radius: 8px; padding: 12px; max-height: 480px; overflow-y: auto; background: #fafafa; }
+.process-dept-hd { display: flex; justify-content: space-between; align-items: center; background: #ebf5fb; padding: 8px 10px; border-radius: 6px; margin-bottom: 6px; }
+.process-dept-hd span { font-weight: 600; font-size: 13px; color: #1a5276; }
+.process-step { display: flex; justify-content: space-between; align-items: center; padding: 5px 8px 5px 16px; border-bottom: 1px solid #f0f0f0; font-size: 12px; color: #555; }
+.btn-xs { padding: 2px 8px; font-size: 11px; border-radius: 4px; border: none; cursor: pointer; color: #fff; }
+.btn-xs.green { background: #27ae60; }
+.btn-xs.blue { background: #2980b9; }
+.btn-xs.red { background: #e74c3c; }
+.pos-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 4px; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -280,7 +291,10 @@ function loadCsStaff() {
     if (!d.success) return;
     csStaffCache = d.items || [];
     var canEdit = currentUser.role === 'admin';
-    var html = '<div class="card"><h2>客服员工（≤15人，须与日常工作微信同号）</h2>';
+    var html = '<div class="card"><h2>客服员工（客户下单小程序 · 审单/微信联系）</h2>' +
+      '<div class="info-box"><strong>与「权限管理 → 店铺客服」不是一回事。</strong><br>' +
+      '此处：客户下单/审单小程序用，≤15 人，手机须与<strong>日常工作微信同号</strong>，用于订单归属与微信客服消息。<br>' +
+      '店铺客服：各电商店铺（1688/天猫等）在订单看板里显示的负责客服名，在「权限管理 → 🏪 店铺客服」维护。</div>';
     if (canEdit) html += '<div class="toolbar"><button onclick="editCsStaff(null)">+ 新增客服</button></div>';
     html += '<table><thead><tr><th>姓名</th><th>微信同号（手机）</th><th>微信绑定</th><th>状态</th><th>备注</th>';
     if (canEdit) html += '<th>操作</th>';
@@ -552,10 +566,11 @@ function loadPermissions() {
   ]).then(function(results) {
     window._adminUsers = (results[0].items || []);
     window._permBundle = (results[1].data || {});
+    normalizePermProcesses(window._permBundle);
     window._permFeatures = results[1].features || [];
     window._sysUsers = (results[2].items || []);
     window._kmSkuStatus = results[3] || {};
-    window._permSubTab = window._permSubTab || 'full_emp';
+    window._permSubTab = window._permSubTab || 'processes';
     renderPermissionsPage();
   });
 }
@@ -567,8 +582,11 @@ function setPermSubTab(tab) {
 
 function renderPermissionsPage() {
   var tab = window._permSubTab || 'full_emp';
-  var html = '<div class="card"><h2>权限管理（统一入口，3001/3002 只读此配置）</h2>' +
+  var html = '<div class="card"><h2>权限管理（3003 统一入口 · 3001/3002 暂保留旧页，测试通过后移除）</h2>' +
     '<div class="subnav">' +
+    '<button class="' + (tab==='processes'?'active':'') + '" onclick="setPermSubTab(\'processes\')">🏭 生产线流程</button>' +
+    '<button class="' + (tab==='positions'?'active':'') + '" onclick="setPermSubTab(\'positions\')">👔 岗位设置</button>' +
+    '<button class="' + (tab==='material_map'?'active':'') + '" onclick="setPermSubTab(\'material_map\')">🔑 材料映射</button>' +
     '<button class="' + (tab==='full_emp'?'active':'') + '" onclick="setPermSubTab(\'full_emp\')">👥 管理全部员工</button>' +
     '<button class="' + (tab==='feature_perm'?'active':'') + '" onclick="setPermSubTab(\'feature_perm\')">🔐 功能权限</button>' +
     '<button class="' + (tab==='resigned'?'active':'') + '" onclick="setPermSubTab(\'resigned\')">🗑️ 回收站</button>' +
@@ -579,7 +597,10 @@ function renderPermissionsPage() {
     '<button class="' + (tab==='km_sync'?'active':'') + '" onclick="setPermSubTab(\'km_sync\')">快麦 SKU 同步</button>' +
     '</div><div id="permPanel"><p class="empty">加载中…</p></div></div><div id="admFormArea"></div>';
   document.getElementById('mainContent').innerHTML = html;
-  if (tab === 'full_emp') renderPermFullEmployees();
+  if (tab === 'processes') renderPermProcessesTab();
+  else if (tab === 'positions') renderPermPositionsTab();
+  else if (tab === 'material_map') renderPermMaterialMap();
+  else if (tab === 'full_emp') renderPermFullEmployees();
   else if (tab === 'feature_perm') renderPermEmployees();
   else if (tab === 'resigned') renderPermResigned();
   else if (tab === 'quote') renderPermQuote();
@@ -733,7 +754,7 @@ function renderPermQuote() {
       return;
     }
     var qd = res.data;
-    var html = '<p style="font-size:13px;color:#666;margin-bottom:12px;">修改后点保存写入 MySQL（与 3001 共用 quote_config）</p>' +
+    var html = '<p style="font-size:13px;color:#666;margin-bottom:12px;">材料关键词映射已移至「🔑 材料映射」子页。此处仅改单价与利润倍率（与 3001 共用 quote_config）。</p>' +
       '<div class="form-grid" style="margin-bottom:16px;">' +
       '<div><label>零售利润倍率</label><input type="number" id="cfgRetailMult" step="0.1" value="' + (qd.profit && qd.profit.retail_multiplier || 2) + '"></div>' +
       '<div><label>红线底价倍率</label><input type="number" id="cfgRedlineMult" step="0.01" value="' + (qd.profit && qd.profit.redline_multiplier || 1.35) + '"></div>' +
@@ -790,7 +811,9 @@ function renderPermShop() {
       if (!groups[plat]) groups[plat] = [];
       groups[plat].push(c);
     });
-    var html = '<div class="toolbar"><span style="font-size:13px;color:#666;">共 ' + configs.length + ' 个店铺</span></div>';
+    var html = '<div class="info-box"><strong>与左侧「客服员工」不是一回事。</strong><br>' +
+      '此处维护各<strong>电商店铺</strong>（1688/天猫/淘宝等）在 3001 订单看板里显示的负责客服姓名，与客户下单小程序审单无关。</div>' +
+      '<div class="toolbar"><span style="font-size:13px;color:#666;">共 ' + configs.length + ' 个店铺</span></div>';
     ['1688', 'tmall', 'taobao', 'other', '其他'].forEach(function(plat) {
       var items = groups[plat] || [];
       if (!items.length) return;
@@ -944,19 +967,264 @@ function savePermMatrix() {
     if (!permissions[n]) permissions[n] = {};
     permissions[n][f] = el.checked;
   });
-  var payload = {
+  savePermBundlePatch({
     employees: employees,
     permissions: permissions,
-    employee_enabled: employee_enabled,
+    employee_enabled: employee_enabled
+  }, '员工功能权限已保存');
+}
+
+function normalizePermProcesses(data) {
+  if (!data || !Array.isArray(data.processes)) { if (data) data.processes = []; return; }
+  if (data.processes.length > 0 && typeof data.processes[0] === 'string') {
+    data.processes = [{ dept: '美丽湾工厂部', steps: data.processes.map(function(s, i) { return { id: i + 1, name: s }; }) }];
+  }
+}
+
+function savePermBundlePatch(patch, okMsg) {
+  var data = window._permBundle || {};
+  var payload = {
+    employees: data.employees,
+    permissions: data.permissions,
+    employee_enabled: data.employee_enabled,
     processes: data.processes,
     positions: data.positions,
     role_permissions: data.role_permissions,
-    employee_roles: data.employee_roles
+    employee_roles: data.employee_roles,
+    production_material_mapping: data.production_material_mapping,
+    process_timeouts: data.process_timeouts
   };
-  apiFetch('/api/perm/save', { method: 'POST', body: JSON.stringify({ data: payload }) })
+  Object.keys(patch || {}).forEach(function(k) { payload[k] = patch[k]; });
+  return apiFetch('/api/perm/save', { method: 'POST', body: JSON.stringify({ data: payload }) })
     .then(function(d) {
-      if (d.success) toast('权限已保存（MySQL + data.json + vault）');
-      else toast(d.error || '保存失败');
+      if (d.success) {
+        Object.keys(patch || {}).forEach(function(k) { window._permBundle[k] = patch[k]; });
+        toast(okMsg || '已保存（MySQL + data.json + vault）');
+      } else toast(d.error || '保存失败');
+      return d;
+    });
+}
+
+function renderPermProcessesTab() {
+  var data = window._permBundle || {};
+  normalizePermProcesses(data);
+  document.getElementById('permPanel').innerHTML =
+    '<p style="font-size:13px;color:#666;margin-bottom:12px;">树形工序结构，供 3002 扫码报工使用。改完点保存。</p>' +
+    '<div class="toolbar"><button class="btn" onclick="addProcessDept()">+ 添加部门</button>' +
+    '<button class="btn" onclick="savePermProcesses()">💾 保存生产线流程</button></div>' +
+    '<div class="process-panel" id="permProcesses"></div>';
+  renderPermProcessTree(data.processes || []);
+}
+
+function renderPermProcessTree(processes) {
+  var el = document.getElementById('permProcesses');
+  if (!el) return;
+  var isTree = Array.isArray(processes) && processes.length > 0 && processes[0] && processes[0].dept;
+  if (!isTree) {
+    el.innerHTML = (processes || []).map(function(p, i) {
+      return '<div class="pos-row"><span>' + (i + 1) + '. ' + esc(typeof p === 'string' ? p : (p.name || '')) + '</span>' +
+        '<button class="btn-xs red" onclick="deletePermLegacyProcess(' + i + ')">删除</button></div>';
+    }).join('') || '<p class="empty" style="padding:20px;">暂无工序，点「添加部门」</p>';
+    return;
+  }
+  var html = '';
+  processes.forEach(function(dept, di) {
+    html += '<div style="margin-bottom:10px;"><div class="process-dept-hd">' +
+      '<span>🏭 ' + esc(dept.dept) + '</span>' +
+      '<span><button class="btn-xs green" onclick="addProcessStep(' + di + ')">+ 工序</button> ' +
+      '<button class="btn-xs blue" onclick="editProcessDeptName(' + di + ')">✏️</button> ' +
+      '<button class="btn-xs red" onclick="deleteProcessDept(' + di + ')">🗑️</button></span></div>';
+    (dept.steps || []).forEach(function(step, si) {
+      html += '<div class="process-step"><span>' + esc(step.id) + '. ' + esc(step.name) + '</span>' +
+        '<span><button class="btn-xs blue" onclick="editProcessStep(' + di + ',' + si + ')">✏️</button> ' +
+        '<button class="btn-xs red" onclick="deleteProcessStep(' + di + ',' + si + ')">✕</button></span></div>';
+    });
+    html += '</div>';
+  });
+  el.innerHTML = html || '<p class="empty" style="padding:20px;">暂无工序，点「添加部门」</p>';
+}
+
+function addProcessDept() {
+  var name = prompt('请输入新部门名称（如：手啤机工序）：');
+  if (!name || !name.trim()) return;
+  if (!window._permBundle) return;
+  if (!window._permBundle.processes) window._permBundle.processes = [];
+  window._permBundle.processes.push({ dept: name.trim(), steps: [] });
+  renderPermProcessTree(window._permBundle.processes);
+}
+
+function editProcessDeptName(di) {
+  var dept = window._permBundle.processes[di];
+  if (!dept) return;
+  var name = prompt('修改部门名称：', dept.dept);
+  if (!name || !name.trim()) return;
+  dept.dept = name.trim();
+  renderPermProcessTree(window._permBundle.processes);
+}
+
+function deleteProcessDept(di) {
+  var dept = window._permBundle.processes[di];
+  if (!dept || !confirm('确认删除部门「' + dept.dept + '」及其所有工序？')) return;
+  window._permBundle.processes.splice(di, 1);
+  renderPermProcessTree(window._permBundle.processes);
+}
+
+function addProcessStep(di) {
+  var name = prompt('请输入工序名称（如：算料）：');
+  if (!name || !name.trim()) return;
+  var steps = window._permBundle.processes[di].steps || [];
+  var newId = steps.length ? Math.max.apply(null, steps.map(function(s) { return s.id; })) + 1 : 1;
+  steps.push({ id: newId, name: name.trim() });
+  renderPermProcessTree(window._permBundle.processes);
+}
+
+function editProcessStep(di, si) {
+  var step = window._permBundle.processes[di].steps[si];
+  if (!step) return;
+  var name = prompt('修改工序名称：', step.name);
+  if (!name || !name.trim()) return;
+  step.name = name.trim();
+  renderPermProcessTree(window._permBundle.processes);
+}
+
+function deleteProcessStep(di, si) {
+  var step = window._permBundle.processes[di].steps[si];
+  if (!step || !confirm('确认删除工序「' + step.name + '」？')) return;
+  window._permBundle.processes[di].steps.splice(si, 1);
+  renderPermProcessTree(window._permBundle.processes);
+}
+
+function deletePermLegacyProcess(idx) {
+  if (!confirm('确认删除该工序？')) return;
+  window._permBundle.processes.splice(idx, 1);
+  renderPermProcessTree(window._permBundle.processes);
+}
+
+function savePermProcesses() {
+  savePermBundlePatch({ processes: window._permBundle.processes || [] }, '生产线流程已保存');
+}
+
+function renderPermPositionsTab() {
+  var positions = (window._permBundle && window._permBundle.positions) || [];
+  document.getElementById('permPanel').innerHTML =
+    '<p style="font-size:13px;color:#666;margin-bottom:12px;">岗位名称列表，用于员工职务下拉与权限模板。改完点保存。</p>' +
+    '<div class="toolbar"><button class="btn" onclick="addPermPosition()">+ 添加岗位</button>' +
+    '<button class="btn" onclick="savePermPositions()">💾 保存岗位设置</button></div>' +
+    '<div id="permPositions"></div>';
+  renderPermPositionList(positions);
+}
+
+function renderPermPositionList(positions) {
+  var el = document.getElementById('permPositions');
+  if (!el) return;
+  el.innerHTML = (positions || []).map(function(p, i) {
+    return '<div class="pos-row"><span>' + (i + 1) + '. ' + esc(p) + '</span>' +
+      '<button class="btn-xs red" onclick="deletePermPosition(' + i + ')">删除</button></div>';
+  }).join('') || '<p class="empty" style="padding:20px;">暂无岗位</p>';
+}
+
+function addPermPosition() {
+  var name = prompt('请输入新岗位名称：');
+  if (!name || !name.trim()) return;
+  if (!window._permBundle.positions) window._permBundle.positions = [];
+  window._permBundle.positions.push(name.trim());
+  renderPermPositionList(window._permBundle.positions);
+}
+
+function deletePermPosition(idx) {
+  var item = window._permBundle.positions[idx];
+  if (!item || !confirm('确认删除岗位「' + item + '」？')) return;
+  window._permBundle.positions.splice(idx, 1);
+  renderPermPositionList(window._permBundle.positions);
+}
+
+function savePermPositions() {
+  savePermBundlePatch({ positions: window._permBundle.positions || [] }, '岗位设置已保存');
+}
+
+function renderPermMaterialMap() {
+  var panel = document.getElementById('permPanel');
+  panel.innerHTML = '<p class="empty">加载材料映射…</p>';
+  apiFetch('/api/quote_data').then(function(res) {
+    if (!res.success || !res.data) {
+      panel.innerHTML = '<p class="empty">加载失败</p>';
+      return;
+    }
+    window._quoteDataCache = res.data;
+    panel.innerHTML =
+      '<p style="font-size:13px;color:#666;margin-bottom:12px;">关键词用于从订单标题/规格匹配材质，保存后同步到 <code>production_material_mapping</code>（生产打单/算料用）。纸箱请填 五层,EB,B坑 等。</p>' +
+      '<div class="toolbar"><button class="btn" onclick="addMaterialMappingRow()">+ 添加</button>' +
+      '<button class="btn" onclick="savePermMaterialMap()">💾 保存材料映射</button>' +
+      '<span id="matMapSaveStatus" style="font-size:13px;color:#666;"></span></div>' +
+      '<div class="perm-table-wrap"><table><thead><tr><th>材料</th><th>分组</th><th>关键词（逗号分隔）</th><th style="width:60px;">操作</th></tr></thead>' +
+      '<tbody id="matMappingBody"></tbody></table></div>';
+    fillMaterialMappingBody(res.data.material_mapping || []);
+  });
+}
+
+function fillMaterialMappingBody(rows) {
+  var body = document.getElementById('matMappingBody');
+  if (!body) return;
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="4" class="empty" style="padding:16px;">暂无映射，点「+ 添加」</td></tr>';
+    return;
+  }
+  body.innerHTML = rows.map(function(m) {
+    return '<tr>' +
+      '<td><input type="text" class="map-material" value="' + esc(m.material_name || '') + '" data-key="' + esc(m.material_key || '') + '" style="width:120px;padding:4px 6px;font-size:12px;"></td>' +
+      '<td><input type="text" class="map-group" value="' + esc(m.group || '') + '" style="width:80px;padding:4px 6px;font-size:12px;"></td>' +
+      '<td><input type="text" class="map-keywords" value="' + esc(m.keywords || '') + '" style="width:100%;padding:4px 6px;font-size:12px;" placeholder="五层,EB,B坑"></td>' +
+      '<td><button class="btn-xs red" onclick="this.closest(\'tr\').remove()">删除</button></td></tr>';
+  }).join('');
+}
+
+function addMaterialMappingRow() {
+  var body = document.getElementById('matMappingBody');
+  if (!body) return;
+  if (body.querySelector('.empty')) body.innerHTML = '';
+  var tr = document.createElement('tr');
+  tr.innerHTML =
+    '<td><input type="text" class="map-material" value="自定义材料" data-key="custom" style="width:120px;padding:4px 6px;font-size:12px;"></td>' +
+    '<td><input type="text" class="map-group" value="carton" style="width:80px;padding:4px 6px;font-size:12px;"></td>' +
+    '<td><input type="text" class="map-keywords" value="" style="width:100%;padding:4px 6px;font-size:12px;" placeholder="五层,EB,B坑"></td>' +
+    '<td><button class="btn-xs red" onclick="this.closest(\'tr\').remove()">删除</button></td>';
+  body.appendChild(tr);
+}
+
+function collectMaterialMappingRows() {
+  var rows = [];
+  document.querySelectorAll('#matMappingBody tr').forEach(function(tr) {
+    var mat = tr.querySelector('.map-material');
+    var grp = tr.querySelector('.map-group');
+    var kw = tr.querySelector('.map-keywords');
+    if (mat && grp && kw) {
+      rows.push({
+        material_key: mat.getAttribute('data-key') || '',
+        material_name: mat.value || '',
+        group: grp.value || '',
+        keywords: kw.value || ''
+      });
+    }
+  });
+  return rows;
+}
+
+function savePermMaterialMap() {
+  var st = document.getElementById('matMapSaveStatus');
+  if (st) st.textContent = '保存中…';
+  var mappingRows = collectMaterialMappingRows();
+  apiFetch('/api/quote/save_config', { method: 'POST', body: JSON.stringify({ material_mapping: mappingRows }) })
+    .then(function(d) {
+      if (st) st.textContent = d.success ? '✅ 已保存并同步生产映射' : ('❌ ' + (d.error || '失败'));
+      if (d.success) {
+        toast('材料映射已保存');
+        apiFetch('/api/perm/data').then(function(r) {
+          if (r.success && r.data) {
+            window._permBundle = r.data;
+            normalizePermProcesses(window._permBundle);
+          }
+        });
+      }
     });
 }
 
