@@ -10,7 +10,7 @@ import hashlib
 import os
 from datetime import timedelta
 
-from flask import Flask, jsonify, request, send_from_directory, session
+from flask import Flask, jsonify, make_response, request, send_from_directory, session
 from flask_cors import CORS
 
 from settings import FLASK_SECRET_KEY
@@ -123,9 +123,28 @@ def _user_payload(user: dict) -> dict:
     }
 
 
+def _no_cache_html(resp):
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
+
+
 @app.route("/")
 def index():
-    return send_from_directory(".", "index_customer_order.html")
+    return _no_cache_html(make_response(send_from_directory(".", "index_customer_order.html")))
+
+
+@app.route("/guanli")
+@app.route("/guanli/")
+def guanli_index():
+    return _no_cache_html(make_response(send_from_directory(".", "index_customer_order.html")))
+
+
+@app.route("/guanli/login")
+@app.route("/login_guanli.html")
+def guanli_login_page():
+    return _no_cache_html(make_response(send_from_directory(".", "login_guanli.html")))
 
 
 @app.route("/static/<path:filename>")

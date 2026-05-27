@@ -79,7 +79,7 @@ def _forward_to_3003(subpath: str) -> Response:
             out_headers = []
             for k, v in upstream.headers.items():
                 lk = k.lower()
-                if lk in _HOP_BY_HOP or lk == "set-cookie":
+                if lk in _HOP_BY_HOP:
                     continue
                 out_headers.append((k, v))
     except urllib.error.HTTPError as e:

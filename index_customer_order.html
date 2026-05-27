@@ -140,25 +140,7 @@
         if (opts.body === undefined && opts.method && opts.method.toUpperCase() === 'POST') {
             opts.body = '{}';
         }
-        return fetch(url, opts);
-    }
-    if (global.fetch && !global.__SY_FETCH_PATCHED) {
-        global.__SY_FETCH_PATCHED = true;
-        var nativeFetch = global.fetch.bind(global);
-        global.fetch = function (url, options) {
-            var opts = options ? Object.assign({}, options) : {};
-            var path = '';
-            if (typeof url === 'string') path = url;
-            else if (url && url.url) path = url.url;
-            if (isApiPath(path)) {
-                path = resolveCoApiUrl(path);
-                url = path;
-                opts.credentials = (path.indexOf('http') === 0 && global.location && path.indexOf(global.location.origin) !== 0)
-                    ? 'omit' : (opts.credentials || 'same-origin');
-                opts.headers = applyAuthHeaders(opts.headers);
-            }
-            return nativeFetch(url, opts);
-        };
+        return global.fetch(url, opts);
     }
     global.SY_AUTH = {
         saveRoute: saveRoute,
@@ -264,6 +246,7 @@ tr:hover td { background: #fafcff; }
     <input id="loginUser" placeholder="账号" autocomplete="username">
     <input id="loginPwd" type="password" placeholder="密码" autocomplete="current-password">
     <button onclick="doLogin()">登录</button>
+    <p style="font-size:12px;margin-top:10px;text-align:center"><a href="/guanli/login" style="color:#2980b9">登录有问题？点这里</a></p>
     <div class="login-err" id="loginErr"></div>
   </div>
 </div>
@@ -380,45 +363,33 @@ function doLogin() {
   var u = document.getElementById('loginUser').value.trim();
   var p = document.getElementById('loginPwd').value;
   var errEl = document.getElementById('loginErr');
+  var btn = document.querySelector('#loginPage button');
   errEl.textContent = '';
-  if (typeof globalThis.SY_AUTH === 'undefined') {
-    errEl.textContent = '页面资源加载失败，请强制刷新（Ctrl+F5）';
+  if (!globalThis.SY_AUTH) {
+    errEl.textContent = '脚本未加载，请打开 https://feijihe.top/guanli/login';
     return;
   }
-  var urls = SY_AUTH.loginApiCandidates('/api/login');
-  var body = JSON.stringify({ username: u, password: p });
-  function attempt(i) {
-    if (i >= urls.length) {
-      errEl.textContent = '登录失败：请确认账号密码，或改用 https://feijihe.top/guanli/';
-      return;
-    }
-    var url = urls[i];
-    var cross = url.indexOf('http') === 0 && url.indexOf(location.origin) !== 0;
-    fetch(url, {
-      method: 'POST',
-      credentials: cross ? 'omit' : 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: body
+  SY_AUTH.clearAuthCredentials();
+  if (btn) btn.disabled = true;
+  errEl.textContent = '正在登录…';
+  var url = SY_AUTH.resolveCoApiUrl('/api/login');
+  SY_AUTH.apiFetch('/api/login', {
+    method: 'POST',
+    body: JSON.stringify({ username: u, password: p })
+  }).then(function(res) { return SY_AUTH.parseLoginResponse(res); })
+    .then(function(r) {
+      var d = r.data || {};
+      if (!r.ok || !d.success || !d.user) {
+        throw new Error(d.message || d.error || ('登录失败 HTTP ' + r.status));
+      }
+      SY_AUTH.saveAuthCredentials(d.user.username, d.user.auth_token);
+      errEl.textContent = '登录成功…';
+      location.reload();
     })
-      .then(function(res) { return SY_AUTH.parseLoginResponse(res); })
-      .then(function(r) {
-        var d = r.data || {};
-        if (!r.ok || !d.success) {
-          if (i + 1 < urls.length) return attempt(i + 1);
-          errEl.textContent = d.message || d.error || ('登录失败（HTTP ' + r.status + '）');
-          return;
-        }
-        currentUser = d.user;
-        SY_AUTH.saveAuthCredentials(d.user.username, d.user.auth_token);
-        showApp();
-        switchPage('dashboard');
-      })
-      .catch(function(e) {
-        if (i + 1 < urls.length) return attempt(i + 1);
-        errEl.textContent = e.message || '网络错误';
-      });
-  }
-  attempt(0);
+    .catch(function(e) {
+      errEl.textContent = (e.message || '登录失败') + ' — 可试 https://feijihe.top/guanli/login';
+      if (btn) btn.disabled = false;
+    });
 }
 
 function doLogout() {
@@ -2041,19 +2012,20 @@ function esc(s) {
 document.getElementById('loginPwd').addEventListener('keydown', function(e) { if (e.key === 'Enter') doLogin(); });
 
 function tryRestoreSession() {
-  if (typeof globalThis.SY_AUTH === 'undefined') {
+  if (!globalThis.SY_AUTH) {
     showLogin();
     return;
   }
   SY_AUTH.apiFetch('/api/me').then(function(res) {
-    return res.json().then(function(d) { return { ok: res.ok, data: d }; });
+    return SY_AUTH.parseLoginResponse(res);
   }).then(function(r) {
-    if (r.ok && r.data && r.data.success && r.data.user) {
-      currentUser = r.data.user;
-      SY_AUTH.saveAuthCredentials(r.data.user.username, r.data.user.auth_token);
+    var d = r.data || {};
+    if (r.ok && d.success && d.user) {
+      currentUser = d.user;
+      SY_AUTH.saveAuthCredentials(d.user.username, d.user.auth_token);
       showApp();
       var route = SY_AUTH.readRoute();
-      switchPage(route.top || 'dashboard');
+      switchPage(route.top === 'main' ? 'dashboard' : (route.top || 'dashboard'));
     } else {
       SY_AUTH.clearAuthCredentials();
       showLogin();

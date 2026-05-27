@@ -4851,6 +4851,14 @@ def production_flow_step():
         return jsonify({'success': False, 'error': str(e)})
 
 # ==================== 静态文件（必须放在所有 /api 路由之后）====================
+@app.route('/guanli/login')
+@app.route('/login_guanli.html')
+def guanli_login_entry():
+    resp = make_response(send_from_directory('.', 'login_guanli.html'))
+    resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+    return resp
+
+
 @app.route('/guanli')
 @app.route('/guanli/')
 def guanli_admin_entry():
