@@ -1375,7 +1375,7 @@
 </div>
 
 <script>window.SY_APP_SIDE = 'production';</script>
-<script src="/static/auth_session.js?v=20260525"></script>
+<script src="/static/auth_session.js?v=20260527"></script>
 <script>
     // ===== 当前登录用户 =====
     let _currentUser = null;
@@ -1409,13 +1409,10 @@
             if (!res.ok) {
                 throw new Error('HTTP ' + res.status);
             }
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
             
             if (data.success) {
-                _currentUser = data.user;
-                if (_currentUser && (_currentUser.is_system || _currentUser.username === 'admin' || _currentUser.username === 'daiyali')) {
-                    _currentUser.role = '超级管理员';
-                }
+                _currentUser = normalizeCurrentUser(data.user);
                 if (data.auth_token && data.user && data.user.username) {
                     SY_AUTH.saveAuthCredentials(data.user.username, data.auth_token);
                 }
@@ -1467,7 +1464,7 @@
                 : _currentUser.role === '客服'
                 ? '<span class="role-tag" style="background:rgba(233,69,96,0.2);color:#e94560;">💬 客服</span>'
                 : '<span class="role-tag" style="background:rgba(52,211,153,0.2);color:#34d399;">👤 员工</span>';
-            el.innerHTML = `👤 ${_currentUser.name} ${roleTag} ▾`;
+            el.innerHTML = `👤 ${userDisplayName(_currentUser)} ${roleTag} ▾`;
             const editBtn = document.getElementById('empEditBtn');
             if (editBtn) {
                 editBtn.style.display = isSuperAdmin() ? 'inline-block' : 'none';
@@ -1620,7 +1617,7 @@
     // ===== 用户菜单 =====
     function showUserMenu() {
         if (_currentUser) {
-            let btns = '<div style="margin-bottom:8px;font-size:14px;color:#333;">' + _currentUser.name + '（' + _currentUser.role + '）</div>';
+            let btns = '<div style="margin-bottom:8px;font-size:14px;color:#333;">' + userDisplayName(_currentUser) + '（' + (_currentUser.role || '') + '）</div>';
             btns += '<button onclick="openPasswordModal();closeUserMenu()" style="display:block;width:100%;padding:10px;margin-bottom:4px;background:#f5f5f5;border:1px solid #e8e8e8;border-radius:6px;cursor:pointer;font-size:14px;text-align:left;">🔑 修改密码</button>';
             if (_currentUser.role === '超级管理员') {
                 btns += '<button onclick="goPermissionPage();closeUserMenu()" style="display:block;width:100%;padding:10px;margin-bottom:4px;background:#f5f5f5;border:1px solid #e8e8e8;border-radius:6px;cursor:pointer;font-size:14px;text-align:left;">🔐 权限设置</button>';
@@ -1696,7 +1693,7 @@
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({old_password: oldPwd, new_password: newPwd})
             });
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
 
             if (data.success) {
                 msgEl.textContent = '✅ 密码修改成功！请记住新密码';
@@ -1765,12 +1762,12 @@
                 overlay.style.display = 'flex';
                 return;
             }
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
             if (!data.logged_in) {
                 overlay.style.display = 'flex';
                 return;
             }
-            _currentUser = data.user;
+            _currentUser = normalizeCurrentUser(data.user);
             if (_currentUser && isSuperAdmin()) {
                 _currentUser.role = '超级管理员';
             }
@@ -1993,8 +1990,29 @@
     }
     // ===== API 调用 =====
     async function getAPI(url) {
+        if (globalThis.SY_AUTH && SY_AUTH.getApiJson) {
+            return SY_AUTH.getApiJson(url);
+        }
         const res = await SY_AUTH.apiFetch(url);
-        return res.json();
+        const text = await res.text();
+        if ((text || '').trim().startsWith('<')) {
+            throw new Error('接口返回 HTML 而非 JSON（HTTP ' + res.status + '），请检查 Nginx /api/ 反代');
+        }
+        return JSON.parse(text);
+    }
+
+    function userDisplayName(u) {
+        if (!u) return '用户';
+        return u.display_name || u.name || u.employee_name || u.username || '用户';
+    }
+
+    function normalizeCurrentUser(u) {
+        if (!u) return u;
+        if (!u.name) u.name = userDisplayName(u);
+        if (u.is_system || u.username === 'admin' || u.username === 'daiyali') {
+            u.role = '超级管理员';
+        }
+        return u;
     }
 
     // ===== 搜索 =====
@@ -2332,7 +2350,7 @@
     async function showOrderQr(orderId) {
         try {
             const res = await fetch('/api/qrcode/' + encodeURIComponent(orderId));
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
             if (!data.success) { alert('生成二维码失败'); return; }
             
             const modal = document.createElement('div');
@@ -2361,7 +2379,7 @@
     async function showOrderBarcode(orderId) {
         try {
             const res = await fetch('/api/barcode/' + encodeURIComponent(orderId));
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
             if (!data.success) { alert('生成条码失败'); return; }
             
             const modal = document.createElement('div');
@@ -3809,7 +3827,7 @@
     async function loadQuoteConfig() {
         try {
             const res = await fetch('/api/quote_data');
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
             if (data.success) {
                 _quoteConfig = data.data;
                 // 自动触发材质加载
@@ -3993,7 +4011,7 @@
                     customer_type: document.getElementById('quoteCustomerType')?.value || 'guangdong_retail'
                 })
             });
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
 
             if (!data.success) {
                 resultEl.innerHTML = `<div style="text-align:center;padding:40px;color:#e94560;">❌ ${data.error || '计算失败'}</div>`;
@@ -4214,7 +4232,7 @@
         
         try {
             const res = await fetch('/api/quote_data');
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
             if (!data.success || !data.data) {
                 container.innerHTML = '<div style="text-align:center;padding:40px;color:#e94560;">❌ 加载失败</div>';
                 return;
@@ -4337,7 +4355,7 @@
         try {
             // 先获取当前配置
             const res = await fetch('/api/quote_data');
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
             if (!data.success) { throw new Error('加载配置失败'); }
             const patch = { profit: {}, materials: {} };
 
@@ -4472,7 +4490,7 @@
             if (search) params.push('search=' + encodeURIComponent(search));
             if (params.length) url += '&' + params.join('&');
             const res = await fetch(url);
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
             if (!data.success) throw new Error(data.error);
             const items = data.data || [];
             const canEdit = data.can_edit;
@@ -4532,7 +4550,7 @@
     async function fillDimoldbQuick(id) {
         try {
             const res = await fetch('/api/dimoldb/single?id=' + encodeURIComponent(id));
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
             if (!data.success || !data.data) return;
             const item = data.data;
             document.getElementById('dimoldbQuickType').value = item.product_type || 'zhengsquare';
@@ -4613,7 +4631,7 @@
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(body)
             });
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
             if (data.success) {
                 statusEl.textContent = '✅ 保存成功！';
                 statusEl.style.color = '#52c41a';
@@ -4632,7 +4650,7 @@
     async function editDimoldb(id) {
         try {
             const res = await fetch('/api/dimoldb/single?id=' + encodeURIComponent(id));
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
             if (!data.success || !data.data) { alert('未找到该刀模'); return; }
             fillDimoldbForm(data.data);
         } catch(e) {
@@ -4644,7 +4662,7 @@
         if (!confirm('确定要删除这个刀模吗？')) return;
         try {
             const res = await fetch('/api/dimoldb/' + id, { method: 'DELETE' });
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
             if (data.success) {
                 loadDimoldbList();
                 resetDimoldbForm();
@@ -4685,7 +4703,7 @@
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(params)
             });
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
             if (!data.success) throw new Error(data.error);
             const matches = data.matches || [];
 
@@ -4962,7 +4980,7 @@
             if (ptype) url += '&type=' + encodeURIComponent(ptype);
             if (search) url += '&search=' + encodeURIComponent(search);
             const res = await fetch(url);
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
             if (!data.success) throw new Error(data.error);
             const items = data.data || [];
             const canEdit = data.can_edit;
@@ -5089,7 +5107,7 @@
             const res = await fetch(url, {
                 method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
             });
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
             if (data.success) {
                 statusEl.innerHTML = '✅ 保存成功！';
                 statusEl.style.color = '#52c41a';
@@ -5113,7 +5131,7 @@
     async function editInv(id) {
         try {
             const res = await fetch('/api/inventory/single?id=' + encodeURIComponent(id));
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
             if (!data.success || !data.data) { alert('未找到'); return; }
             fillInvForm(data.data);
         } catch(e) {
@@ -5124,7 +5142,7 @@
     async function fillInvQuick(id) {
         try {
             const res = await fetch('/api/inventory/single?id=' + encodeURIComponent(id));
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
             if (!data.success || !data.data) return;
             const item = data.data;
             fillInvForm(item);
@@ -5160,7 +5178,7 @@
 
         try {
             const res = await fetch(url);
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
             if (!data.success) throw new Error(data.error);
             const items = data.data || [];
             // 材质过滤（前端过滤，因为材质是文本匹配多个关键词）
@@ -5208,7 +5226,7 @@
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({id, op: 'in', qty: parseInt(qty), remark})
             });
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
             alert(data.message);
             if (data.success) loadInventory(_invPage);
         } catch(e) {
@@ -5226,7 +5244,7 @@
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({id, op: 'out', qty: parseInt(qty), remark})
             });
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
             if (data.success) {
                 alert(data.message);
                 loadInventory(_invPage);
@@ -5241,7 +5259,7 @@
     async function showInvLog(id) {
         try {
             const res = await fetch('/api/inventory/' + encodeURIComponent(id) + '/log');
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
             if (!data.success) { alert(data.error); return; }
             const log = data.log || [];
             let html = `<div style="padding:10px;max-height:400px;overflow-y:auto;">
@@ -5300,7 +5318,7 @@
     async function fillRawQuick(id) {
         try {
             const res = await fetch('/api/raw');
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
             if (!data.success) throw new Error(data.error);
             const item = data.data.find(d => d.id === id);
             if (!item) return;
@@ -5340,7 +5358,7 @@
             }
             if (query.length) url += '?' + query.join('&');
             const res = await fetch(url);
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
             if (!data.success) throw new Error(data.error);
             const items = data.data || [];
 
@@ -5429,7 +5447,7 @@
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(body)
             });
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
             if (data.success) {
                 statusEl.textContent = '✅ 保存成功！';
                 statusEl.style.color = '#52c41a';
@@ -5463,7 +5481,7 @@
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({id, op, qty})
             });
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
             if (data.success) {
                 loadRaw();
             } else {
@@ -5477,7 +5495,7 @@
     async function rawEdit(id) {
         try {
             const res = await fetch('/api/raw');
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
             if (!data.success) throw new Error(data.error);
             const item = data.data.find(d => d.id === id);
             if (!item) { alert('未找到'); return; }
@@ -5526,7 +5544,7 @@
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({filepath: file, sheet_name: sheet, product_type: ptype})
             });
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
             if (data.success) {
                 statusEl.innerHTML = `✅ ${data.message}`;
                 statusEl.style.color = '#52c41a';

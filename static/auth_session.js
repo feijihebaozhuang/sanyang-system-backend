@@ -122,6 +122,32 @@
         return fetch(url, opts);
     }
 
+    async function parseApiJson(res) {
+        const text = await res.text();
+        const ct = (res.headers.get('content-type') || '').toLowerCase();
+        const trimmed = (text || '').trim();
+        if (trimmed.startsWith('<') || (!ct.includes('json') && trimmed.startsWith('<!'))) {
+            throw new Error(
+                '接口返回 HTML 而非 JSON（HTTP ' + res.status +
+                '）。请确认 Nginx 已将 /api/ 反代到 Flask，或执行 deploy 脚本修补 Nginx。'
+            );
+        }
+        try {
+            return trimmed ? JSON.parse(text) : {};
+        } catch (e) {
+            throw new Error('JSON 解析失败 HTTP ' + res.status + ': ' + trimmed.slice(0, 120));
+        }
+    }
+
+    async function getApiJson(url, options) {
+        const res = await apiFetch(url, options);
+        const data = await parseApiJson(res);
+        if (!res.ok && data && (data.error || data.message)) {
+            throw new Error(data.error || data.message);
+        }
+        return data;
+    }
+
     if (global.fetch && !global.__SY_FETCH_PATCHED) {
         global.__SY_FETCH_PATCHED = true;
         const nativeFetch = global.fetch.bind(global);
@@ -146,6 +172,8 @@
         readRoute,
         clearRoute,
         apiFetch,
+        parseApiJson,
+        getApiJson,
         saveAuthCredentials,
         clearAuthCredentials,
         readAuthCredentials,

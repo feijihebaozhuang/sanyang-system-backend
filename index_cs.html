@@ -1582,7 +1582,7 @@
     </div>
 </div>
 
-<script src="/static/auth_session.js?v=20260525"></script>
+<script src="/static/auth_session.js?v=20260527"></script>
 <script>
     // ===== 当前登录用户 =====
     let _currentUser = null;
@@ -1616,10 +1616,10 @@
             if (!res.ok) {
                 throw new Error('HTTP ' + res.status);
             }
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
             
             if (data.success) {
-                _currentUser = data.user;
+                _currentUser = normalizeCurrentUser(data.user);
                 if (data.auth_token && data.user && data.user.username) {
                     SY_AUTH.saveAuthCredentials(data.user.username, data.auth_token);
                 }
@@ -1670,18 +1670,17 @@
     function updateUserInfo() {
         const el = document.getElementById('userInfo');
         if (_currentUser) {
-            const roleTag = _currentUser.role === '超级管理员' 
+            const roleTag = isSuperAdmin()
                 ? '<span class="role-tag" style="background:rgba(251,191,36,0.2);color:#fbbf24;">👑 管理员</span>'
                 : _currentUser.role === '管理'
                 ? '<span class="role-tag" style="background:rgba(56,189,248,0.2);color:#38bdf8;">🔧 管理</span>'
                 : _currentUser.role === '客服'
                 ? '<span class="role-tag" style="background:rgba(233,69,96,0.2);color:#e94560;">💬 客服</span>'
                 : '<span class="role-tag" style="background:rgba(52,211,153,0.2);color:#34d399;">👤 员工</span>';
-            el.innerHTML = `👤 ${_currentUser.name} ${roleTag} ▾`;
-            // admin显示管理员工按钮
+            el.innerHTML = `👤 ${userDisplayName(_currentUser)} ${roleTag} ▾`;
             const editBtn = document.getElementById('empEditBtn');
             if (editBtn) {
-                editBtn.style.display = _currentUser.role === '超级管理员' ? 'inline-block' : 'none';
+                editBtn.style.display = isSuperAdmin() ? 'inline-block' : 'none';
             }
         } else {
             el.innerHTML = '🔑 登录';
@@ -1836,7 +1835,7 @@
     function showUserMenu() {
         if (_currentUser) {
             // 构建菜单按钮
-            let btns = '<div style="margin-bottom:8px;font-size:14px;color:#333;">' + _currentUser.name + '（' + _currentUser.role + '）</div>';
+            let btns = '<div style="margin-bottom:8px;font-size:14px;color:#333;">' + userDisplayName(_currentUser) + '（' + (_currentUser.role || '') + '）</div>';
             btns += '<button onclick="openPasswordModal();closeUserMenu()" style="display:block;width:100%;padding:10px;margin-bottom:4px;background:#f5f5f5;border:1px solid #e8e8e8;border-radius:6px;cursor:pointer;font-size:14px;text-align:left;">🔑 修改密码</button>';
             if (_currentUser.role === '超级管理员') {
                 btns += '<button onclick="switchTopPage(\'permission\', null);closeUserMenu()" style="display:block;width:100%;padding:10px;margin-bottom:4px;background:#f5f5f5;border:1px solid #e8e8e8;border-radius:6px;cursor:pointer;font-size:14px;text-align:left;">🔐 权限设置</button>';
@@ -1964,11 +1963,11 @@
                 overlay.style.display = 'flex';
                 return;
             }
-            _currentUser = data.user;
+            _currentUser = normalizeCurrentUser(data.user);
             if (data.auth_token && data.user && data.user.username) {
                 SY_AUTH.saveAuthCredentials(data.user.username, data.auth_token);
             }
-            if (_currentUser && _currentUser.role === '超级管理员') {
+            if (_currentUser && isSuperAdmin()) {
                 document.body.setAttribute('data-is-admin', 'true');
             } else {
                 document.body.removeAttribute('data-is-admin');
@@ -2010,7 +2009,7 @@
     // ===== 统一权限检查函数（唯一权限来源，前端永不自行推断）=====
     function hasPerm(feature) {
         if (!_currentUser) return false;
-        if (_currentUser.is_system || _currentUser.username === 'admin') return true;
+        if (_currentUser.is_system || _currentUser.username === 'admin' || _currentUser.username === 'daiyali') return true;
         if (_currentUser.role === '超级管理员') return true;
         if (window._myPerms && window._myPerms[feature] === true) return true;
         if (feature === '快麦ERP' && window._myPerms && window._myPerms['聚水潭'] === true) return true;
@@ -2172,8 +2171,35 @@
     }
     // ===== API 调用 =====
     async function getAPI(url) {
+        if (globalThis.SY_AUTH && SY_AUTH.getApiJson) {
+            return SY_AUTH.getApiJson(url);
+        }
         const res = await SY_AUTH.apiFetch(url);
-        return res.json();
+        const text = await res.text();
+        if ((text || '').trim().startsWith('<')) {
+            throw new Error('接口返回 HTML 而非 JSON（HTTP ' + res.status + '），请检查 Nginx /api/ 反代');
+        }
+        return JSON.parse(text);
+    }
+
+    function userDisplayName(u) {
+        if (!u) return '用户';
+        return u.display_name || u.name || u.employee_name || u.username || '用户';
+    }
+
+    function normalizeCurrentUser(u) {
+        if (!u) return u;
+        if (!u.name) u.name = userDisplayName(u);
+        if (u.is_system || u.username === 'admin' || u.username === 'daiyali') {
+            u.role = '超级管理员';
+        }
+        return u;
+    }
+
+    function isSuperAdmin() {
+        if (!_currentUser) return false;
+        if (_currentUser.is_system || _currentUser.username === 'admin' || _currentUser.username === 'daiyali') return true;
+        return _currentUser.role === '超级管理员';
     }
 
     // ===== 搜索 =====

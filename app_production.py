@@ -65,13 +65,13 @@ def _active_user(username: str | None = None) -> dict | None:
 def _bind_session_for_user(username: str) -> None:
     """Header 令牌鉴权通过后写入 Session，避免刷新后仅 Cookie 失效导致接口 401。"""
     user = _active_user(username)
-    if not user or session.get("username") == username:
+    if not user:
         return
     session.permanent = True
     session["username"] = username
-    session["user_name"] = user["name"]
-    session["role"] = user["role"]
-    session["employee_name"] = user["employee_name"]
+    session["user_name"] = user.get("name") or username
+    session["role"] = user.get("role") or "员工"
+    session["employee_name"] = user.get("employee_name") or ""
     session.modified = True
 
 
@@ -426,7 +426,8 @@ def login():
     user = USERS.get(username)
     if not user:
         return jsonify({"success": False, "message": "账号或密码错误"})
-    user = _perm_resolve.normalize_user_record(username, user)
+    import permission_resolve as _pr_login
+    user = _pr_login.normalize_user_record(username, user)
     USERS[username] = user
 
     pwd_hash = hashlib.sha256(password.encode()).hexdigest()
@@ -442,9 +443,9 @@ def login():
     
     session.permanent = True
     session['username'] = username
-    session['user_name'] = user['name']
+    session['user_name'] = user.get('name') or username
     session['role'] = user['role']
-    session['employee_name'] = user['employee_name']
+    session['employee_name'] = user.get('employee_name', '')
     session.modified = True
     if user.get("is_system"):
         persist()
@@ -452,22 +453,17 @@ def login():
     # 查找用户所属部门
     emp_dept = ''
     for emp in _employees_master_list:
-        if emp['name'] == user['employee_name']:
+        if emp['name'] == user.get('employee_name'):
             emp_dept = emp.get('dept', '')
             break
 
+    pub = _pr_login.user_public_payload(username, user)
+    pub["dept"] = emp_dept
     return jsonify({
         "success": True,
         "message": "登录成功",
         "auth_token": _auth_token_for(username),
-        "user": {
-            "username": username,
-            "name": user['name'],
-            "role": user['role'],
-            "employee_name": user['employee_name'],
-            "is_system": bool(user.get("is_system")),
-            "dept": emp_dept
-        }
+        "user": pub
     })
 
 @app.route('/api/logout')
@@ -542,16 +538,12 @@ def get_current_user():
     if un:
         user = _active_user(un)
         if user:
+            import permission_resolve as _pr_me
+            pub = _pr_me.user_public_payload(un, user)
             return jsonify({
                 "logged_in": True,
                 "auth_token": _auth_token_for(un),
-                "user": {
-                    "username": un,
-                    "name": user['name'],
-                    "role": user['role'],
-                    "employee_name": user['employee_name'],
-                    "is_system": bool(user.get("is_system")),
-                }
+                "user": pub
             })
     return jsonify({"logged_in": False})
 

@@ -15,13 +15,13 @@ echo "========== [2/4] 3003 admin 账号对齐 =========="
 python3 "$REPO/scripts/reset_co_admin_3003.py" || true
 
 echo ""
-echo "========== [3/4] guanli Nginx（需 root/sudo）=========="
+echo "========== [3/4] Nginx /api/ 反代（需 root/sudo）=========="
 if [ "$(id -u)" -eq 0 ]; then
-  bash "$REPO/scripts/ops/patch_guanli_nginx_87.sh" || echo "WARN: Nginx 补丁未完全成功，请手动改 guanli 配置"
+  bash "$REPO/scripts/ops/patch_feijihe_nginx_api_87.sh" || echo "WARN: Nginx 补丁未完全成功"
 elif sudo -n true 2>/dev/null; then
-  sudo bash "$REPO/scripts/ops/patch_guanli_nginx_87.sh" || echo "WARN: Nginx 补丁未完全成功"
+  sudo bash "$REPO/scripts/ops/patch_feijihe_nginx_api_87.sh" || echo "WARN: Nginx 补丁未完全成功"
 else
-  echo "SKIP: 无 root，请手动在 guanli server 块 location / 前 include deploy/nginx-guanli-api-static.conf.include"
+  echo "SKIP: 无 root，请 sudo bash $REPO/scripts/ops/patch_feijihe_nginx_api_87.sh"
 fi
 
 echo ""

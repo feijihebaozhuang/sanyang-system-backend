@@ -302,12 +302,17 @@ function toast(msg) {
 }
 
 function apiFetch(url, opts) {
-  return SY_AUTH.apiFetch(url, opts).then(function(r) {
-    return r.json().then(function(d) {
-      if (r.status === 401) {
-        if (url.indexOf('/api/me') < 0) showLogin();
-        throw new Error((d && (d.error || d.message)) || '未登录');
+  url = resolveCoApiUrl(url);
+  var cross = url.indexOf('http') === 0 && global.location && url.indexOf(global.location.origin) !== 0;
+  var optsMerged = Object.assign({ credentials: cross ? 'omit' : 'same-origin' }, opts || {});
+  return SY_AUTH.apiFetch(url, optsMerged).then(function(r) {
+    return r.text().then(function(text) {
+      var trimmed = (text || '').trim();
+      if (trimmed.startsWith('<')) {
+        throw new Error('接口返回 HTML（HTTP ' + r.status + '），请检查 Nginx /api/ 反代或 feijihe.top/api/co 代理');
       }
+      var d = trimmed ? JSON.parse(text) : {};
+      if (r.status === 401 && url.indexOf('/api/me') < 0) showLogin();
       if (!r.ok && d && !d.success && (d.error || d.message)) {
         throw new Error(d.error || d.message);
       }

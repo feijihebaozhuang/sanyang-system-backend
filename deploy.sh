@@ -192,15 +192,15 @@ done
 
 [ "$FAIL" -eq 0 ] && log "SUCCESS commit=$COMMIT" || err "FAILURE - check logs"
 
-log "[post] 三端口验收 + guanli Nginx"
+log "[post] 三端口验收 + Nginx /api/ 反代"
 bash "$REPO_DIR/scripts/verify_three_ports.sh" 2>/dev/null || warn "  verify_three_ports 跳过"
 if command -v nginx >/dev/null 2>&1; then
     if [ "$(id -u)" -eq 0 ]; then
-        bash "$REPO_DIR/scripts/ops/patch_guanli_nginx_87.sh" || warn "  guanli Nginx 需手动 include nginx-guanli-api-static.conf.include"
-    elif sudo -n bash "$REPO_DIR/scripts/ops/patch_guanli_nginx_87.sh" 2>/dev/null; then
-        log "  guanli Nginx patched"
+        bash "$REPO_DIR/scripts/ops/patch_feijihe_nginx_api_87.sh" || warn "  Nginx /api/ 反代需手动 include"
+    elif sudo -n bash "$REPO_DIR/scripts/ops/patch_feijihe_nginx_api_87.sh" 2>/dev/null; then
+        log "  Nginx /api/ patched"
     else
-        warn "  guanli 登录 403 → sudo bash $REPO_DIR/scripts/ops/patch_guanli_nginx_87.sh"
+        warn "  数据加载失败(HTML) → sudo bash $REPO_DIR/scripts/ops/patch_feijihe_nginx_api_87.sh"
     fi
 fi
 

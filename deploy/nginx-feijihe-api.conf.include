@@ -1,0 +1,28 @@
+# feijihe.top → 3002 生产端
+# 必须在 location / 或 try_files 之前 include，否则 GET /api/* 会返回 index.html
+
+location /api/co/ {
+    proxy_pass http://127.0.0.1:3002/api/co/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 120s;
+}
+
+location /api/ {
+    proxy_pass http://127.0.0.1:3002/api/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 120s;
+}
+
+location /static/ {
+    proxy_pass http://127.0.0.1:3002/static/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+}

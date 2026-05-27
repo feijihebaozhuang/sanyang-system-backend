@@ -87,7 +87,30 @@ def normalize_user_record(username: str, user: dict | None) -> dict:
             pass  # admin 可保持空 employee_name
         elif not (u.get("employee_name") or "").strip():
             u["employee_name"] = "戴雅利"
+    display = (u.get("name") or "").strip()
+    if not display or display == un:
+        display = (u.get("employee_name") or "").strip()
+    if not display and un in _SUPER_ADMIN_USERNAMES:
+        display = "戴雅利"
+    if not display:
+        display = un or "用户"
+    u["name"] = display
     return u
+
+
+def user_public_payload(username: str, user: dict | None) -> dict:
+    """登录 /api/me 返回给前端的 user 对象（保证 name 等字段齐全）。"""
+    u = normalize_user_record(username, dict(user or {}))
+    un = (username or u.get("username") or "").strip()
+    name = (u.get("name") or u.get("employee_name") or un or "用户").strip()
+    return {
+        "username": un,
+        "name": name,
+        "display_name": name,
+        "role": (u.get("role") or "员工").strip(),
+        "employee_name": (u.get("employee_name") or "").strip(),
+        "is_system": bool(u.get("is_system")),
+    }
 
 
 def install_users_from_persistent(registry: dict, loaded: dict | None) -> None:

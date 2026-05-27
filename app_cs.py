@@ -486,30 +486,25 @@ def login():
     
     session.permanent = True
     session['username'] = username
-    session['user_name'] = user['name']
+    session['user_name'] = user.get('name') or username
     session['role'] = user['role']
-    session['employee_name'] = user['employee_name']
+    session['employee_name'] = user.get('employee_name', '')
     session.modified = True
 
     # 查找用户所属部门
     emp_dept = ''
     for emp in _employees_master_list:
-        if emp['name'] == user['employee_name']:
+        if emp['name'] == user.get('employee_name'):
             emp_dept = emp.get('dept', '')
             break
 
+    pub = _perm_resolve_login.user_public_payload(username, user)
+    pub["dept"] = emp_dept
     return jsonify({
         "success": True,
         "message": "登录成功",
         "auth_token": _auth_token_for(username),
-        "user": {
-            "username": username,
-            "name": user['name'],
-            "role": user['role'],
-            "employee_name": user['employee_name'],
-            "is_system": bool(user.get("is_system")),
-            "dept": emp_dept
-        }
+        "user": pub
     })
 
 @app.route('/api/logout')
@@ -587,16 +582,11 @@ def get_current_user():
             import permission_resolve as _perm_resolve_me
             user = _perm_resolve_me.normalize_user_record(un, user)
             USERS[un] = user
+            pub = _perm_resolve_me.user_public_payload(un, user)
             return jsonify({
                 "logged_in": True,
                 "auth_token": _auth_token_for(un),
-                "user": {
-                    "username": un,
-                    "name": user['name'],
-                    "role": user['role'],
-                    "employee_name": user['employee_name'],
-                    "is_system": bool(user.get("is_system")),
-                }
+                "user": pub
             })
     return jsonify({"logged_in": False})
 
