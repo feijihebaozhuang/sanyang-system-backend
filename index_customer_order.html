@@ -5,6 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>三羊客户下单 · 管理后台</title>
 <script>
+/* guanli 子域 SSL 异常时，统一跳到 feijihe.top/guanli/（证书有效、API 同域 /api/co） */
+(function () {
+  var host = (location.hostname || '').toLowerCase();
+  if (host === 'guanli.feijihe.top' || host === 'www.guanli.feijihe.top') {
+    location.replace('https://feijihe.top/guanli/' + (location.search || '') + (location.hash || ''));
+  }
+})();
+</script>
+<script>
 /* 内联 auth_session.js：guanli Nginx IP 白名单会拦 /static/，导致 SY_AUTH 未定义、登录无反应 */
 (function (global) {
     const ROUTE_KEY = 'sanyang_ui_route';
@@ -84,7 +93,7 @@
         var host = (global.location && global.location.hostname) || '';
         var path = (global.location && global.location.pathname) || '';
         if (path.indexOf('/guanli') === 0) return '/api/co';
-        if (host.indexOf('guanli') >= 0) return '/api';
+        if (host.indexOf('guanli') >= 0) return 'https://feijihe.top/api/co';
         return '/api';
     }
     function loginApiCandidates(path) {
@@ -92,8 +101,8 @@
         var host = (global.location && global.location.hostname) || '';
         var list = [];
         if (host.indexOf('guanli') >= 0) {
-            list.push('/api/login');
             list.push('https://feijihe.top/api/co/login');
+            list.push('/api/login');
         }
         var resolved = resolveCoApiUrl(path);
         if (list.indexOf(resolved) < 0) list.push(resolved);
@@ -116,6 +125,7 @@
         if (!url || url.indexOf('http') === 0) return url;
         var root = coApiRoot();
         if (root === '/api') return url;
+        if (url === root || url.indexOf(root + '/') === 0) return url;
         if (url.indexOf('/api/') === 0) return root + url.substring(4);
         return url;
     }
@@ -160,7 +170,8 @@
         readAuthCredentials: readAuthCredentials,
         loginApiCandidates: loginApiCandidates,
         parseLoginResponse: parseLoginResponse,
-        coApiRoot: coApiRoot
+        coApiRoot: coApiRoot,
+        resolveCoApiUrl: resolveCoApiUrl
     };
 })(window);
 </script>
@@ -249,7 +260,7 @@ tr:hover td { background: #fafcff; }
 <div id="loginPage">
   <div class="login-box">
     <h1>三羊客户下单系统</h1>
-    <p>三羊统一管理后台</p>
+    <p>三羊统一管理后台 · 请用 <strong>feijihe.top/guanli</strong> 访问</p>
     <input id="loginUser" placeholder="账号" autocomplete="username">
     <input id="loginPwd" type="password" placeholder="密码" autocomplete="current-password">
     <button onclick="doLogin()">登录</button>
@@ -330,16 +341,19 @@ function toast(msg) {
 }
 
 function apiFetch(url, opts) {
-  url = resolveCoApiUrl(url);
-  var cross = url.indexOf('http') === 0 && global.location && url.indexOf(global.location.origin) !== 0;
-  var optsMerged = Object.assign({ credentials: cross ? 'omit' : 'same-origin' }, opts || {});
-  return SY_AUTH.apiFetch(url, optsMerged).then(function(r) {
+  if (!globalThis.SY_AUTH || !SY_AUTH.apiFetch) {
+    return Promise.reject(new Error('页面脚本未加载完整，请 Ctrl+F5 强制刷新'));
+  }
+  return SY_AUTH.apiFetch(url, opts || {}).then(function(r) {
     return r.text().then(function(text) {
       var trimmed = (text || '').trim();
       if (trimmed.startsWith('<')) {
-        throw new Error('接口返回 HTML（HTTP ' + r.status + '），请检查 Nginx /api/ 反代或 feijihe.top/api/co 代理');
+        throw new Error('接口返回 HTML（HTTP ' + r.status + '），请改用 https://feijihe.top/guanli/ 登录');
       }
-      var d = trimmed ? JSON.parse(text) : {};
+      var d = {};
+      try { d = trimmed ? JSON.parse(text) : {}; } catch (e) {
+        throw new Error('接口响应不是 JSON（HTTP ' + r.status + '）');
+      }
       if (r.status === 401 && url.indexOf('/api/me') < 0) showLogin();
       if (!r.ok && d && !d.success && (d.error || d.message)) {
         throw new Error(d.error || d.message);
@@ -390,9 +404,7 @@ function doLogin() {
       .then(function(r) {
         var d = r.data || {};
         if (!r.ok || !d.success) {
-          if (i + 1 < urls.length && (r.status === 403 || r.status === 404 || r.status === 502)) {
-            return attempt(i + 1);
-          }
+          if (i + 1 < urls.length) return attempt(i + 1);
           errEl.textContent = d.message || d.error || ('登录失败（HTTP ' + r.status + '）');
           return;
         }
@@ -479,12 +491,15 @@ function loadDashboard() {
       '</div>' +
       '<div class="card"><h2>系统说明</h2>' +
       '<p style="font-size:14px;line-height:1.8;color:#555;">' +
-      '本页为<strong>三羊统一管理入口</strong>（guanli.feijihe.top / 3003）。<br>' +
+      '本页为<strong>三羊统一管理入口</strong>（推荐 https://feijihe.top/guanli/ ）。<br>' +
       '顶部导航：<strong>客服端、生产端</strong>在本页内嵌；<strong>快麦 ERP</strong>新窗口打开。权限在此统一维护。<br>' +
       '<strong>客户下单小程序</strong>（weapp/customer-order）对接 3003。<br>' +
       '<strong>客服审单</strong>在原先<strong>报价小程序 quote-weapp</strong>（AppID wxa1d9f876327af0c0）里，首页「客户下单审单」入口，不是单独 cs-order。<br>' +
       'SKU 全量导入：在 87 执行 <code>scripts/sync_km_sku_map_from_km.py --resume</code>。' +
       '</p></div>';
+  }).catch(function(e) {
+    document.getElementById('mainContent').innerHTML =
+      '<div class="card"><h2>加载失败</h2><p style="color:#e74c3c">' + esc(e.message || '未知错误') + '</p></div>';
   });
 }
 

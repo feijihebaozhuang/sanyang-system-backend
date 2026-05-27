@@ -1,0 +1,3 @@
+# guanli.feijihe.top → feijihe.top/guanli/
+# 子域 SSL 证书异常时，在 server { listen 443; server_name guanli.feijihe.top; } 内 include 本文件即可整站跳转。
+return 301 https://feijihe.top/guanli$request_uri;

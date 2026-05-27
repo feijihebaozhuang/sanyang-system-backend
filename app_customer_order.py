@@ -51,8 +51,8 @@ def _bootstrap_tables():
 
 
 @app.route("/api/health")
-def health():
-    return jsonify({"ok": True, "service": "customer-order", "port": 3003})
+def api_health():
+    return jsonify({"ok": True, "service": "customer_order", "port": 3003})
 
 
 @app.before_request
@@ -67,7 +67,7 @@ def _adjust_session_cookie():
 
 @app.before_request
 def _ensure_co_tables():
-    if request.endpoint == "health":
+    if request.endpoint == "api_health":
         return None
     try:
         _bootstrap_tables()
@@ -136,11 +136,6 @@ def static_files(filename):
 from mp_api import mp_bp
 
 app.register_blueprint(mp_bp)
-
-
-@app.route("/api/health")
-def api_health():
-    return jsonify({"ok": True, "service": "customer_order", "port": 3003})
 
 
 @app.route("/api/login", methods=["POST"])
