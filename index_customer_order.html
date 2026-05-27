@@ -131,7 +131,7 @@ var csStaffCache = [];
 var categoriesCache = [];
 var customersCache = [];
 var embedIframes = {};
-var selectedRoleForEdit = null;
+var selectedRoleForEdit = 0;
 
 var EMBED_URLS = {
   embed_cs: 'https://zean.feijihe.top/',
@@ -143,6 +143,25 @@ var STATUS_LABELS = {
   approved: '已通过', rejected: '已驳回', in_production: '生产中', completed: '已完成', cancelled: '已取消'
 };
 var orderFilters = { status: '', cs_staff_id: '', customer_id: '', keyword: '', date_from: '', date_to: '', cs_include_unassigned: false };
+var PERM_FEATURES_FALLBACK = [
+  '首页', '订单生产进度', '扫码报工', '日报表', '数据看板', '刀模', '刀模库',
+  '库存', '原材料', '快麦ERP', '员工', '权限管理', '报价', '实时订单'
+];
+var DEFAULT_POSITION_NAMES = ['超级管理员', '主管', '管理', '客服', '员工', '财务', '业务员'];
+var editingEmpOldName = '';
+
+function permFeaturesList() {
+  return (window._permFeatures && window._permFeatures.length) ? window._permFeatures : PERM_FEATURES_FALLBACK;
+}
+
+function normalizePositionNames(arr) {
+  var out = [];
+  (arr || []).forEach(function(p) {
+    var n = (typeof p === 'string') ? p.trim() : (p && (p.name || p.label) ? String(p.name || p.label).trim() : '');
+    if (n && out.indexOf(n) < 0) out.push(n);
+  });
+  return out.length ? out : DEFAULT_POSITION_NAMES.slice();
+}
 
 function toast(msg) {
   var el = document.getElementById('toast');
@@ -860,22 +879,29 @@ function renderPermFullEmployees() {
         '<td>' + esc(e.position || '—') + '</td>' +
         '<td><span class="tag tag-blue">' + esc(e.group || '—') + '</span></td>' +
         '<td>' + deptLabel(e.dept) + '</td><td>' + esc(e.phone || '—') + '</td>' +
-        '<td><button class="btn secondary" onclick="showFullEmployeeForm(' + JSON.stringify(e.name) + ')">编辑</button> ' +
-        '<button class="btn danger" onclick="deleteFullEmployee(' + JSON.stringify(e.name) + ')">删除</button></td></tr>';
+        '<td><button class="btn secondary" onclick="showFullEmployeeFormByIdx(' + i + ')">编辑</button> ' +
+        '<button class="btn danger" onclick="deleteFullEmployeeByIdx(' + i + ')">删除</button></td></tr>';
     });
-    html += '</tbody></table></div><div id="permFormArea"></div>';
+    html += '</tbody></table></div>';
     panel.innerHTML = html;
   }).catch(function(e) { panel.innerHTML = '<p class="empty">加载失败：' + esc(e.message) + '</p>'; });
+}
+
+function showFullEmployeeFormByIdx(idx) {
+  var emp = (window._fullEmployeesCache || [])[idx];
+  if (!emp) { toast('未找到员工'); return; }
+  showFullEmployeeForm(emp.name);
 }
 
 function showFullEmployeeForm(name) {
   var emp = name ? (window._fullEmployeesCache || []).find(function(e) { return e.name === name; }) : null;
   if (name && !emp) { toast('未找到员工'); return; }
+  editingEmpOldName = name || '';
   var e = emp || { name: '', position: '员工', group: '其他', phone: '', dept: '美丽湾工厂部' };
-  var area = document.getElementById('permFormArea');
+  var area = document.getElementById('admFormArea');
   if (!area) return;
   area.innerHTML =
-    '<div class="card" style="margin-top:16px;"><h2>' + (name ? '编辑员工' : '新增员工') + '</h2>' +
+    '<div class="card" style="margin-top:16px;"><h2>' + (name ? '编辑员工 · ' + esc(name) : '新增员工') + '</h2>' +
     '<div class="form-grid">' +
     field('姓名', 'feName', e.name) +
     field('职务（如：手啤机-啤工）', 'fePos', e.position || '') +
@@ -884,12 +910,12 @@ function showFullEmployeeForm(name) {
     selectField('厂区', 'feDept', e.dept === '洋坑塘运营部' ? '洋坑塘运营部' : '美丽湾工厂部',
       [{v:'美丽湾工厂部',l:'美丽湾工厂部'},{v:'洋坑塘运营部',l:'洋坑塘运营部'}]) +
     '</div><div class="form-actions">' +
-    '<button class="btn" onclick="saveFullEmployee(' + JSON.stringify(name || '') + ')">保存</button>' +
-    '<button class="btn secondary" onclick="document.getElementById(\'permFormArea\').innerHTML=\'\'">取消</button></div></div>';
+    '<button class="btn" onclick="saveFullEmployeeFromForm()">保存</button>' +
+    '<button class="btn secondary" onclick="document.getElementById(\'admFormArea\').innerHTML=\'\'">取消</button></div></div>';
   area.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-function saveFullEmployee(oldName) {
+function saveFullEmployeeFromForm() {
   var payload = {
     name: document.getElementById('feName').value.trim(),
     position: document.getElementById('fePos').value.trim(),
@@ -898,13 +924,14 @@ function saveFullEmployee(oldName) {
     dept: document.getElementById('feDept').value
   };
   if (!payload.name) { toast('姓名不能为空'); return; }
-  var url = oldName ? '/api/employee/update' : '/api/employee/add';
-  if (oldName) payload.old_name = oldName;
+  var url = editingEmpOldName ? '/api/employee/update' : '/api/employee/add';
+  if (editingEmpOldName) payload.old_name = editingEmpOldName;
   apiFetch(url, { method: 'POST', body: JSON.stringify(payload) })
     .then(function(d) {
       if (!d.success) { toast(d.message || d.error || '保存失败'); return; }
       toast(d.message || '已保存');
-      document.getElementById('permFormArea').innerHTML = '';
+      editingEmpOldName = '';
+      document.getElementById('admFormArea').innerHTML = '';
       renderPermFullEmployees();
     })
     .catch(function(err) { toast(err.message || '网络错误'); });
@@ -913,6 +940,12 @@ function saveFullEmployee(oldName) {
 function promptAddFullEmployee() { showFullEmployeeForm(null); }
 
 function editFullEmployee(name) { showFullEmployeeForm(name); }
+
+function deleteFullEmployeeByIdx(idx) {
+  var emp = (window._fullEmployeesCache || [])[idx];
+  if (!emp) return;
+  deleteFullEmployee(emp.name);
+}
 
 function deleteFullEmployee(name) {
   if (!confirm('确认将「' + name + '」移入离职回收站？')) return;
@@ -1321,17 +1354,21 @@ function savePermProcesses() {
 
 function renderPermPositionsTab() {
   var data = window._permBundle || {};
-  var positions = data.positions && data.positions.length ? data.positions.slice() : ['超级管理员', '管理', '客服', '员工'];
+  var positions = normalizePositionNames(data.positions);
   data.positions = positions;
-  if (!selectedRoleForEdit || positions.indexOf(selectedRoleForEdit) < 0) {
-    selectedRoleForEdit = positions[0] || null;
+  window._permBundle.positions = positions;
+  if (typeof selectedRoleForEdit === 'number' && selectedRoleForEdit >= 0 && selectedRoleForEdit < positions.length) {
+    /* keep index */
+  } else if (typeof selectedRoleForEdit === 'string' && positions.indexOf(selectedRoleForEdit) >= 0) {
+    selectedRoleForEdit = positions.indexOf(selectedRoleForEdit);
+  } else {
+    selectedRoleForEdit = 0;
   }
   data.role_permissions = data.role_permissions || {};
   data.employee_roles = data.employee_roles || {};
   var employees = (data.employees || []).map(function(e) { return (e && e.name) ? e.name : e; }).filter(Boolean);
-  var features = window._permFeatures || [];
   var html =
-    '<div class="info-box"><strong>「职务」与「角色」不同：</strong>员工表里的职务是手啤机-啤工等工种；此处<strong>角色</strong>决定默认能看哪些菜单（可在「功能权限」里个人覆盖）。</div>' +
+    '<div class="info-box"><strong>「职务」与「角色」不同：</strong>员工表里的职务是手啤机-啤工等工种；此处<strong>角色</strong>决定默认能看哪些菜单。点左侧角色名 → 右侧勾默认权限 → 下方给员工选角色 → 保存。</div>' +
     '<div class="toolbar"><button class="btn" onclick="addPermPosition()">+ 添加角色</button>' +
     '<button class="btn" onclick="savePermPositions()">💾 保存岗位与角色</button></div>' +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">' +
@@ -1341,7 +1378,7 @@ function renderPermPositionsTab() {
     '<div class="perm-table-wrap"><table><thead><tr><th>员工</th><th>角色</th></tr></thead><tbody>';
   employees.forEach(function(n) {
     var cur = data.employee_roles[n] || '';
-    html += '<tr><td style="font-weight:500;">' + esc(n) + '</td><td><select data-emp-role="' + esc(n) + '" onchange="setEmployeeRoleFromSelect(this)" style="padding:4px 8px;font-size:13px;">' +
+    html += '<tr><td style="font-weight:500;">' + esc(n) + '</td><td><select data-emp-role="' + esc(n) + '" onchange="setEmployeeRoleFromSelect(this)" style="padding:4px 8px;font-size:13px;min-width:120px;">' +
       '<option value="">— 未指定 —</option>';
     positions.forEach(function(p) {
       html += '<option value="' + esc(p) + '"' + (cur === p ? ' selected' : '') + '>' + esc(p) + '</option>';
@@ -1351,31 +1388,36 @@ function renderPermPositionsTab() {
   html += '</tbody></table></div>';
   document.getElementById('permPanel').innerHTML = html;
   renderPermPositionList(positions);
-  renderRolePermEditor(selectedRoleForEdit, features);
+  renderRolePermEditor(selectedRoleForEdit);
 }
 
-function renderRolePermEditor(role, features) {
+function renderRolePermEditor(roleIdx) {
   var el = document.getElementById('rolePermEditor');
-  if (!el || !role) { if (el) el.innerHTML = ''; return; }
+  var positions = window._permBundle.positions || [];
+  var role = positions[roleIdx];
+  if (!el || role == null) { if (el) el.innerHTML = '<p class="empty" style="padding:12px;">请点选左侧角色</p>'; return; }
+  var features = permFeaturesList();
   var rp = (window._permBundle.role_permissions && window._permBundle.role_permissions[role]) || {};
-  var html = '<h3 style="font-size:14px;margin-bottom:8px;">「' + esc(role) + '」默认权限</h3><div class="role-perm-box">';
-  (features || []).forEach(function(f) {
-    html += '<label><input type="checkbox" data-role-feat="' + esc(role) + '" data-feat="' + esc(f) + '" ' +
-      (rp[f] ? 'checked' : '') + ' onchange="toggleRolePerm(this)"> ' + esc(f) + '</label>';
+  var html = '<h3 style="font-size:14px;margin-bottom:8px;">「' + esc(role) + '」默认权限（' + features.length + ' 项）</h3><div class="role-perm-box">';
+  features.forEach(function(f, fi) {
+    html += '<label><input type="checkbox" data-ridx="' + roleIdx + '" data-feat="' + esc(f) + '" ' +
+      (rp[f] ? 'checked' : '') + ' onchange="toggleRolePermByIdx(this)"> ' + esc(f) + '</label>';
   });
   html += '</div>';
   el.innerHTML = html;
 }
 
-function selectRoleForEdit(role) {
-  selectedRoleForEdit = role;
+function selectRoleForEditByIdx(roleIdx) {
+  selectedRoleForEdit = roleIdx;
   renderPermPositionList(window._permBundle.positions || []);
-  renderRolePermEditor(role, window._permFeatures || []);
+  renderRolePermEditor(roleIdx);
 }
 
-function toggleRolePerm(el) {
-  var role = el.getAttribute('data-role-feat');
+function toggleRolePermByIdx(el) {
+  var roleIdx = parseInt(el.getAttribute('data-ridx'), 10);
   var feat = el.getAttribute('data-feat');
+  var role = (window._permBundle.positions || [])[roleIdx];
+  if (!role) return;
   if (!window._permBundle.role_permissions) window._permBundle.role_permissions = {};
   if (!window._permBundle.role_permissions[role]) window._permBundle.role_permissions[role] = {};
   window._permBundle.role_permissions[role][feat] = el.checked;
@@ -1394,8 +1436,8 @@ function renderPermPositionList(positions) {
   var el = document.getElementById('permPositions');
   if (!el) return;
   el.innerHTML = (positions || []).map(function(p, i) {
-    var active = selectedRoleForEdit === p ? ' active' : '';
-    return '<div class="pos-row' + active + '" style="cursor:pointer;" onclick="selectRoleForEdit(' + JSON.stringify(p) + ')">' +
+    var active = selectedRoleForEdit === i ? ' active' : '';
+    return '<div class="pos-row' + active + '" style="cursor:pointer;" onclick="selectRoleForEditByIdx(' + i + ')">' +
       '<span>' + (i + 1) + '. ' + esc(p) + '</span>' +
       '<span><button class="btn-xs blue" onclick="event.stopPropagation();editPermPositionName(' + i + ')">改名</button> ' +
       '<button class="btn-xs red" onclick="event.stopPropagation();deletePermPosition(' + i + ')">删</button></span></div>';
@@ -1413,9 +1455,9 @@ function editPermPositionName(idx) {
   Object.keys(er).forEach(function(k) { if (er[k] === old) er[k] = name.trim(); });
   var rp = window._permBundle.role_permissions || {};
   if (rp[old]) { rp[name.trim()] = rp[old]; delete rp[old]; }
-  if (selectedRoleForEdit === old) selectedRoleForEdit = name.trim();
+  if (selectedRoleForEdit === idx) { /* keep idx */ }
   renderPermPositionList(window._permBundle.positions);
-  renderRolePermEditor(selectedRoleForEdit, window._permFeatures || []);
+  renderRolePermEditor(selectedRoleForEdit);
 }
 
 function addPermPosition() {
@@ -1423,9 +1465,9 @@ function addPermPosition() {
   if (!name || !name.trim()) return;
   if (!window._permBundle.positions) window._permBundle.positions = [];
   window._permBundle.positions.push(name.trim());
-  selectedRoleForEdit = name.trim();
+  selectedRoleForEdit = window._permBundle.positions.length - 1;
   renderPermPositionList(window._permBundle.positions);
-  renderRolePermEditor(selectedRoleForEdit, window._permFeatures || []);
+  renderRolePermEditor(selectedRoleForEdit);
 }
 
 function deletePermPosition(idx) {
@@ -1435,9 +1477,11 @@ function deletePermPosition(idx) {
   var er = window._permBundle.employee_roles || {};
   Object.keys(er).forEach(function(k) { if (er[k] === item) er[k] = ''; });
   if (window._permBundle.role_permissions) delete window._permBundle.role_permissions[item];
-  if (selectedRoleForEdit === item) selectedRoleForEdit = window._permBundle.positions[0] || null;
+  if (selectedRoleForEdit >= window._permBundle.positions.length) {
+    selectedRoleForEdit = Math.max(0, window._permBundle.positions.length - 1);
+  }
   renderPermPositionList(window._permBundle.positions);
-  renderRolePermEditor(selectedRoleForEdit, window._permFeatures || []);
+  renderRolePermEditor(selectedRoleForEdit);
 }
 
 function savePermPositions() {
@@ -1526,19 +1570,25 @@ function savePermMaterialMap() {
   var mappingRows = collectMaterialMappingRows();
   apiFetch('/api/perm/material_mapping/save', { method: 'POST', body: JSON.stringify({ material_mapping: mappingRows }) })
     .then(function(d) {
-      var msg = d.success ? ('✅ ' + (d.message || '已保存') + (d.mapping_count != null ? '（' + d.mapping_count + ' 条）' : '')) : ('❌ ' + (d.error || d.message || '失败'));
+      var msg = d.success
+        ? ('✅ ' + (d.message || '已保存'))
+        : ('❌ ' + (d.error || d.message || '失败'));
       if (st) st.textContent = msg;
       if (d.success) {
         toast(d.message || '材料映射已保存');
-        apiFetch('/api/perm/data').then(function(r) {
+        return apiFetch('/api/quote_data').then(function(r) {
+          if (r.success && r.data && r.data.material_mapping) {
+            fillMaterialMappingBody(r.data.material_mapping);
+          }
+          return apiFetch('/api/perm/data');
+        }).then(function(r) {
           if (r.success && r.data) {
             window._permBundle = r.data;
             normalizePermProcesses(window._permBundle);
           }
         });
-      } else {
-        toast(d.error || d.message || '保存失败');
       }
+      toast(d.error || d.message || '保存失败');
     })
     .catch(function(err) {
       if (st) st.textContent = '❌ ' + (err.message || '网络错误');

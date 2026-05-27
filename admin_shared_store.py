@@ -46,6 +46,37 @@ def load_quote_data() -> dict[str, Any] | None:
         return None
 
 
+def save_quote_mapping(rows: list[dict[str, Any]]) -> tuple[bool, str]:
+    """仅保存 material_mapping（MySQL 单键 + quote_data.json 局部）。"""
+    from quote_material_defaults import enrich_material_mapping
+
+    rows = enrich_material_mapping(rows if isinstance(rows, list) else [])
+    err_parts: list[str] = []
+    ok_mysql = False
+    try:
+        db = connect()
+        cur = db.cursor()
+        cur.execute(
+            "INSERT INTO quote_config (config_key, config_value) VALUES (%s,%s) "
+            "ON DUPLICATE KEY UPDATE config_value=VALUES(config_value)",
+            ("material_mapping", json.dumps(rows, ensure_ascii=False)),
+        )
+        db.commit()
+        cur.close()
+        db.close()
+        ok_mysql = True
+    except Exception as e:
+        err_parts.append(f"MySQL: {e}")
+    import config_json
+
+    ok_json = config_json.write_quote_json_partial({"material_mapping": rows})
+    if not ok_json:
+        err_parts.append("quote_data.json 写入失败")
+    if ok_mysql or ok_json:
+        return True, ""
+    return False, "; ".join(err_parts) or "保存失败"
+
+
 def save_quote_data(qd: dict[str, Any] | None) -> bool:
     from quote_material_defaults import enrich_quote_data
 

@@ -42,6 +42,29 @@ def quote_json_path(base_dir: str | Path | None = None) -> Path:
     return root / "quote_data.json"
 
 
+def write_quote_json_partial(
+    updates: dict[str, Any],
+    *,
+    base_dir: str | Path | None = None,
+) -> bool:
+    """只更新 quote_data.json 中的若干键（不覆盖整文件其它字段）。"""
+    if not isinstance(updates, dict) or not updates:
+        return False
+    path = quote_json_path(base_dir)
+    existing = read_json_file(path, {})
+    if not isinstance(existing, dict):
+        existing = {}
+    for key, val in updates.items():
+        existing[key] = copy.deepcopy(val)
+    try:
+        with path.open("w", encoding="utf-8") as f:
+            json.dump(existing, f, ensure_ascii=False, indent=2)
+        return True
+    except OSError as e:
+        print(f"[config_json] write_quote_json_partial 失败 {path}: {e}")
+        return False
+
+
 def shop_config_json_path(base_dir: str | Path | None = None) -> Path:
     root = Path(base_dir) if base_dir else _ROOT
     return root / "shop_config.json"

@@ -618,26 +618,34 @@ def api_perm_material_mapping_save():
     rows = data.get("material_mapping")
     if not isinstance(rows, list):
         return jsonify({"success": False, "error": "material_mapping 须为数组"}), 400
-    from quote_config_merge import merge_quote_config
-
-    existing = admin_store.load_quote_data() or {}
-    merged = merge_quote_config(existing, {"material_mapping": rows})
-    if not admin_store.save_quote_data(merged):
-        return jsonify({"success": False, "error": "quote_config 保存失败"}), 500
-    bundle = emp_store.load_permission_bundle()
-    sync_detail = config_json.sync_production_mapping_from_quote(
-        bundle, merged.get("material_mapping")
-    )
-    msg = "材料映射已保存"
-    if not sync_detail.get("local_ok", True):
-        msg += "（本机 JSON 写入异常）"
+    quote_ok, quote_err = admin_store.save_quote_mapping(rows)
+    prod_map = config_json.quote_rows_to_production_mapping(rows)
+    try:
+        perm_result = emp_store.save_permission_bundle(
+            {"production_material_mapping": prod_map}
+        )
+        sync_detail = perm_result.get("detail") or {}
+    except RuntimeError as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+    if not quote_ok and not sync_detail.get("local_ok", False):
+        return jsonify(
+            {
+                "success": False,
+                "error": quote_err or "quote 与 permission 均未写入成功",
+                "detail": sync_detail,
+            }
+        ), 500
+    msg = f"材料映射已保存（{len(prod_map)} 条）"
+    if quote_err:
+        msg += f"（报价库: {quote_err}）"
     if sync_detail.get("vault_error"):
         msg += f"（vault: {sync_detail['vault_error']}）"
     return jsonify(
         {
             "success": True,
             "message": msg,
-            "mapping_count": len(bundle.get("production_material_mapping") or []),
+            "mapping_count": len(prod_map),
+            "quote_ok": quote_ok,
             "detail": sync_detail,
         }
     )
