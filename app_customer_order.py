@@ -138,6 +138,11 @@ from mp_api import mp_bp
 app.register_blueprint(mp_bp)
 
 
+@app.route("/api/health")
+def api_health():
+    return jsonify({"ok": True, "service": "customer_order", "port": 3003})
+
+
 @app.route("/api/login", methods=["POST"])
 def login():
     try:

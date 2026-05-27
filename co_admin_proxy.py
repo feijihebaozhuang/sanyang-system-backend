@@ -16,8 +16,12 @@ CO_UPSTREAM = (os.getenv("CO_ADMIN_UPSTREAM") or "http://127.0.0.1:3003").rstrip
 CO_CORS_ORIGINS = {
     "https://guanli.feijihe.top",
     "http://guanli.feijihe.top",
+    "https://www.guanli.feijihe.top",
+    "http://www.guanli.feijihe.top",
     "https://feijihe.top",
     "http://feijihe.top",
+    "https://www.feijihe.top",
+    "http://www.feijihe.top",
 }
 
 _HOP_BY_HOP = frozenset(
@@ -39,6 +43,8 @@ _HOP_BY_HOP = frozenset(
 def _cors_origin() -> str:
     origin = (request.headers.get("Origin") or "").strip()
     if origin in CO_CORS_ORIGINS:
+        return origin
+    if origin.endswith(".feijihe.top") or origin.endswith("feijihe.top"):
         return origin
     return "https://guanli.feijihe.top"
 

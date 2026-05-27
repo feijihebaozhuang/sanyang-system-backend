@@ -605,7 +605,12 @@ def get_my_permissions_cs():
     import perm_cs_prod as _pcp
     user = _pr.normalize_user_record(un, user)
     USERS[un] = user
-    return jsonify(_pcp.my_permissions_response(user, all_employees=_employees_master_list))
+    import employee_dept_filter as _edf
+    return jsonify(
+        _pcp.my_permissions_response(
+            user, all_employees=_edf.filter_cs_site(_employees_master_list)
+        )
+    )
 
 # ==================== 规格解析工具函数 ====================
 
@@ -2777,13 +2782,14 @@ def permissions_data():
         "permissions_mode": "guanli_only",
         "guanli_admin_url": _pcp.GUANLI_ADMIN_URL,
         "message": "功能权限请在 3003 统一管理后台配置",
-        "employees": _employees_master_list,
+        "employees": __import__("employee_dept_filter").filter_cs_site(_employees_master_list),
         "processes": _permission_data.get("processes", []),
     })
 
 @app.route('/api/employees')
 def employees_list():
     _sync_all_employees_perms()
+    import employee_dept_filter as _edf
     emp_users = {}
     for un, u in USERS.items():
         if u.get('is_system'):
@@ -2792,7 +2798,7 @@ def employees_list():
         if en:
             emp_users[en] = un
     out = []
-    for e in _employees_master_list:
+    for e in _edf.filter_cs_site(_employees_master_list):
         row = dict(e)
         row['username'] = emp_users.get(e.get('name', ''), '')
         row['role'] = USERS.get(row['username'], {}).get('role', '')
@@ -3351,8 +3357,9 @@ def api_employee_status():
         today = datetime.date.today().isoformat()
         day_status = _employee_today_status.get(today, {})
         # 所有在职员工默认"出勤"
+        import employee_dept_filter as _edf
         statuses = {}
-        for emp in _employees_master_list:
+        for emp in _edf.filter_cs_site(_employees_master_list):
             statuses[emp['name']] = day_status.get(emp['name'], '出勤')
         return jsonify({"statuses": statuses})
     else:

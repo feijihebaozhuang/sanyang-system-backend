@@ -84,10 +84,33 @@
         var host = (global.location && global.location.hostname) || '';
         var path = (global.location && global.location.pathname) || '';
         if (path.indexOf('/guanli') === 0) return '/api/co';
-        if (host === 'guanli.feijihe.top' || host === 'www.guanli.feijihe.top') {
-            return 'https://feijihe.top/api/co';
-        }
+        if (host.indexOf('guanli') >= 0) return '/api';
         return '/api';
+    }
+    function loginApiCandidates(path) {
+        path = path || '/api/login';
+        var host = (global.location && global.location.hostname) || '';
+        var list = [];
+        if (host.indexOf('guanli') >= 0) {
+            list.push('/api/login');
+            list.push('https://feijihe.top/api/co/login');
+        }
+        var resolved = resolveCoApiUrl(path);
+        if (list.indexOf(resolved) < 0) list.push(resolved);
+        return list;
+    }
+    function parseLoginResponse(res) {
+        return res.text().then(function(text) {
+            var t = (text || '').trim();
+            if (t.charAt(0) === '<') {
+                throw new Error('登录接口返回了网页而非 JSON（Nginx 可能未放行 /api/，请联系管理员执行 patch_guanli_nginx）');
+            }
+            var d = {};
+            try { d = JSON.parse(t || '{}'); } catch (e) {
+                throw new Error('登录响应格式错误');
+            }
+            return { ok: res.ok, status: res.status, data: d };
+        });
     }
     function resolveCoApiUrl(url) {
         if (!url || url.indexOf('http') === 0) return url;
@@ -134,7 +157,10 @@
         apiFetch: apiFetch,
         saveAuthCredentials: saveAuthCredentials,
         clearAuthCredentials: clearAuthCredentials,
-        readAuthCredentials: readAuthCredentials
+        readAuthCredentials: readAuthCredentials,
+        loginApiCandidates: loginApiCandidates,
+        parseLoginResponse: parseLoginResponse,
+        coApiRoot: coApiRoot
     };
 })(window);
 </script>
@@ -345,24 +371,42 @@ function doLogin() {
     errEl.textContent = '页面资源加载失败，请强制刷新（Ctrl+F5）';
     return;
   }
-  SY_AUTH.apiFetch('/api/login', { method: 'POST', body: JSON.stringify({ username: u, password: p }) })
-    .then(function(res) {
-      return res.json().then(function(d) {
-        return { ok: res.ok, status: res.status, data: d };
+  var urls = SY_AUTH.loginApiCandidates('/api/login');
+  var body = JSON.stringify({ username: u, password: p });
+  function attempt(i) {
+    if (i >= urls.length) {
+      errEl.textContent = '登录失败：请确认账号密码，或改用 https://feijihe.top/guanli/';
+      return;
+    }
+    var url = urls[i];
+    var cross = url.indexOf('http') === 0 && url.indexOf(location.origin) !== 0;
+    fetch(url, {
+      method: 'POST',
+      credentials: cross ? 'omit' : 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: body
+    })
+      .then(function(res) { return SY_AUTH.parseLoginResponse(res); })
+      .then(function(r) {
+        var d = r.data || {};
+        if (!r.ok || !d.success) {
+          if (i + 1 < urls.length && (r.status === 403 || r.status === 404 || r.status === 502)) {
+            return attempt(i + 1);
+          }
+          errEl.textContent = d.message || d.error || ('登录失败（HTTP ' + r.status + '）');
+          return;
+        }
+        currentUser = d.user;
+        SY_AUTH.saveAuthCredentials(d.user.username, d.user.auth_token);
+        showApp();
+        switchPage('dashboard');
+      })
+      .catch(function(e) {
+        if (i + 1 < urls.length) return attempt(i + 1);
+        errEl.textContent = e.message || '网络错误';
       });
-    })
-    .then(function(r) {
-      var d = r.data || {};
-      if (!r.ok || !d.success) {
-        errEl.textContent = d.message || d.error || ('登录失败（HTTP ' + r.status + '）');
-        return;
-      }
-      currentUser = d.user;
-      SY_AUTH.saveAuthCredentials(d.user.username, d.user.auth_token);
-      showApp();
-      switchPage('dashboard');
-    })
-    .catch(function(e) { errEl.textContent = e.message || '网络错误'; });
+  }
+  attempt(0);
 }
 
 function doLogout() {

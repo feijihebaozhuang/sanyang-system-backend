@@ -32,6 +32,14 @@ do
 done
 
 echo ""
+echo "========== guanli POST /api/login（应 200 + success，不能 403 HTML）=========="
+curl -s -o /tmp/guanli_login.json -w "  guanli POST /api/login HTTP %{http_code}\n" \
+  -X POST "https://guanli.feijihe.top/api/login" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin888"}' || true
+head -c 150 /tmp/guanli_login.json 2>/dev/null; echo
+
+echo ""
 echo "========== guanli 经 feijihe 反代登录（绕过 guanli Nginx）=========="
 curl -s -o /tmp/co_login.json -w "HTTP %{http_code}\n" \
   -X POST "https://feijihe.top/api/co/login" \

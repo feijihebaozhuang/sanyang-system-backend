@@ -932,6 +932,8 @@ def employees():
     # 只过滤掉纯system用户的员工名
     exclude_names = system_emp_names - real_emp_names
     filtered = [e for e in _employees_master_list if e["name"] not in exclude_names]
+    import employee_dept_filter as _edf
+    filtered = _edf.filter_prod_site(filtered)
     emp_users = {}
     for un, u in USERS.items():
         if u.get("is_system"):
@@ -1217,10 +1219,23 @@ def get_employee_status():
         _employee_today_status[today] = {}
     if today not in _employee_leave_counts:
         _employee_leave_counts[today] = {}
+    import employee_dept_filter as _edf
+    site_emps = _edf.filter_prod_site(_employees_master_list)
+    site_names = {e["name"] for e in site_emps}
+    statuses = {
+        k: v
+        for k, v in _employee_today_status[today].items()
+        if k in site_names
+    }
+    leave_counts = {
+        k: v
+        for k, v in _employee_leave_counts[today].items()
+        if k in site_names
+    }
     return jsonify({
         "date": today,
-        "statuses": _employee_today_status[today],
-        "leave_counts": _employee_leave_counts[today],
+        "statuses": statuses,
+        "leave_counts": leave_counts,
     })
 
 @app.route('/api/employee/status', methods=['POST'])
@@ -1761,7 +1776,7 @@ def get_permissions_data():
         "permissions_mode": "guanli_only",
         "guanli_admin_url": _pcp.GUANLI_ADMIN_URL,
         "message": "功能权限请在 3003 统一管理后台配置",
-        "employees": _employees_master_list,
+        "employees": __import__("employee_dept_filter").filter_prod_site(_employees_master_list),
         "processes": _permission_data.get("processes", []),
     })
 
@@ -1822,7 +1837,12 @@ def get_my_permissions():
     if not user:
         return jsonify({"error": "用户不存在", "code": 401}), 401
     import perm_cs_prod as _pcp
-    return jsonify(_pcp.my_permissions_response(user, all_employees=_employees_master_list))
+    import employee_dept_filter as _edf
+    return jsonify(
+        _pcp.my_permissions_response(
+            user, all_employees=_edf.filter_prod_site(_employees_master_list)
+        )
+    )
 
 
 @app.route('/api/processes/save', methods=['POST'])
@@ -1854,16 +1874,14 @@ def scan_workers():
     
     role = user['role']
     current_name = user['employee_name']
-    all_emps = _employees_master_list
+    import employee_dept_filter as _edf
+    all_emps = _edf.filter_prod_site(_employees_master_list)
     
     if role == '超级管理员':
-        # 返回所有美丽湾工厂部员工（车间扫码报工用）
-        workers = [e for e in all_emps if e['dept'] == '美丽湾工厂部']
+        workers = all_emps
     elif role == '管理':
-        # 管理只能选美丽湾工厂部的
-        workers = [e for e in all_emps if e['dept'] == '美丽湾工厂部']
+        workers = all_emps
     elif role == '客服':
-        # 客服只能选洋坑塘运营部的（扫码报工用，可能不需要，但留着）
         workers = [e for e in all_emps if e['dept'] == '洋坑塘运营部']
     elif role == '员工':
         # 员工只能选自己
