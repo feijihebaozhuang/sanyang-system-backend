@@ -1152,10 +1152,10 @@
                 <div class="f-title">报价</div>
                 <div class="f-desc">飞机盒/纸箱报价计算</div>
             </div>
-            <div class="footer-card" onclick="goPermissionPage()">
-                <div class="icon">🔐</div>
-                <div class="f-title">权限</div>
-                <div class="f-desc">员工功能权限配置</div>
+            <div class="footer-card" onclick="openGuanliAdmin()">
+                <div class="icon">⚙️</div>
+                <div class="f-title">管理后台</div>
+                <div class="f-desc">3003 权限/员工</div>
             </div>
         </div>
     </div>
@@ -1804,28 +1804,12 @@
 
     // ===== 页面切换权限拦截（统一的hasPerm）=====
     function checkPagePerm(name) {
-        const pageToFeature = {
-            'main': '首页',
-            'realtime': '实时订单',
-            'diemold': '刀模',
-            'dimoldb': '刀模库',
-            'inventory': '库存',
-            'raw': '库存',
-            'jst': '快麦ERP',
-            'erp': '快麦ERP',
-            'production': '订单生产进度',
-            'scan': '扫码报工',
-            'report': '日报表',
-            'databoard': '数据看板',
-            'employee': '员工',
-            'permission': '权限管理',
-            'quote': '报价'
-        };
-        const feature = pageToFeature[name];
-        if (feature && !hasPerm(feature)) {
-            // admin 默认全部权限
-            if (_currentUser && _currentUser.role === '超级管理员') return true;
-            switchTopPage('main', null);
+        if (!_currentUser) {
+            document.getElementById('loginOverlay').style.display = 'flex';
+            return false;
+        }
+        if (name === 'permission') {
+            openGuanliAdmin();
             return false;
         }
         return true;
@@ -1837,9 +1821,7 @@
             // 构建菜单按钮
             let btns = '<div style="margin-bottom:8px;font-size:14px;color:#333;">' + userDisplayName(_currentUser) + '（' + (_currentUser.role || '') + '）</div>';
             btns += '<button onclick="openPasswordModal();closeUserMenu()" style="display:block;width:100%;padding:10px;margin-bottom:4px;background:#f5f5f5;border:1px solid #e8e8e8;border-radius:6px;cursor:pointer;font-size:14px;text-align:left;">🔑 修改密码</button>';
-            if (_currentUser.role === '超级管理员') {
-                btns += '<button onclick="switchTopPage(\'permission\', null);closeUserMenu()" style="display:block;width:100%;padding:10px;margin-bottom:4px;background:#f5f5f5;border:1px solid #e8e8e8;border-radius:6px;cursor:pointer;font-size:14px;text-align:left;">🔐 权限设置</button>';
-            }
+            btns += '<button onclick="openGuanliAdmin();closeUserMenu()" style="display:block;width:100%;padding:10px;margin-bottom:4px;background:#f5f5f5;border:1px solid #e8e8e8;border-radius:6px;cursor:pointer;font-size:14px;text-align:left;">⚙️ 统一管理后台(3003)</button>';
             btns += '<button onclick="doLogout();closeUserMenu()" style="display:block;width:100%;padding:10px;background:#fff2f0;border:1px solid #ffccc7;border-radius:6px;cursor:pointer;font-size:14px;text-align:left;color:#e94560;">🚪 退出登录</button>';
             
             const overlay = document.createElement('div');
@@ -1958,7 +1940,7 @@
                 overlay.style.display = 'flex';
                 return;
             }
-            const data = await res.json();
+            const data = SY_AUTH.parseApiJson ? await SY_AUTH.parseApiJson(res) : await res.json();
             if (!data.logged_in) {
                 overlay.style.display = 'flex';
                 return;
@@ -2006,14 +1988,10 @@
         }
     }
 
-    // ===== 统一权限检查函数（唯一权限来源，前端永不自行推断）=====
+    // ===== 统一权限检查：登录即可；权限管理在 3003 =====
+    function isWorkerView() { return false; }
     function hasPerm(feature) {
-        if (!_currentUser) return false;
-        if (_currentUser.is_system || _currentUser.username === 'admin' || _currentUser.username === 'daiyali') return true;
-        if (_currentUser.role === '超级管理员') return true;
-        if (window._myPerms && window._myPerms[feature] === true) return true;
-        if (feature === '快麦ERP' && window._myPerms && window._myPerms['聚水潭'] === true) return true;
-        return false;
+        return !!_currentUser;
     }
 
     function localTodayStr() {
@@ -2196,13 +2174,12 @@
         return u;
     }
 
-    function isSuperAdmin() {
-        if (!_currentUser) return false;
-        if (_currentUser.is_system || _currentUser.username === 'admin' || _currentUser.username === 'daiyali') return true;
-        return _currentUser.role === '超级管理员';
+    function isSuperAdmin() { return !!_currentUser; }
+    function isWorkerView() { return false; }
+    function hasPerm(feature) {
+        return !!_currentUser;
     }
-
-    // ===== 搜索 =====
+    function openGuanliAdmin() { window.open('https://feijihe.top/guanli/', '_blank'); }
     async function searchOrder() {
         const q = document.getElementById('searchInput').value.trim();
         if (!q) { alert('请输入单号'); return; }

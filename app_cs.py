@@ -41,6 +41,12 @@ import embed_frame_policy as _embed_frame_policy
 
 _embed_frame_policy.register_embed_parents(app)
 
+try:
+    import co_admin_proxy as _co_proxy_cs
+    _co_proxy_cs.register_co_admin_proxy(app)
+except ImportError:
+    pass
+
 import webhook_routes as _webhook_routes
 
 _webhook_routes.register_webhook_routes(app)
@@ -113,13 +119,8 @@ def require_login():
     return None
 
 def require_admin():
-    """检查是否为超级管理员"""
-    if 'username' not in session:
-        return jsonify({"error": "未登录", "code": 401}), 401
-    user = USERS.get(session['username'])
-    if not user or user['role'] != '超级管理员':
-        return jsonify({"error": "无权限", "code": 403}), 403
-    return None
+    """3001/3002 不再做权限分级，登录即可（细粒度权限仅在 3003）。"""
+    return require_login()
 
 # ==================== 数据持久化 ====================
 
@@ -593,34 +594,18 @@ def get_current_user():
 
 @app.route('/api/my_permissions')
 def get_my_permissions_cs():
-    """返回当前登录用户的权限（与生产端一致，避免用 display_name 查 permissions 键）。"""
-    import permission_resolve as _perm_resolve_mp
-    _cfg_json_cs.reload_permission_memory(_permission_data)
-    _sync_all_employees_perms()
+    """3001：登录即全部功能可用；权限配置请用 3003。"""
     un = resolve_login_user()
     if not un:
         return jsonify({"error": "未登录", "code": 401}), 401
     user = USERS.get(un)
     if not user:
         return jsonify({"error": "用户不存在", "code": 401}), 401
-    user = _perm_resolve_mp.normalize_user_record(un, user)
+    import permission_resolve as _pr
+    import perm_cs_prod as _pcp
+    user = _pr.normalize_user_record(un, user)
     USERS[un] = user
-    if user.get("is_system") or user.get("role") == "超级管理员" or un == "admin":
-        my_perm = {f: True for f in PERM_FEATURES}
-    else:
-        subject = _perm_resolve_mp.permission_lookup_name(user, un, _permission_data)
-        my_perm = _perm_resolve_mp.migrate_perm_dict(
-            dict(_permission_data.get("permissions", {}).get(subject, {}))
-        )
-        for f in PERM_FEATURES:
-            if f not in my_perm:
-                my_perm[f] = False
-    return jsonify({
-        "success": True,
-        "my_permissions": my_perm,
-        "all_permissions": _permission_data.get("permissions", {}),
-        "all_employees": _employees_master_list,
-    })
+    return jsonify(_pcp.my_permissions_response(user, all_employees=_employees_master_list))
 
 # ==================== 规格解析工具函数 ====================
 
@@ -1803,18 +1788,6 @@ def save_quote_config():
         user = USERS.get(session['username'])
         if not user:
             return jsonify({"success": False, "error": "用户不存在"})
-        import permission_resolve as _perm_resolve
-
-        username = session.get("username") or ""
-        if not _perm_resolve.user_has_permission(
-            user,
-            username,
-            "权限管理",
-            _permission_data,
-            sync_fn=_sync_all_employees_perms,
-            get_db_fn=get_db,
-        ):
-            return jsonify({"success": False, "error": "无权限修改报价配置"})
         
         patch = request.get_json()
         if not patch:
@@ -2799,9 +2772,14 @@ def permissions():
 
 @app.route('/api/permissions/data')
 def permissions_data():
-    _cfg_json_cs.reload_permission_memory(_permission_data)
-    _sync_all_employees_perms()
-    return jsonify(_permission_data)
+    import perm_cs_prod as _pcp
+    return jsonify({
+        "permissions_mode": "guanli_only",
+        "guanli_admin_url": _pcp.GUANLI_ADMIN_URL,
+        "message": "功能权限请在 3003 统一管理后台配置",
+        "employees": _employees_master_list,
+        "processes": _permission_data.get("processes", []),
+    })
 
 @app.route('/api/employees')
 def employees_list():
@@ -3568,64 +3546,12 @@ def api_employee_delete_resigned():
 
 @app.route('/api/permissions/save', methods=['POST'])
 def api_permissions_save():
-    """保存权限：写 data.json + 尽力同步 vault；员工勾选同步 MySQL。"""
-    global _permission_data
-    data = request.get_json() or {}
-    for key in (
-        "processes",
-        "positions",
-        "employees",
-        "production_material_mapping",
-        "process_timeouts",
-    ):
-        if key in data:
-            _permission_data[key] = data[key]
-    new_perms = data.get("permissions", {})
-    if new_perms:
-        old_perms = _permission_data.setdefault("permissions", {})
-        for name, feats in new_perms.items():
-            if isinstance(feats, dict):
-                old_perms[name] = dict(feats)
-                _migrate_perm_dict(old_perms[name])
-    if "employee_enabled" in data:
-        _permission_data["employee_enabled"] = data["employee_enabled"]
-    if "role_permissions" in data and isinstance(data["role_permissions"], dict):
-        _permission_data["role_permissions"] = data["role_permissions"]
-    if "employee_roles" in data and isinstance(data["employee_roles"], dict):
-        _permission_data["employee_roles"] = data["employee_roles"]
-    try:
-        db = get_db()
-        cur = db.cursor()
-        for emp_name, perms in data.get("permissions", {}).items():
-            for pk, val in perms.items():
-                cur.execute("""
-                    INSERT INTO employee_permissions (employee_name, permission_key, enabled)
-                    VALUES (%s, %s, %s)
-                    ON DUPLICATE KEY UPDATE enabled=%s
-                """, (emp_name, pk, 1 if val else 0, 1 if val else 0))
-        for emp_name, ena in data.get("employee_enabled", {}).items():
-            cur.execute("UPDATE employees SET enabled=%s WHERE name=%s", (1 if ena else 0, emp_name))
-        db.commit()
-        cur.close()
-        db.close()
-    except Exception as e:
-        print(f"[权限保存] MySQL 错误: {e}")
-        return jsonify({"success": False, "error": f"MySQL 同步失败: {e}"}), 500
-    _sync_all_employees_perms()
-    if not persist():
-        detail = dict(_perm_save_detail)
-        return jsonify(
-            {
-                "success": False,
-                "error": detail.get("vault_error") or "权限保存失败，请查看服务日志",
-                **detail,
-            }
-        ), 500
-    detail = dict(_perm_save_detail)
-    msg = "保存成功"
-    if detail.get("vault_error"):
-        msg += "（" + detail["vault_error"] + "）"
-    return jsonify({"success": True, "message": msg, **detail})
+    import perm_cs_prod as _pcp
+    return jsonify({
+        "success": False,
+        "error": "3001/3002 已关闭权限保存，请登录 3003 管理后台",
+        "guanli_admin_url": _pcp.GUANLI_ADMIN_URL,
+    }), 403
 
 @app.route('/api/qrcode/<order_id>')
 def api_qrcode(order_id):
@@ -3655,6 +3581,15 @@ def api_scan_report():
 
 
 # ==================== 静态文件（必须放在所有 /api 路由之后）====================
+@app.route('/guanli')
+@app.route('/guanli/')
+def guanli_admin_entry():
+    """3003 统一管理后台入口（feijihe.top/guanli/）"""
+    resp = make_response(send_from_directory('.', 'index_customer_order.html'))
+    resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+    return resp
+
+
 @app.route('/')
 def index():
     resp = make_response(send_from_directory('.', 'index_cs.html'))

@@ -82,6 +82,8 @@
     }
     function coApiRoot() {
         var host = (global.location && global.location.hostname) || '';
+        var path = (global.location && global.location.pathname) || '';
+        if (path.indexOf('/guanli') === 0) return '/api/co';
         if (host === 'guanli.feijihe.top' || host === 'www.guanli.feijihe.top') {
             return 'https://feijihe.top/api/co';
         }
