@@ -313,22 +313,66 @@ def ensure_tables() -> None:
             db.close()
 
 
-def ensure_co_admin_account() -> None:
-    """保证 3003 必有可用的 admin（与 3001 默认密码 admin888 一致）。"""
+def _default_admin_password() -> str:
     import os
 
-    default_pwd = (os.getenv("CO_ADMIN_DEFAULT_PASSWORD") or "admin888").strip() or "admin888"
+    return (os.getenv("CO_ADMIN_DEFAULT_PASSWORD") or "admin888").strip() or "admin888"
+
+
+def _upsert_co_admin(
+    username: str,
+    pwd_hash: str,
+    *,
+    display_name: str = "",
+    role: str = "admin",
+) -> dict:
+    username = (username or "").strip()
+    display_name = (display_name or username).strip()
+    role = (role or "admin").strip()
+    db = connect()
+    try:
+        cur = db.cursor()
+        cur.execute(
+            """
+            INSERT INTO co_admin_user (username, password_hash, display_name, role, enabled)
+            VALUES (%s, %s, %s, %s, 1)
+            ON DUPLICATE KEY UPDATE
+              password_hash=VALUES(password_hash),
+              display_name=VALUES(display_name),
+              role=VALUES(role),
+              enabled=1
+            """,
+            (username, pwd_hash, display_name, role),
+        )
+        db.commit()
+        cur.execute(
+            "SELECT id, username, password_hash, display_name, role, enabled "
+            "FROM co_admin_user WHERE username=%s",
+            (username,),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise RuntimeError(f"写入 co_admin_user 后未读到 {username}")
+        return row
+    finally:
+        db.close()
+
+
+def ensure_co_admin_account() -> None:
+    """启动时保证 admin 账号存在且启用。"""
+    import os
+
+    ph = password_hash(_default_admin_password())
     reset = (os.getenv("CO_ADMIN_RESET_PASSWORD") or "").strip().lower() in (
         "1",
         "true",
         "yes",
     )
-    ph = password_hash(default_pwd)
     db = connect()
     try:
         cur = db.cursor()
         cur.execute(
-            "SELECT id, enabled FROM co_admin_user WHERE username=%s LIMIT 1",
+            "SELECT id, enabled, password_hash FROM co_admin_user WHERE username=%s LIMIT 1",
             ("admin",),
         )
         row = cur.fetchone()
@@ -340,7 +384,7 @@ def ensure_co_admin_account() -> None:
                 """,
                 ("admin", ph, "戴雅利", "admin"),
             )
-        elif reset or not row.get("enabled"):
+        elif reset or not row.get("enabled") or row.get("password_hash") != ph:
             cur.execute(
                 """
                 UPDATE co_admin_user
@@ -362,38 +406,43 @@ def _co_role_from_users_role(role: str) -> str:
 
 
 def _sync_co_admin_from_users_row(row: dict, pwd_hash: str) -> dict:
-    """users 表校验通过后，同步到 co_admin_user，便于 session 后续解析。"""
+    """users 表校验通过后，同步到 co_admin_user。"""
     username = (row.get("username") or "").strip()
-    co_role = _co_role_from_users_role(row.get("role") or "")
-    display_name = (row.get("display_name") or username).strip()
-    db = connect()
+    return _upsert_co_admin(
+        username,
+        pwd_hash,
+        display_name=(row.get("display_name") or username).strip(),
+        role=_co_role_from_users_role(row.get("role") or ""),
+    )
+
+
+def _auth_from_data_json_users(username: str, pwd_hash: str) -> dict | None:
     try:
-        cur = db.cursor()
-        cur.execute(
-            """
-            INSERT INTO co_admin_user (username, password_hash, display_name, role, enabled)
-            VALUES (%s, %s, %s, %s, 1)
-            ON DUPLICATE KEY UPDATE
-              password_hash=VALUES(password_hash),
-              display_name=VALUES(display_name),
-              role=VALUES(role),
-              enabled=1
-            """,
-            (username, pwd_hash, display_name, co_role),
+        import config_json
+
+        raw = config_json.read_json_file(config_json.data_json_path(), {})
+        users = raw.get("users") if isinstance(raw, dict) else None
+        if not isinstance(users, dict):
+            return None
+        u = users.get(username)
+        if not isinstance(u, dict):
+            return None
+        stored = (u.get("password") or "").strip()
+        if stored != pwd_hash:
+            return None
+        return _upsert_co_admin(
+            username,
+            pwd_hash,
+            display_name=(u.get("name") or username).strip(),
+            role=_co_role_from_users_role(u.get("role") or ""),
         )
-        db.commit()
-        cur.execute(
-            "SELECT id, username, password_hash, display_name, role, enabled "
-            "FROM co_admin_user WHERE username=%s",
-            (username,),
-        )
-        return cur.fetchone() or {}
-    finally:
-        db.close()
+    except Exception as e:
+        print(f"[customer_order_store] data.json 登录回退失败: {e}")
+        return None
 
 
 def authenticate_admin_user(username: str, password: str) -> dict | None:
-    """登录校验：co_admin_user 优先；失败则尝试与 3001 共用的 users 表。"""
+    """登录校验：co_admin_user → users 表 → data.json；admin+默认密可自动修复库内哈希。"""
     username = (username or "").strip()
     password = (password or "").strip()
     if not username or not password:
@@ -403,6 +452,7 @@ def authenticate_admin_user(username: str, password: str) -> dict | None:
     user = get_admin_by_username(username)
     if user and user.get("enabled") and user.get("password_hash") == ph:
         return user
+
     try:
         db = connect()
         cur = db.cursor()
@@ -414,15 +464,22 @@ def authenticate_admin_user(username: str, password: str) -> dict | None:
         row = cur.fetchone()
         cur.close()
         db.close()
-        if not row or not row.get("enabled"):
-            return None
-        stored = row.get("password") or ""
-        if stored != ph:
-            return None
-        return _sync_co_admin_from_users_row(row, ph)
+        if row and row.get("enabled"):
+            stored = (row.get("password") or "").strip()
+            if stored == ph:
+                return _sync_co_admin_from_users_row(row, ph)
     except Exception as e:
         print(f"[customer_order_store] users 表登录回退失败: {e}")
-        return None
+
+    user = _auth_from_data_json_users(username, ph)
+    if user:
+        return user
+
+    default_ph = password_hash(_default_admin_password())
+    if username == "admin" and ph == default_ph:
+        return _upsert_co_admin("admin", ph, display_name="戴雅利", role="admin")
+
+    return None
 
 
 def _seed_defaults(cur) -> None:

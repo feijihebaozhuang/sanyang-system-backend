@@ -22,9 +22,16 @@ app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=31)
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_REFRESH_EACH_REQUEST"] = True
-app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE", "").lower() in (
-    "1", "true", "yes"
-)
+def _session_cookie_secure() -> bool:
+    v = (os.getenv("SESSION_COOKIE_SECURE") or "").strip().lower()
+    if v in ("0", "false", "no"):
+        return False
+    if v in ("1", "true", "yes"):
+        return True
+    return False
+
+
+app.config["SESSION_COOKIE_SECURE"] = _session_cookie_secure()
 
 co_store = None
 
@@ -49,10 +56,25 @@ def health():
 
 
 @app.before_request
+def _adjust_session_cookie():
+    """反代后按实际协议设置 Secure，避免 HTTPS 站点 Cookie 写不进去。"""
+    proto = (request.headers.get("X-Forwarded-Proto") or request.scheme or "").lower()
+    if proto == "https":
+        app.config["SESSION_COOKIE_SECURE"] = True
+    elif proto == "http":
+        app.config["SESSION_COOKIE_SECURE"] = False
+
+
+@app.before_request
 def _ensure_co_tables():
     if request.endpoint == "health":
         return None
-    _bootstrap_tables()
+    try:
+        _bootstrap_tables()
+    except Exception as e:
+        print(f"[3003] 表初始化失败: {e}")
+        if request.endpoint not in ("login", "index", "static_files"):
+            raise
 
 
 def _auth_token_for(username: str) -> str:
@@ -132,10 +154,7 @@ def login():
             }
         ), 503
     if not user:
-        hint = ""
-        if username.lower() == "admin":
-            hint = "（3003 默认密码与 3001 相同：admin888）"
-        return jsonify({"success": False, "message": "账号或密码错误" + hint})
+        return jsonify({"success": False, "message": "账号或密码错误"})
     session.permanent = True
     session["username"] = user.get("username") or username
     session.modified = True
