@@ -262,7 +262,7 @@ tr:hover td { background: #fafcff; }
 
 <div id="appShell" class="hidden">
   <div class="topbar">
-    <h1>三羊统一管理 · guanli</h1>
+    <h1>三羊统一管理后台</h1>
     <div>
       <span class="user-info" id="userLabel"></span>
       <button onclick="doLogout()">退出</button>
@@ -340,7 +340,7 @@ function apiFetch(url, opts) {
     return r.text().then(function(text) {
       var trimmed = (text || '').trim();
       if (trimmed.startsWith('<')) {
-        throw new Error('接口返回 HTML（HTTP ' + r.status + '），请改用 https://feijihe.top/guanli/ 登录');
+        throw new Error('接口返回异常（HTTP ' + r.status + '）');
       }
       var d = {};
       try { d = trimmed ? JSON.parse(text) : {}; } catch (e) {
@@ -375,7 +375,7 @@ function doLogin() {
   var btn = document.querySelector('#loginPage button');
   errEl.textContent = '';
   if (!globalThis.SY_AUTH) {
-    errEl.textContent = '脚本未加载，请打开 https://feijihe.top/guanli/login';
+    errEl.textContent = '页面加载失败，请刷新后重试';
     return;
   }
   SY_AUTH.clearAuthCredentials();
@@ -396,7 +396,7 @@ function doLogin() {
       location.reload();
     })
     .catch(function(e) {
-      errEl.textContent = (e.message || '登录失败') + ' — 可试 https://feijihe.top/guanli/login';
+      errEl.textContent = e.message || '登录失败';
       if (btn) btn.disabled = false;
     });
 }
@@ -434,18 +434,27 @@ function switchPage(page) {
 function loadEmbedFrame(page, title) {
   var url = EMBED_URLS[page];
   document.getElementById('mainContent').innerHTML =
-    '<div class="embed-toolbar"><span><strong>' + esc(title) + '</strong> · 内嵌于 3003</span>' +
+    '<div class="embed-toolbar"><span><strong>' + esc(title) + '</strong></span>' +
     '<a href="' + url + '" target="_blank" rel="noopener noreferrer">新窗口打开 ↗</a></div>' +
-    '<div class="embed-frame-wrap" id="embedWrap"></div>';
+    '<div class="embed-frame-wrap" id="embedWrap"></div>' +
+    '<div id="embedErr" class="login-err" style="padding:12px 16px;display:none;"></div>';
   var wrap = document.getElementById('embedWrap');
-  if (!embedIframes[page]) {
-    var ifr = document.createElement('iframe');
-    ifr.src = url;
-    ifr.title = title;
-    ifr.setAttribute('allow', 'clipboard-read; clipboard-write');
-    embedIframes[page] = ifr;
+  var errEl = document.getElementById('embedErr');
+  if (embedIframes[page]) {
+    try { embedIframes[page].remove(); } catch (e) {}
+    delete embedIframes[page];
   }
-  wrap.appendChild(embedIframes[page]);
+  var ifr = document.createElement('iframe');
+  ifr.src = url;
+  ifr.title = title;
+  ifr.setAttribute('allow', 'clipboard-read; clipboard-write');
+  ifr.onload = function () { errEl.style.display = 'none'; };
+  ifr.onerror = function () {
+    errEl.textContent = '内嵌页加载失败，请点「新窗口打开」';
+    errEl.style.display = 'block';
+  };
+  embedIframes[page] = ifr;
+  wrap.appendChild(ifr);
 }
 
 function loadEmbedCs() { loadEmbedFrame('embed_cs', '客服端'); }
@@ -471,7 +480,7 @@ function loadDashboard() {
       '</div>' +
       '<div class="card"><h2>系统说明</h2>' +
       '<p style="font-size:14px;line-height:1.8;color:#555;">' +
-      '本页为<strong>三羊统一管理入口</strong>（推荐 https://feijihe.top/guanli/ ）。<br>' +
+      '本页为<strong>三羊统一管理入口</strong>。<br>' +
       '顶部导航：<strong>客服端、生产端</strong>在本页内嵌；<strong>快麦 ERP</strong>新窗口打开。权限在此统一维护。<br>' +
       '<strong>客户下单小程序</strong>（weapp/customer-order）对接 3003。<br>' +
       '<strong>客服审单</strong>在原先<strong>报价小程序 quote-weapp</strong>（AppID wxa1d9f876327af0c0）里，首页「客户下单审单」入口，不是单独 cs-order。<br>' +
