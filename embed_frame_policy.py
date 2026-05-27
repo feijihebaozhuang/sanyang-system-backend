@@ -13,11 +13,25 @@ FRAME_ANCESTORS = (
 )
 
 
+def _apply_frame_ancestors(resp):
+    resp.headers.pop("X-Frame-Options", None)
+    existing = (resp.headers.get("Content-Security-Policy") or "").strip()
+    if existing:
+        parts = [
+            p.strip()
+            for p in existing.split(";")
+            if p.strip() and not p.strip().lower().startswith("frame-ancestors")
+        ]
+        merged = "; ".join(parts)
+        resp.headers["Content-Security-Policy"] = (
+            (merged + "; " + FRAME_ANCESTORS) if merged else FRAME_ANCESTORS
+        )
+    else:
+        resp.headers["Content-Security-Policy"] = FRAME_ANCESTORS
+    return resp
+
+
 def register_embed_parents(app) -> None:
     @app.after_request
     def _allow_guanli_embed(resp):
-        resp.headers.pop("X-Frame-Options", None)
-        existing = resp.headers.get("Content-Security-Policy") or ""
-        if "frame-ancestors" not in existing:
-            resp.headers["Content-Security-Policy"] = FRAME_ANCESTORS
-        return resp
+        return _apply_frame_ancestors(resp)

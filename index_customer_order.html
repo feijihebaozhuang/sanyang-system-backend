@@ -296,6 +296,10 @@ var embedIframes = {};
 var selectedRoleForEdit = 0;
 
 var EMBED_URLS = {
+  embed_cs: '/guanli/embed/cs/',
+  embed_prod: '/guanli/embed/prod/'
+};
+var EMBED_OPEN_URLS = {
   embed_cs: 'https://zean.feijihe.top/',
   embed_prod: 'https://feijihe.top/'
 };
@@ -433,9 +437,10 @@ function switchPage(page) {
 
 function loadEmbedFrame(page, title) {
   var url = EMBED_URLS[page];
+  var openUrl = EMBED_OPEN_URLS[page] || url;
   document.getElementById('mainContent').innerHTML =
     '<div class="embed-toolbar"><span><strong>' + esc(title) + '</strong></span>' +
-    '<a href="' + url + '" target="_blank" rel="noopener noreferrer">新窗口打开 ↗</a></div>' +
+    '<a href="' + openUrl + '" target="_blank" rel="noopener noreferrer">新窗口打开 ↗</a></div>' +
     '<div class="embed-frame-wrap" id="embedWrap"></div>' +
     '<div id="embedErr" class="login-err" style="padding:12px 16px;display:none;"></div>';
   var wrap = document.getElementById('embedWrap');

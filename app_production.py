@@ -114,6 +114,13 @@ try:
 except ImportError:  # pragma: no cover
     pass
 
+try:
+    import guanli_embed_proxy as _embed_proxy
+
+    _embed_proxy.register_guanli_embed_proxy(app)
+except ImportError:  # pragma: no cover
+    pass
+
 
 @app.before_request
 def _sync_login_session_from_token():
