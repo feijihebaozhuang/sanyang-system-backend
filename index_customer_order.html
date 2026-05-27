@@ -1045,55 +1045,110 @@ function savePermQuote() {
     });
 }
 
-function renderPermShop() {
+function renderPermShop(forceReload) {
   var panel = document.getElementById('permPanel');
+  if (!forceReload && window._shopConfigCache && window._shopConfigCache.length) {
+    renderPermShopPanel(window._shopConfigCache);
+    return;
+  }
   panel.innerHTML = '<p class="empty">加载店铺配置…</p>';
   apiFetch('/api/shop-config').then(function(data) {
     var configs = data.shop_config || data.config || [];
-    var groups = {};
-    configs.forEach(function(c) {
-      var plat = c.platform || '其他';
-      if (!groups[plat]) groups[plat] = [];
-      groups[plat].push(c);
-    });
-    var html = '<div class="info-box"><strong>与左侧「客服员工」不是一回事。</strong><br>' +
-      '此处维护各<strong>电商店铺</strong>（1688/天猫/淘宝等）在 3001 订单看板里显示的负责客服姓名，与客户下单小程序审单无关。</div>' +
-      '<div class="toolbar"><span style="font-size:13px;color:#666;">共 ' + configs.length + ' 个店铺</span></div>';
-    ['1688', 'tmall', 'taobao', 'other', '其他'].forEach(function(plat) {
-      var items = groups[plat] || [];
-      if (!items.length) return;
-      html += '<h3 style="font-size:14px;margin:16px 0 8px;">' + esc(plat) + '</h3>' +
-        '<div class="perm-table-wrap"><table><thead><tr><th>店铺名</th><th>客服</th><th>排序</th><th>操作</th></tr></thead><tbody>';
-      items.forEach(function(c) {
-        html += '<tr><td>' + esc(c.shop_name) + '</td>' +
-          '<td><input style="width:120px;padding:4px 6px;font-size:12px;" value="' + esc(c.customer_service || '') + '" onchange="updateShopKefu(' + JSON.stringify(c.id) + ', this.value)"></td>' +
-          '<td><input type="number" style="width:60px;padding:4px 6px;font-size:12px;" value="' + (c.sort_order || 0) + '" onchange="updateShopOrder(' + JSON.stringify(c.id) + ', this.value)"></td>' +
-          '<td><button class="btn danger" onclick="deleteShopRow(' + JSON.stringify(c.id) + ')">删除</button></td></tr>';
-      });
-      html += '</tbody></table></div>';
-    });
-    html += '<div style="margin-top:20px;padding-top:16px;border-top:1px solid #eee;">' +
-      '<h3 style="font-size:14px;margin-bottom:8px;">添加店铺</h3>' +
-      '<div class="toolbar">' +
-      '<select id="newShopPlatform"><option value="1688">1688</option><option value="tmall">天猫</option><option value="taobao">淘宝</option><option value="other">其他</option></select>' +
-      '<input id="newShopName" placeholder="店铺名">' +
-      '<input id="newShopKefu" placeholder="客服名">' +
-      '<button class="btn" onclick="addShopRow()">添加</button></div></div>';
-    panel.innerHTML = html;
+    window._shopConfigCache = configs;
+    renderPermShopPanel(configs);
+  }).catch(function(e) {
+    panel.innerHTML = '<p class="empty">加载失败：' + esc(e.message) + '</p>';
   });
 }
 
+function renderPermShopPanel(configs) {
+  var panel = document.getElementById('permPanel');
+  if (!panel) return;
+  window._shopConfigCache = configs;
+  var groups = {};
+  configs.forEach(function(c) {
+    var plat = c.platform || '其他';
+    if (!groups[plat]) groups[plat] = [];
+    groups[plat].push(c);
+  });
+  var html = '<div class="info-box"><strong>与左侧「客服员工」不是一回事。</strong><br>' +
+    '此处维护各<strong>电商店铺</strong>在 3001 订单看板里显示的负责客服姓名。改完失焦即保存；连续改多行会排队写入，避免互相覆盖。</div>' +
+    '<div class="toolbar"><span style="font-size:13px;color:#666;">共 ' + configs.length + ' 个店铺</span>' +
+    '<button class="btn secondary" onclick="renderPermShop(true)">↻ 从服务器重载</button>' +
+    '<span id="shopSaveStatus" style="font-size:13px;color:#666;margin-left:8px;"></span></div>';
+  ['1688', 'tmall', 'taobao', 'other', '其他'].forEach(function(plat) {
+    var items = groups[plat] || [];
+    if (!items.length) return;
+    html += '<h3 style="font-size:14px;margin:16px 0 8px;">' + esc(plat) + '</h3>' +
+      '<div class="perm-table-wrap"><table><thead><tr><th>店铺名</th><th>客服</th><th>排序</th><th>操作</th></tr></thead><tbody>';
+    items.forEach(function(c) {
+      html += '<tr><td>' + esc(c.shop_name) + '</td>' +
+        '<td><input style="width:120px;padding:4px 6px;font-size:12px;" value="' + esc(c.customer_service || '') + '" onchange="updateShopKefu(' + JSON.stringify(c.id) + ', this.value)"></td>' +
+        '<td><input type="number" style="width:60px;padding:4px 6px;font-size:12px;" value="' + (c.sort_order || 0) + '" onchange="updateShopOrder(' + JSON.stringify(c.id) + ', this.value)"></td>' +
+        '<td><button class="btn danger" onclick="deleteShopRow(' + JSON.stringify(c.id) + ')">删除</button></td></tr>';
+    });
+    html += '</tbody></table></div>';
+  });
+  html += '<div style="margin-top:20px;padding-top:16px;border-top:1px solid #eee;">' +
+    '<h3 style="font-size:14px;margin-bottom:8px;">添加店铺</h3>' +
+    '<div class="toolbar">' +
+    '<select id="newShopPlatform"><option value="1688">1688</option><option value="tmall">天猫</option><option value="taobao">淘宝</option><option value="other">其他</option></select>' +
+    '<input id="newShopName" placeholder="店铺名">' +
+    '<input id="newShopKefu" placeholder="客服名">' +
+    '<button class="btn" onclick="addShopRow()">添加</button></div></div>';
+  panel.innerHTML = html;
+}
+
+window._shopSaveQueue = window._shopSaveQueue || Promise.resolve();
+
+function enqueueShopSave(task) {
+  window._shopSaveQueue = window._shopSaveQueue.then(task).catch(function(e) {
+    toast(e.message || '保存失败');
+  });
+  return window._shopSaveQueue;
+}
+
+function patchShopCacheItem(id, patch) {
+  if (!window._shopConfigCache) return;
+  var row = window._shopConfigCache.find(function(c) { return c.id === id; });
+  if (row) Object.keys(patch || {}).forEach(function(k) { row[k] = patch[k]; });
+}
+
 function updateShopKefu(id, val) {
-  apiFetch('/api/shop-config/' + encodeURIComponent(id), { method: 'PUT', body: JSON.stringify({ customer_service: val }) });
+  var st = document.getElementById('shopSaveStatus');
+  if (st) st.textContent = '保存中…';
+  enqueueShopSave(function() {
+    return apiFetch('/api/shop-config/' + encodeURIComponent(id), {
+      method: 'PUT',
+      body: JSON.stringify({ customer_service: val })
+    }).then(function(d) {
+      if (d.success) {
+        patchShopCacheItem(id, { customer_service: val });
+        if (st) st.textContent = '✅ 已保存';
+      } else {
+        if (st) st.textContent = '❌ ' + (d.error || '失败');
+        toast(d.error || '保存失败');
+      }
+    });
+  });
 }
 
 function updateShopOrder(id, val) {
-  apiFetch('/api/shop-config/' + encodeURIComponent(id), { method: 'PUT', body: JSON.stringify({ sort_order: parseInt(val, 10) || 0 }) });
+  var n = parseInt(val, 10) || 0;
+  enqueueShopSave(function() {
+    return apiFetch('/api/shop-config/' + encodeURIComponent(id), {
+      method: 'PUT',
+      body: JSON.stringify({ sort_order: n })
+    }).then(function(d) {
+      if (d.success) patchShopCacheItem(id, { sort_order: n });
+      else toast(d.error || '保存失败');
+    });
+  });
 }
 
 function deleteShopRow(id) {
   if (!confirm('确定删除？')) return;
-  apiFetch('/api/shop-config/' + encodeURIComponent(id), { method: 'DELETE' }).then(function() { renderPermShop(); });
+  apiFetch('/api/shop-config/' + encodeURIComponent(id), { method: 'DELETE' }).then(function() { renderPermShop(true); });
 }
 
 function addShopRow() {
@@ -1102,7 +1157,7 @@ function addShopRow() {
   var kefu = document.getElementById('newShopKefu').value.trim();
   if (!name) { toast('请输入店铺名'); return; }
   apiFetch('/api/shop-config', { method: 'POST', body: JSON.stringify({ platform: plat, shop_name: name, customer_service: kefu }) })
-    .then(function(d) { if (d.success) renderPermShop(); else toast(d.error || '失败'); });
+    .then(function(d) { if (d.success) renderPermShop(true); else toast(d.error || '失败'); });
 }
 
 function renderPermSysUsers() {
@@ -1447,6 +1502,7 @@ function renderPermPositionsTab() {
   data.role_permissions = data.role_permissions || {};
   data.employee_roles = data.employee_roles || {};
   var employees = (data.employees || []).map(function(e) { return (e && e.name) ? e.name : e; }).filter(Boolean);
+  employees.sort(function(a, b) { return String(a).localeCompare(String(b), 'zh-CN'); });
   var html =
     '<div class="info-box"><strong>「职务」与「角色」不同：</strong>员工表里的职务是手啤机-啤工等工种；此处<strong>角色</strong>决定默认能看哪些菜单。点左侧角色名 → 右侧勾默认权限 → 下方给员工选角色 → 保存。</div>' +
     '<div class="toolbar"><button class="btn" onclick="addPermPosition()">+ 添加角色</button>' +
@@ -1572,7 +1628,13 @@ function savePermPositions() {
     positions: window._permBundle.positions || [],
     role_permissions: window._permBundle.role_permissions || {},
     employee_roles: window._permBundle.employee_roles || {}
-  }, '岗位与角色已保存');
+  }, '岗位与角色已保存').then(function(d) {
+    if (d && d.success) window._permEmployeeRolesCache = copyJson(window._permBundle.employee_roles || {});
+  });
+}
+
+function copyJson(obj) {
+  try { return JSON.parse(JSON.stringify(obj || {})); } catch (e) { return {}; }
 }
 
 function renderPermMaterialMap(forceReload) {

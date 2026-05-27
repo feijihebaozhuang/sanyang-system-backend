@@ -165,35 +165,72 @@ def save_quote_data(qd: dict[str, Any] | None) -> bool:
     return ok_mysql or ok_file
 
 
-def load_shop_config() -> list[dict[str, Any]]:
+def _shop_row_from_db(r: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": r.get("id") or "",
+        "shop_name": r.get("shop_name") or "",
+        "platform": r.get("platform") or "",
+        "customer_service": r.get("customer_service") or "",
+        "sort_order": r.get("sort_order") or 0,
+    }
+
+
+def _load_shop_config_from_mysql() -> list[dict[str, Any]] | None:
     try:
         db = connect()
         cur = db.cursor()
         cur.execute(
             "SELECT id, shop_name, platform, customer_service, sort_order "
-            "FROM shop_config ORDER BY sort_order ASC"
+            "FROM shop_config ORDER BY sort_order ASC, id ASC"
         )
         rows = cur.fetchall() or []
         cur.close()
         db.close()
         if not rows:
-            return []
-        return [
-            {
-                "id": r["id"],
-                "shop_name": r.get("shop_name") or "",
-                "platform": r.get("platform") or "",
-                "customer_service": r.get("customer_service") or "",
-                "sort_order": r.get("sort_order") or 0,
-            }
-            for r in rows
-        ]
+            return None
+        return [_shop_row_from_db(r) for r in rows]
     except Exception as e:
-        print(f"[admin_shared_store load_shop_config] {e}")
+        print(f"[admin_shared_store load_shop_config MySQL] {e}")
+        return None
+
+
+def _load_shop_config_from_json() -> list[dict[str, Any]]:
+    import config_json
+
+    raw = config_json.read_json_file(config_json.shop_config_json_path(), [])
+    if not isinstance(raw, list):
         return []
+    out: list[dict[str, Any]] = []
+    for item in raw:
+        if isinstance(item, dict) and item.get("id"):
+            out.append(_shop_row_from_db(item))
+    return out
+
+
+def _sync_shop_config_json(config: list[dict[str, Any]]) -> bool:
+    import config_json
+
+    path = config_json.shop_config_json_path()
+    try:
+        with path.open("w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+        return True
+    except OSError as e:
+        print(f"[admin_shared_store sync shop_config.json] {e}")
+        return False
+
+
+def load_shop_config() -> list[dict[str, Any]]:
+    """MySQL 优先；无数据时读 shop_config.json 备份。"""
+    mysql_rows = _load_shop_config_from_mysql()
+    if mysql_rows:
+        return mysql_rows
+    return _load_shop_config_from_json()
 
 
 def save_shop_config(config: list[dict[str, Any]]) -> bool:
+    """全量写入 MySQL + shop_config.json（添加/删除店铺时用）。"""
+    ok_mysql = False
     try:
         db = connect()
         cur = db.cursor()
@@ -213,10 +250,29 @@ def save_shop_config(config: list[dict[str, Any]]) -> bool:
         db.commit()
         cur.close()
         db.close()
-        return True
+        ok_mysql = True
     except Exception as e:
-        print(f"[admin_shared_store save_shop_config] {e}")
-        return False
+        print(f"[admin_shared_store save_shop_config MySQL] {e}")
+    ok_json = _sync_shop_config_json(config)
+    return ok_mysql or ok_json
+
+
+def _get_shop_item(config_id: str) -> dict[str, Any] | None:
+    try:
+        db = connect()
+        cur = db.cursor()
+        cur.execute(
+            "SELECT id, shop_name, platform, customer_service, sort_order "
+            "FROM shop_config WHERE id=%s LIMIT 1",
+            (config_id,),
+        )
+        row = cur.fetchone()
+        cur.close()
+        db.close()
+        return _shop_row_from_db(row) if row else None
+    except Exception as e:
+        print(f"[admin_shared_store get_shop_item] {e}")
+        return None
 
 
 def add_shop_item(data: dict[str, Any]) -> dict[str, Any]:
@@ -229,25 +285,74 @@ def add_shop_item(data: dict[str, Any]) -> dict[str, Any]:
         "customer_service": data.get("customer_service", ""),
         "sort_order": data.get("sort_order", len(configs) + 1),
     }
+    try:
+        db = connect()
+        cur = db.cursor()
+        cur.execute(
+            "INSERT INTO shop_config (id, shop_name, platform, customer_service, sort_order) "
+            "VALUES (%s,%s,%s,%s,%s)",
+            (
+                new_item["id"],
+                new_item["shop_name"],
+                new_item["platform"],
+                new_item["customer_service"],
+                new_item["sort_order"],
+            ),
+        )
+        db.commit()
+        cur.close()
+        db.close()
+    except Exception as e:
+        raise RuntimeError(f"保存店铺配置失败: {e}") from e
     configs.append(new_item)
-    if not save_shop_config(configs):
-        raise RuntimeError("保存店铺配置失败")
+    _sync_shop_config_json(configs)
     return new_item
 
 
 def update_shop_item(config_id: str, patch: dict[str, Any]) -> dict[str, Any] | None:
-    configs = load_shop_config()
-    for item in configs:
-        if item["id"] == config_id:
-            for k in ("platform", "shop_name", "customer_service", "sort_order"):
-                if k in patch:
-                    item[k] = patch[k]
-            if not save_shop_config(configs):
-                raise RuntimeError("保存店铺配置失败")
-            return item
-    return None
+    """单行 UPDATE，避免 load+TRUNCATE 并发把其它店铺客服名冲掉。"""
+    allowed = ("platform", "shop_name", "customer_service", "sort_order")
+    sets: list[str] = []
+    vals: list[Any] = []
+    for k in allowed:
+        if k in patch:
+            sets.append(f"{k}=%s")
+            vals.append(patch[k])
+    if not sets:
+        return _get_shop_item(config_id)
+    vals.append(config_id)
+    try:
+        db = connect()
+        cur = db.cursor()
+        cur.execute(
+            f"UPDATE shop_config SET {', '.join(sets)} WHERE id=%s",
+            tuple(vals),
+        )
+        if cur.rowcount == 0:
+            cur.close()
+            db.close()
+            return None
+        db.commit()
+        cur.close()
+        db.close()
+    except Exception as e:
+        raise RuntimeError(f"更新店铺配置失败: {e}") from e
+    item = _get_shop_item(config_id)
+    if item:
+        _sync_shop_config_json(load_shop_config())
+    return item
 
 
 def delete_shop_item(config_id: str) -> bool:
-    configs = [c for c in load_shop_config() if c.get("id") != config_id]
-    return save_shop_config(configs)
+    try:
+        db = connect()
+        cur = db.cursor()
+        cur.execute("DELETE FROM shop_config WHERE id=%s", (config_id,))
+        db.commit()
+        cur.close()
+        db.close()
+    except Exception as e:
+        print(f"[admin_shared_store delete_shop_item] {e}")
+        return False
+    _sync_shop_config_json(load_shop_config())
+    return True

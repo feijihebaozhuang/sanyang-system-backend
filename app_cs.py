@@ -3160,54 +3160,20 @@ DEFAULT_SHOP_CONFIG = [
 ]
 
 def load_shop_config():
-    """从MySQL加载店铺配置"""
-    try:
-        db = get_db()
-        cur = db.cursor()
-        cur.execute("SELECT id, shop_name, platform, customer_service, sort_order FROM shop_config ORDER BY sort_order ASC")
-        rows = cur.fetchall()
-        cur.close()
-        db.close()
-        if not rows:
-            save_shop_config(list(DEFAULT_SHOP_CONFIG))
-            return list(DEFAULT_SHOP_CONFIG)
-        result = []
-        for r in rows:
-            result.append({
-                'id': r['id'],
-                'shop_name': r['shop_name'] or '',
-                'platform': r['platform'] or '',
-                'customer_service': r['customer_service'] or '',
-                'sort_order': r['sort_order'] or 0
-            })
-        return result
-    except Exception as e:
-        print(f'[MySQL load_shop_config] 错误: {e}')
-        return list(DEFAULT_SHOP_CONFIG)
+    """MySQL + shop_config.json（与 3003 admin_shared_store 一致）。"""
+    import admin_shared_store as asc
+
+    rows = asc.load_shop_config()
+    if rows:
+        return rows
+    asc.save_shop_config(list(DEFAULT_SHOP_CONFIG))
+    return list(DEFAULT_SHOP_CONFIG)
+
 
 def save_shop_config(config):
-    """保存店铺配置到MySQL（truncate+批量insert）"""
-    try:
-        db = get_db()
-        cur = db.cursor()
-        cur.execute("TRUNCATE TABLE shop_config")
-        for item in config:
-            cur.execute(
-                "INSERT INTO shop_config (id, shop_name, platform, customer_service, sort_order) VALUES (%s,%s,%s,%s,%s)",
-                (
-                    item.get('id', ''),
-                    item.get('shop_name', ''),
-                    item.get('platform', ''),
-                    item.get('customer_service', ''),
-                    item.get('sort_order', 0)
-                )
-            )
-        cur.close()
-        db.close()
-        return True
-    except Exception as e:
-        print(f'[MySQL save_shop_config] 错误: {e}')
-        return False
+    import admin_shared_store as asc
+
+    return asc.save_shop_config(config)
 
 @app.route('/api/shop-config', methods=['GET'])
 def api_get_shop_config():
@@ -3218,19 +3184,11 @@ def api_get_shop_config():
 def api_add_shop_config():
     """添加单个店铺配置"""
     try:
+        import admin_shared_store as asc
+
         data = request.get_json(force=True) or {}
-        configs = load_shop_config()
-        new_id = f"shop_{len(configs)+1}_{int(time.time())}"
-        new_item = {
-            'id': new_id,
-            'platform': data.get('platform', '1688'),
-            'shop_name': data.get('shop_name', ''),
-            'customer_service': data.get('customer_service', ''),
-            'sort_order': data.get('sort_order', len(configs)+1)
-        }
-        configs.append(new_item)
-        save_shop_config(configs)
-        return jsonify({'success': True, 'message': '已添加', 'item': new_item})
+        item = asc.add_shop_item(data)
+        return jsonify({'success': True, 'message': '已添加', 'item': item})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
@@ -3238,21 +3196,15 @@ def api_add_shop_config():
 def api_update_shop_config(config_id):
     """更新单个店铺配置"""
     try:
+        import admin_shared_store as asc
+
         data = request.get_json(force=True) or {}
-        configs = load_shop_config()
-        for c in configs:
-            if c.get('id') == config_id:
-                if 'customer_service' in data:
-                    c['customer_service'] = data['customer_service']
-                if 'sort_order' in data:
-                    c['sort_order'] = data['sort_order']
-                if 'shop_name' in data:
-                    c['shop_name'] = data['shop_name']
-                if 'platform' in data:
-                    c['platform'] = data['platform']
-                save_shop_config(configs)
-                return jsonify({'success': True, 'message': '已更新'})
-        return jsonify({'success': False, 'error': '未找到该配置'})
+        item = asc.update_shop_item(config_id, data)
+        if not item:
+            return jsonify({'success': False, 'error': '未找到该配置'}), 404
+        return jsonify({'success': True, 'message': '已更新', 'item': item})
+    except RuntimeError as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
@@ -3260,9 +3212,10 @@ def api_update_shop_config(config_id):
 def api_delete_shop_config(config_id):
     """删除单个店铺配置"""
     try:
-        configs = load_shop_config()
-        configs = [c for c in configs if c.get('id') != config_id]
-        save_shop_config(configs)
+        import admin_shared_store as asc
+
+        if not asc.delete_shop_item(config_id):
+            return jsonify({'success': False, 'error': '删除失败'}), 500
         return jsonify({'success': True, 'message': '已删除'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})

@@ -73,7 +73,7 @@ def _persist_employees_master(
         if e.get("name")
     ]
     detail = config_json.write_permission_overlay_detail(
-        overlay, base_dir=base_dir, keys=config_json.PERMISSION_JSON_KEYS
+        overlay, base_dir=base_dir, keys=frozenset({"employees"})
     )
     detail["employees_master_ok"] = local_ok
     return detail
@@ -283,11 +283,11 @@ def save_permission_bundle(data: dict, *, base_dir: str | None = None) -> dict[s
         db.close()
 
     sync_permissions(bundle)
-    master_detail = _persist_employees_master(
-        bundle.get("employees") or [], base_dir=base_dir
-    )
     detail = config_json.write_permission_overlay_detail(
         bundle, base_dir=base_dir, keys=config_json.PERMISSION_JSON_KEYS
+    )
+    master_detail = _persist_employees_master(
+        bundle.get("employees") or [], base_dir=base_dir
     )
     detail.update(master_detail)
     return {"success": True, "detail": detail}

@@ -4164,7 +4164,15 @@ DEFAULT_SHOP_CONFIG = [
 ]
 
 def load_shop_config():
-    """只读 shop_config.json；文件不存在时仅返回内存默认，不写盘。"""
+    """MySQL + shop_config.json（与 3003 一致）；无数据时回退本地 JSON/默认。"""
+    try:
+        import admin_shared_store as asc
+
+        rows = asc.load_shop_config()
+        if rows:
+            return rows
+    except Exception as e:
+        print(f"[load_shop_config] admin_shared_store: {e}")
     if not os.path.exists(SHOP_CONFIG_FILE):
         return list(DEFAULT_SHOP_CONFIG)
     try:
