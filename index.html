@@ -1567,8 +1567,8 @@
             });
         }
 
-        // ===== 员工首页只显示加急单 =====
-        if (role === '员工') {
+        // ===== 员工首页只显示加急单（超级管理员不受限）=====
+        if (role === '员工' && !isSuperAdmin()) {
             const overviewHeader = document.querySelector('.overview-header');
             if (overviewHeader) overviewHeader.style.display = 'none';
             document.querySelectorAll('.stats-cards').forEach(el => el.style.display = 'none');
@@ -1806,9 +1806,15 @@
     }
 
     // ===== 统一权限检查函数（唯一权限来源，前端永不自行推断）=====
+    function isSuperAdmin() {
+        if (!_currentUser) return false;
+        if (_currentUser.is_system || _currentUser.username === 'admin' || _currentUser.username === 'daiyali') return true;
+        return _currentUser.role === '超级管理员';
+    }
+
     function hasPerm(feature) {
         if (!_currentUser) return false;
-        if (_currentUser.role === '超级管理员') return true;
+        if (isSuperAdmin()) return true;
         if (window._myPerms && window._myPerms[feature] === true) return true;
         if (feature === '快麦ERP' && window._myPerms && window._myPerms['聚水潭'] === true) return true;
         return false;

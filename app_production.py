@@ -429,6 +429,7 @@ def login():
             "name": user['name'],
             "role": user['role'],
             "employee_name": user['employee_name'],
+            "is_system": bool(user.get("is_system")),
             "dept": emp_dept
         }
     })
@@ -1580,7 +1581,8 @@ def _apply_employee_roles_to_users(employee_roles: dict) -> None:
     for ename, role in (employee_roles or {}).items():
         users_role = _users_role_for_perm_role(str(role))
         for uid, u in USERS.items():
-            if uid == "admin" or u.get("is_system"):
+            if _perm_resolve.is_super_admin_account(uid, u):
+                u["role"] = "超级管理员"
                 continue
             if u.get("employee_name") == ename:
                 u["role"] = users_role
@@ -1600,6 +1602,8 @@ def _sync_all_employees_perms():
     同步员工角色映射；permissions 仅存「相对角色的个人覆盖」，不再整表填 false。
     """
     employee_roles = _permission_data.setdefault("employee_roles", {})
+    # 戴雅利 / admin 永不被 vault 或推断逻辑降为普通员工
+    employee_roles["戴雅利"] = "超级管理员"
     for emp in _employees_master_list:
         name = emp["name"]
         if name not in employee_roles:
@@ -1651,6 +1655,8 @@ def _user_has_permission(user: dict | None, username: str, feature: str) -> bool
 # 初始化时执行一次（MySQL 仅补缺失权限键，不覆盖 data.json）
 _sync_all_employees_perms()
 _merge_employee_permissions_from_db()
+for _uid, _u in list(USERS.items()):
+    USERS[_uid] = _perm_resolve.normalize_user_record(_uid, _u)
 
 DEFAULT_PRODUCTION_MATERIAL_MAPPING = [
     {"keywords": "特硬,外径特硬,内径特硬,D6D,国产,加硬", "label": "特硬"},

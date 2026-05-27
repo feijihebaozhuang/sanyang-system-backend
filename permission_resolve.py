@@ -54,13 +54,39 @@ def merge_employee_permissions_from_db(
     permission_data["permissions"] = base
 
 
+_SUPER_ADMIN_USERNAMES = frozenset({"admin", "daiyali"})
+_SUPER_ADMIN_EMPLOYEE_NAMES = frozenset({"戴雅利"})
+
+
+def is_super_admin_account(username: str, user: dict | None) -> bool:
+    u = user or {}
+    un = (username or "").strip().lower()
+    if u.get("is_system"):
+        return True
+    if un in _SUPER_ADMIN_USERNAMES:
+        return True
+    if (u.get("role") or "").strip() == "超级管理员":
+        return True
+    en = (u.get("employee_name") or "").strip()
+    if en in _SUPER_ADMIN_EMPLOYEE_NAMES and un in _SUPER_ADMIN_USERNAMES:
+        return True
+    if en in _SUPER_ADMIN_EMPLOYEE_NAMES and (u.get("name") or "").strip() in _SUPER_ADMIN_EMPLOYEE_NAMES:
+        return True
+    return False
+
+
 def normalize_user_record(username: str, user: dict | None) -> dict:
-    """保证 admin 系统账号永不被 employee_roles 同步降为普通员工。"""
+    """保证 admin / 戴雅利 系统账号永不被 employee_roles 同步降为普通员工。"""
     u = dict(user or {})
     un = (username or "").strip()
-    if un == "admin" or u.get("is_system"):
-        u["is_system"] = True
+    if is_super_admin_account(un, u):
+        if un == "admin" or u.get("is_system"):
+            u["is_system"] = True
         u["role"] = "超级管理员"
+        if un == "admin" and not (u.get("employee_name") or "").strip():
+            pass  # admin 可保持空 employee_name
+        elif not (u.get("employee_name") or "").strip():
+            u["employee_name"] = "戴雅利"
     return u
 
 
@@ -121,6 +147,15 @@ def user_has_permission(
     if user.get("is_system") or role == "超级管理员":
         return True
     un = (username or "").strip().lower()
+    if un in _SUPER_ADMIN_USERNAMES:
+        return True
+    if (user.get("employee_name") or "").strip() in _SUPER_ADMIN_EMPLOYEE_NAMES and role in (
+        "超级管理员",
+        "管理员",
+        "管理",
+        "",
+    ):
+        return True
     if un == "admin" and role in ("超级管理员", "管理员", ""):
         return True
     if sync_fn:
