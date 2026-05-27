@@ -1,0 +1,23 @@
+# guanli.feijihe.top：在 server { } 内、带 allow/deny 的 location / 之前 include 本文件
+# 根因：location / 上的 IP 白名单会拦 /static/auth_session.js 和 /api/login
+# → SY_AUTH 未定义 / 登录请求 403 → 用户感觉"登录没反应"
+
+location /static/ {
+    proxy_pass http://127.0.0.1:3003/static/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    # 勿在此 location 写 allow/deny，静态资源应对所有已能打开首页的客户端可访问
+}
+
+location /api/ {
+    proxy_pass http://127.0.0.1:3003;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    # 勿在此 location 写 allow/deny，API 应对所有已能打开首页的客户端可访问
+}
