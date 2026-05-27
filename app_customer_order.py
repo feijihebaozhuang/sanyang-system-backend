@@ -553,17 +553,51 @@ def api_quote_save_config():
     existing = admin_store.load_quote_data() or {}
     merged = merge_quote_config(existing, patch)
     if not admin_store.save_quote_data(merged):
-        return jsonify({"success": False, "error": "保存失败"}), 500
-    sync_detail = {}
+        return jsonify({"success": False, "error": "保存失败（MySQL/quote_data.json 均不可写）"}), 500
+    sync_detail: dict = {}
     if isinstance(patch, dict) and "material_mapping" in patch:
         bundle = emp_store.load_permission_bundle()
         sync_detail = config_json.sync_production_mapping_from_quote(
             bundle, merged.get("material_mapping")
         )
-        config_json.write_permission_overlay_detail(
-            bundle, keys=frozenset({"production_material_mapping"})
-        )
-    return jsonify({"success": True, "message": "报价配置已保存", **sync_detail})
+    msg = "报价配置已保存"
+    if sync_detail.get("vault_error"):
+        msg += f"（vault 警告: {sync_detail['vault_error']}）"
+    return jsonify({"success": True, "message": msg, "detail": sync_detail})
+
+
+@app.route("/api/perm/material_mapping/save", methods=["POST"])
+def api_perm_material_mapping_save():
+    err = require_admin()
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    rows = data.get("material_mapping")
+    if not isinstance(rows, list):
+        return jsonify({"success": False, "error": "material_mapping 须为数组"}), 400
+    from quote_config_merge import merge_quote_config
+
+    existing = admin_store.load_quote_data() or {}
+    merged = merge_quote_config(existing, {"material_mapping": rows})
+    if not admin_store.save_quote_data(merged):
+        return jsonify({"success": False, "error": "quote_config 保存失败"}), 500
+    bundle = emp_store.load_permission_bundle()
+    sync_detail = config_json.sync_production_mapping_from_quote(
+        bundle, merged.get("material_mapping")
+    )
+    msg = "材料映射已保存"
+    if not sync_detail.get("local_ok", True):
+        msg += "（本机 JSON 写入异常）"
+    if sync_detail.get("vault_error"):
+        msg += f"（vault: {sync_detail['vault_error']}）"
+    return jsonify(
+        {
+            "success": True,
+            "message": msg,
+            "mapping_count": len(bundle.get("production_material_mapping") or []),
+            "detail": sync_detail,
+        }
+    )
 
 
 @app.route("/api/shop-config", methods=["GET"])

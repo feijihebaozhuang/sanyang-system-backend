@@ -372,26 +372,7 @@ def sync_production_mapping_from_quote(
 ) -> dict[str, Any]:
     """保存报价材料映射时同步写入 permission_data + 本机 JSON + 156。"""
     mapping = quote_rows_to_production_mapping(quote_rows)
-    if not mapping:
-        return {"ok": True, "skipped": True}
     permission_data["production_material_mapping"] = mapping
     return write_permission_overlay_detail(
         permission_data, base_dir=base_dir, keys=frozenset({"production_material_mapping"})
     )
-    """按 data.json 中 production_material_mapping 匹配材质。"""
-    low = (text or "").lower()
-    if not mapping:
-        return ""
-    best = ""
-    best_len = 0
-    for row in mapping:
-        if not isinstance(row, dict):
-            continue
-        label = (row.get("label") or row.get("material_name") or "").strip()
-        kws = (row.get("keywords") or "").strip()
-        for kw in (k.strip() for k in kws.split(",") if k.strip()):
-            kl = kw.lower()
-            if kl and kl in low and len(kw) > best_len:
-                best = label
-                best_len = len(kw)
-    return best

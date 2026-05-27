@@ -375,14 +375,14 @@ def update_employee_full(
     if not target:
         raise ValueError(f"未找到员工 {old_name}")
     target["name"] = name
-    if position:
-        target["position"] = position.strip()
-    if group:
-        target["group"] = group.strip()
+    if position is not None:
+        target["position"] = str(position).strip() or "员工"
+    if group is not None:
+        target["group"] = str(group).strip() or "其他"
     if phone is not None:
         target["phone"] = str(phone).strip()
-    if dept:
-        target["dept"] = dept.strip()
+    if dept is not None and str(dept).strip():
+        target["dept"] = str(dept).strip()
     if old_name != name:
         db = _connect()
         cur = db.cursor()
