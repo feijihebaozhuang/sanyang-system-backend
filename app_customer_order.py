@@ -658,17 +658,15 @@ def api_perm_material_mapping_save():
         sync_detail = perm_result.get("detail") or {}
     except RuntimeError as e:
         return jsonify({"success": False, "error": str(e)}), 500
-    if not quote_ok and not sync_detail.get("local_ok", False):
+    if not quote_ok:
         return jsonify(
             {
                 "success": False,
-                "error": quote_err or "quote 与 permission 均未写入成功",
+                "error": quote_err or "quote_config / quote_data.json 写入失败",
                 "detail": sync_detail,
             }
         ), 500
     msg = f"材料映射已保存（{len(prod_map)} 条）"
-    if quote_err:
-        msg += f"（报价库: {quote_err}）"
     if sync_detail.get("vault_error"):
         msg += f"（vault: {sync_detail['vault_error']}）"
     return jsonify(

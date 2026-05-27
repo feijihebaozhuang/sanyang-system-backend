@@ -22,6 +22,39 @@ def _load_quote_json_raw() -> dict[str, Any]:
         return {}
 
 
+def _parse_quote_config_value(val: Any) -> Any:
+    if isinstance(val, str):
+        try:
+            return json.loads(val)
+        except json.JSONDecodeError:
+            pass
+    return val
+
+
+def _load_material_mapping_raw() -> list[dict[str, Any]]:
+    """读取 material_mapping 原样：MySQL quote_config 优先，无则 quote_data.json。"""
+    try:
+        db = connect()
+        cur = db.cursor()
+        cur.execute(
+            "SELECT config_value FROM quote_config WHERE config_key=%s LIMIT 1",
+            ("material_mapping",),
+        )
+        row = cur.fetchone()
+        cur.close()
+        db.close()
+        if row:
+            val = _parse_quote_config_value(row.get("config_value"))
+            if isinstance(val, list):
+                return val
+    except Exception as e:
+        print(f"[admin_shared_store material_mapping MySQL] {e}")
+
+    file_raw = _load_quote_json_raw()
+    mm = file_raw.get("material_mapping")
+    return list(mm) if isinstance(mm, list) else []
+
+
 def load_quote_data() -> dict[str, Any] | None:
     mysql_result: dict[str, Any] | None = None
     try:
@@ -34,13 +67,7 @@ def load_quote_data() -> dict[str, Any] | None:
         result: dict[str, Any] = {}
         for r in rows:
             key = r["config_key"]
-            val = r["config_value"]
-            if isinstance(val, str):
-                try:
-                    val = json.loads(val)
-                except json.JSONDecodeError:
-                    pass
-            result[key] = val
+            result[key] = _parse_quote_config_value(r["config_value"])
         if result:
             mysql_result = result
     except Exception as e:
@@ -49,27 +76,31 @@ def load_quote_data() -> dict[str, Any] | None:
     file_raw = _load_quote_json_raw()
     if mysql_result and file_raw:
         merged = dict(mysql_result)
-        file_mm = file_raw.get("material_mapping")
-        if isinstance(file_mm, list):
-            merged["material_mapping"] = file_mm
+        mysql_mm = mysql_result.get("material_mapping")
+        if not isinstance(mysql_mm, list) or not mysql_mm:
+            file_mm = file_raw.get("material_mapping")
+            if isinstance(file_mm, list):
+                merged["material_mapping"] = file_mm
         from quote_material_defaults import enrich_quote_data
 
-        return enrich_quote_data(merged)
+        # admin 读配置：不合并默认关键词，避免页面/保存前把用户改短的词又扩回去
+        return enrich_quote_data(merged, merge_defaults=False)
     if mysql_result:
         from quote_material_defaults import enrich_quote_data
 
-        return enrich_quote_data(mysql_result)
+        return enrich_quote_data(mysql_result, merge_defaults=False)
     if file_raw:
         from quote_material_defaults import enrich_quote_data
 
-        return enrich_quote_data(file_raw)
+        return enrich_quote_data(file_raw, merge_defaults=False)
     return None
 
 
 def load_material_mapping_admin() -> list[dict[str, Any]]:
-    """3003 材料映射页：quote_data.json 的 material_mapping 为准（与 MySQL 合并后读取）。"""
-    qd = load_quote_data() or {}
-    return list(qd.get("material_mapping") or [])
+    """3003 材料映射页：MySQL 优先，不合并默认关键词。"""
+    from quote_material_defaults import enrich_material_mapping
+
+    return enrich_material_mapping(_load_material_mapping_raw(), merge_defaults=False)
 
 
 def save_quote_mapping(rows: list[dict[str, Any]]) -> tuple[bool, str, list[dict[str, Any]]]:
@@ -106,7 +137,8 @@ def save_quote_mapping(rows: list[dict[str, Any]]) -> tuple[bool, str, list[dict
 def save_quote_data(qd: dict[str, Any] | None) -> bool:
     from quote_material_defaults import enrich_quote_data
 
-    qd = enrich_quote_data(qd or {})
+    # 保存时禁止把默认词合并进 keywords（否则改报价单价会把材料映射冲掉）
+    qd = enrich_quote_data(qd or {}, merge_defaults=False)
     ok_mysql = False
     try:
         db = connect()
