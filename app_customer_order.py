@@ -398,6 +398,23 @@ def api_perm_users():
     return jsonify({"success": True, "items": emp_store.list_users()})
 
 
+@app.route("/api/perm/users/accounts")
+def api_perm_users_accounts():
+    err = require_admin()
+    if err:
+        return err
+    return jsonify({"success": True, "items": emp_store.list_login_accounts()})
+
+
+@app.route("/api/perm/users/sync", methods=["POST"])
+def api_perm_users_sync():
+    err = require_admin()
+    if err:
+        return err
+    detail = emp_store.sync_login_accounts_from_employees()
+    return jsonify({"success": True, "message": f"已同步显示名 {detail.get('fixed_display_names', 0)} 条", "detail": detail})
+
+
 @app.route("/api/perm/users/save", methods=["POST"])
 def api_perm_users_save():
     err = require_admin()
@@ -405,12 +422,17 @@ def api_perm_users_save():
         return err
     data = request.get_json(silent=True) or {}
     try:
+        emp_name = (data.get("employee_name") or "").strip()
+        disp = (data.get("display_name") or "").strip()
+        if emp_name and not disp:
+            disp = emp_name
         item = emp_store.upsert_user(
             data.get("username") or "",
+            old_username=(data.get("old_username") or "").strip(),
             password=(data.get("password") or "").strip(),
-            display_name=(data.get("display_name") or "").strip(),
+            display_name=disp,
             role=(data.get("role") or "员工").strip(),
-            employee_name=(data.get("employee_name") or "").strip(),
+            employee_name=emp_name,
             enabled=bool(data.get("enabled", True)),
         )
         return jsonify({"success": True, "item": item})

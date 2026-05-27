@@ -394,6 +394,10 @@ def update_employee_full(
             "UPDATE employee_permissions SET employee_name=%s WHERE employee_name=%s",
             (name, old_name),
         )
+        cur.execute(
+            "UPDATE users SET employee_name=%s, display_name=%s WHERE employee_name=%s",
+            (name, name, old_name),
+        )
         db.commit()
         cur.close()
         db.close()
@@ -557,9 +561,91 @@ def list_users() -> list[dict]:
         return []
 
 
+def list_login_accounts() -> list[dict[str, Any]]:
+    """员工主数据 + 登录账号合并视图（3003 登录账号页）。"""
+    emps = load_employees_master()
+    users = list_users()
+    by_emp: dict[str, dict] = {}
+    emp_names: set[str] = set()
+    for e in emps:
+        n = (e.get("name") or "").strip()
+        if n:
+            emp_names.add(n)
+    for u in users:
+        en = (u.get("employee_name") or "").strip()
+        if en:
+            by_emp[en] = u
+    rows: list[dict[str, Any]] = []
+    for e in emps:
+        name = (e.get("name") or "").strip()
+        if not name:
+            continue
+        u = by_emp.get(name)
+        rows.append(
+            {
+                "employee_name": name,
+                "username": u["username"] if u else "",
+                "display_name": (u.get("display_name") if u else "") or name,
+                "role": (u.get("role") if u else "") or "员工",
+                "enabled": bool(u.get("enabled", True)) if u else False,
+                "has_login": bool(u),
+                "dept": e.get("dept") or "",
+                "position": e.get("position") or "",
+            }
+        )
+    for u in users:
+        if u.get("username") == "admin":
+            continue
+        en = (u.get("employee_name") or "").strip()
+        if en and en in emp_names:
+            continue
+        rows.append(
+            {
+                "employee_name": en,
+                "username": u.get("username") or "",
+                "display_name": u.get("display_name") or u.get("username") or "",
+                "role": u.get("role") or "",
+                "enabled": bool(u.get("enabled", True)),
+                "has_login": True,
+                "orphan": True,
+                "dept": "",
+                "position": "",
+            }
+        )
+    return rows
+
+
+def sync_login_accounts_from_employees() -> dict[str, Any]:
+    """将 users.display_name 与 employee_name 对齐（员工主数据为准）。"""
+    emp_names = {
+        (e.get("name") or "").strip()
+        for e in load_employees_master()
+        if (e.get("name") or "").strip()
+    }
+    fixed = 0
+    for u in list_users():
+        un = u.get("username") or ""
+        if un == "admin":
+            continue
+        en = (u.get("employee_name") or "").strip()
+        if not en or en not in emp_names:
+            continue
+        if (u.get("display_name") or "").strip() != en:
+            upsert_user(
+                un,
+                display_name=en,
+                role=u.get("role") or "员工",
+                employee_name=en,
+                enabled=bool(u.get("enabled", True)),
+            )
+            fixed += 1
+    return {"fixed_display_names": fixed}
+
+
 def upsert_user(
     username: str,
     *,
+    old_username: str = "",
     password: str = "",
     display_name: str = "",
     role: str = "员工",
@@ -567,51 +653,95 @@ def upsert_user(
     enabled: bool = True,
 ) -> dict:
     username = (username or "").strip()
+    old_username = (old_username or "").strip()
     if not username:
         raise ValueError("username 必填")
-    if username == "admin":
+    if username == "admin" or old_username == "admin":
         raise ValueError("不可通过此接口修改系统 admin")
     db = _connect()
     cur = db.cursor()
-    if password:
-        pwd = hashlib.sha256(password.encode()).hexdigest()
-        cur.execute(
-            """
-            INSERT INTO users (username, password, display_name, role, employee_name, enabled)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE password=VALUES(password), display_name=VALUES(display_name),
-                role=VALUES(role), employee_name=VALUES(employee_name), enabled=VALUES(enabled)
-            """,
-            (
-                username,
-                pwd,
-                display_name or username,
-                role,
-                employee_name,
-                1 if enabled else 0,
-            ),
-        )
-    else:
-        cur.execute("SELECT username FROM users WHERE username=%s", (username,))
-        exists = cur.fetchone()
-        if not exists and not password:
-            raise ValueError("新建账号需填写 password")
-        cur.execute(
-            """
-            INSERT INTO users (username, password, display_name, role, employee_name, enabled)
-            VALUES (%s, '', %s, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE display_name=VALUES(display_name),
-                role=VALUES(role), employee_name=VALUES(employee_name), enabled=VALUES(enabled)
-            """,
-            (username, display_name or username, role, employee_name, 1 if enabled else 0),
-        )
-    db.commit()
-    cur.close()
-    db.close()
+    try:
+        if old_username and old_username != username:
+            cur.execute(
+                "SELECT username, password, display_name, role, employee_name, enabled "
+                "FROM users WHERE username=%s",
+                (old_username,),
+            )
+            old_row = cur.fetchone()
+            if not old_row:
+                raise ValueError(f"未找到原登录账号 {old_username}")
+            cur.execute("SELECT username FROM users WHERE username=%s", (username,))
+            if cur.fetchone():
+                raise ValueError(f"登录账号 {username} 已被占用")
+            pwd = (
+                hashlib.sha256(password.encode()).hexdigest()
+                if password
+                else old_row.get("password") or ""
+            )
+            disp = display_name or old_row.get("display_name") or username
+            rol = role or old_row.get("role") or "员工"
+            en = employee_name if employee_name != "" else (old_row.get("employee_name") or "")
+            ena = 1 if enabled else 0
+            cur.execute("DELETE FROM users WHERE username=%s", (old_username,))
+            cur.execute(
+                """
+                INSERT INTO users (username, password, display_name, role, employee_name, enabled)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (username, pwd, disp, rol, en, ena),
+            )
+            db.commit()
+            return {
+                "username": username,
+                "display_name": disp,
+                "role": rol,
+                "employee_name": en,
+                "enabled": bool(ena),
+            }
+
+        if password:
+            pwd = hashlib.sha256(password.encode()).hexdigest()
+            cur.execute(
+                """
+                INSERT INTO users (username, password, display_name, role, employee_name, enabled)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE password=VALUES(password), display_name=VALUES(display_name),
+                    role=VALUES(role), employee_name=VALUES(employee_name), enabled=VALUES(enabled)
+                """,
+                (
+                    username,
+                    pwd,
+                    display_name or username,
+                    role,
+                    employee_name,
+                    1 if enabled else 0,
+                ),
+            )
+        else:
+            cur.execute("SELECT username FROM users WHERE username=%s", (username,))
+            exists = cur.fetchone()
+            if not exists and not password:
+                raise ValueError("新建账号需填写 password")
+            cur.execute(
+                """
+                INSERT INTO users (username, password, display_name, role, employee_name, enabled)
+                VALUES (%s, '', %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE display_name=VALUES(display_name),
+                    role=VALUES(role), employee_name=VALUES(employee_name), enabled=VALUES(enabled)
+                """,
+                (username, display_name or username, role, employee_name, 1 if enabled else 0),
+            )
+        db.commit()
+    finally:
+        cur.close()
+        db.close()
+    en = employee_name
+    if en and not display_name:
+        display_name = en
     return {
         "username": username,
         "display_name": display_name or username,
         "role": role,
-        "employee_name": employee_name,
+        "employee_name": en,
         "enabled": enabled,
     }

@@ -1106,51 +1106,131 @@ function addShopRow() {
 }
 
 function renderPermSysUsers() {
-  var items = window._sysUsers || [];
-  var html = '<div class="toolbar"><button onclick="editSysUser(null)">+ 新增登录账号</button></div>' +
-    '<table><thead><tr><th>账号</th><th>显示名</th><th>角色</th><th>绑定员工</th><th>状态</th><th>操作</th></tr></thead><tbody>';
-  items.forEach(function(u) {
-    html += '<tr><td>' + esc(u.username) + '</td><td>' + esc(u.display_name) + '</td><td>' + esc(u.role) + '</td>' +
-      '<td>' + esc(u.employee_name || '-') + '</td>' +
-      '<td>' + (u.enabled ? '<span class="tag tag-green">启用</span>' : '<span class="tag tag-gray">停用</span>') + '</td>' +
-      '<td><button class="btn secondary" onclick="editSysUser(\'' + esc(u.username).replace(/'/g, "\\'") + '\')">编辑</button></td></tr>';
+  var panel = document.getElementById('permPanel');
+  panel.innerHTML = '<p class="empty">加载登录账号…</p>';
+  apiFetch('/api/perm/users/accounts').then(function(d) {
+    if (!d.success) {
+      panel.innerHTML = '<p class="empty">加载失败</p>';
+      return;
+    }
+    window._loginAccounts = d.items || [];
+    var html = '<div class="info-box">以<strong>员工主数据</strong>为准：显示名应与员工姓名一致。无登录账号的行可点「开通」。编辑时可<strong>修改登录账号</strong>（原账号会替换）。</div>' +
+      '<div class="toolbar">' +
+      '<button class="btn" onclick="syncLoginAccounts()">🔄 同步显示名</button>' +
+      '<button onclick="editSysUser(null)">+ 新增登录账号</button></div>' +
+      '<div class="perm-table-wrap"><table><thead><tr><th>员工姓名</th><th>登录账号</th><th>显示名</th><th>角色</th><th>厂区</th><th>状态</th><th>操作</th></tr></thead><tbody>';
+    if (!window._loginAccounts.length) {
+      html += '<tr><td colspan="7" class="empty">暂无数据</td></tr>';
+    } else {
+      window._loginAccounts.forEach(function(r, i) {
+        var st = r.has_login
+          ? (r.enabled ? '<span class="tag tag-green">已开通</span>' : '<span class="tag tag-gray">停用</span>')
+          : '<span class="tag tag-orange">未开通</span>';
+        var orphan = r.orphan ? ' <span class="tag tag-gray">无员工</span>' : '';
+        html += '<tr><td><strong>' + esc(r.employee_name || '—') + '</strong>' + orphan + '</td>' +
+          '<td>' + esc(r.username || '—') + '</td><td>' + esc(r.display_name || '') + '</td>' +
+          '<td>' + esc(r.role || '—') + '</td><td>' + esc(r.dept || '—') + '</td><td>' + st + '</td>' +
+          '<td><button class="btn secondary" onclick="editSysUserByIdx(' + i + ')">' + (r.has_login ? '编辑' : '开通') + '</button></td></tr>';
+      });
+    }
+    html += '</tbody></table></div>';
+    panel.innerHTML = html;
   });
-  html += '</tbody></table>';
-  document.getElementById('permPanel').innerHTML = html;
 }
 
-function editSysUser(username) {
-  var u = username ? (window._sysUsers || []).find(function(x) { return x.username === username; }) : { username:'', display_name:'', role:'员工', employee_name:'', enabled:true };
-  document.getElementById('admFormArea').innerHTML =
-    '<div class="card"><h2>' + (username ? '编辑登录账号' : '新增登录账号') + '</h2>' +
-    '<div class="form-grid">' +
-    field('登录账号', 'suUser', u.username, username ? '不可改' : '') +
-    field('显示名', 'suName', u.display_name) +
-    field('密码', 'suPwd', '', username ? '留空不改' : '新建必填') +
-    field('角色', 'suRole', u.role) +
-    field('绑定员工名', 'suEmp', u.employee_name) +
-    selectField('状态', 'suEnabled', u.enabled ? '1' : '0', [{v:'1',l:'启用'},{v:'0',l:'停用'}]) +
-    '</div><div class="form-actions">' +
-    '<button class="btn" onclick="saveSysUser()">保存</button>' +
-    '<button class="btn secondary" onclick="document.getElementById(\'admFormArea\').innerHTML=\'\'">取消</button></div></div>';
-  if (username) document.getElementById('suUser').readOnly = true;
+function syncLoginAccounts() {
+  apiFetch('/api/perm/users/sync', { method: 'POST', body: '{}' })
+    .then(function(d) {
+      toast(d.message || (d.success ? '已同步' : '失败'));
+      if (d.success) renderPermSysUsers();
+    });
+}
+
+function editSysUserByIdx(idx) {
+  var r = (window._loginAccounts || [])[idx];
+  if (!r) return;
+  editSysUser(r);
+}
+
+var editingSysUserOldUsername = '';
+
+function editSysUser(row) {
+  var isNew = !row || !row.has_login;
+  var u = isNew ? {
+    username: '', display_name: row ? row.employee_name : '', role: '员工',
+    employee_name: row ? row.employee_name : '', enabled: true
+  } : {
+    username: row.username, display_name: row.display_name, role: row.role,
+    employee_name: row.employee_name, enabled: row.enabled
+  };
+  editingSysUserOldUsername = isNew ? '' : (row.username || '');
+  apiFetch('/api/employees').then(function(employees) {
+    if (!Array.isArray(employees)) employees = employees.employees || [];
+    window._fullEmployeesCache = employees;
+    var empOpts = employees.map(function(e) {
+      var sel = u.employee_name && e.name === u.employee_name ? ' selected' : '';
+      return '<option value="' + esc(e.name) + '"' + sel + '>' + esc(e.name) + '</option>';
+    }).join('');
+    var roleOpts = ['超级管理员', '主管', '管理', '客服', '员工', '财务', '业务员'].map(function(r) {
+      return '<option value="' + r + '"' + (u.role === r ? ' selected' : '') + '>' + r + '</option>';
+    }).join('');
+    document.getElementById('admFormArea').innerHTML =
+      '<div class="card"><h2>' + (isNew ? '开通/新增登录账号' : '编辑登录账号') + '</h2>' +
+      '<div class="form-grid">' +
+      '<div><label>绑定员工</label><select id="suEmp" onchange="onSysUserEmpChange()">' +
+      '<option value="">— 请选择 —</option>' + empOpts + '</select></div>' +
+      field('登录账号', 'suUser', u.username, isNew ? '新建必填，建议拼音' : '可修改登录名') +
+      field('显示名', 'suName', u.display_name || u.employee_name || '') +
+      field('密码', 'suPwd', '', isNew ? '新建必填，默认 账号+123' : '留空不改') +
+      '<div><label>角色</label><select id="suRole">' + roleOpts + '</select></div>' +
+      selectField('状态', 'suEnabled', u.enabled ? '1' : '0', [{v:'1',l:'启用'},{v:'0',l:'停用'}]) +
+      '</div><div class="form-actions">' +
+      '<button class="btn" onclick="saveSysUser()">保存</button>' +
+      '<button class="btn secondary" onclick="document.getElementById(\'admFormArea\').innerHTML=\'\';editingSysUserOldUsername=\'\'">取消</button></div></div>';
+    if (!isNew && editingSysUserOldUsername) {
+      document.getElementById('suUser').dataset.oldUsername = editingSysUserOldUsername;
+    }
+  });
+}
+
+function onSysUserEmpChange() {
+  var emp = document.getElementById('suEmp').value;
+  if (!emp) return;
+  var nameEl = document.getElementById('suName');
+  if (nameEl && !nameEl.value.trim()) nameEl.value = emp;
+  var userEl = document.getElementById('suUser');
+  if (userEl && !userEl.value.trim() && !editingSysUserOldUsername) {
+    try {
+      userEl.placeholder = '如 ' + emp + ' 的拼音';
+    } catch (e) { /* ignore */ }
+  }
 }
 
 function saveSysUser() {
+  var emp = document.getElementById('suEmp').value.trim();
+  var username = document.getElementById('suUser').value.trim();
+  if (!username) { toast('请填写登录账号'); return; }
   var data = {
-    username: document.getElementById('suUser').value.trim(),
-    display_name: document.getElementById('suName').value.trim(),
-    role: document.getElementById('suRole').value.trim(),
-    employee_name: document.getElementById('suEmp').value.trim(),
+    username: username,
+    old_username: editingSysUserOldUsername || document.getElementById('suUser').dataset.oldUsername || '',
+    display_name: document.getElementById('suName').value.trim() || emp,
+    role: document.getElementById('suRole').value,
+    employee_name: emp,
     enabled: document.getElementById('suEnabled').value === '1'
   };
   var pwd = document.getElementById('suPwd').value;
   if (pwd) data.password = pwd;
+  else if (!editingSysUserOldUsername) data.password = username + '123';
   apiFetch('/api/perm/users/save', { method: 'POST', body: JSON.stringify(data) })
     .then(function(d) {
-      if (d.success) { toast('已保存'); document.getElementById('admFormArea').innerHTML=''; loadPermissions(); }
-      else toast(d.error || '保存失败');
-    });
+      if (d.success) {
+        toast('已保存');
+        editingSysUserOldUsername = '';
+        document.getElementById('admFormArea').innerHTML = '';
+        renderPermSysUsers();
+      } else toast(d.error || '保存失败');
+    })
+    .catch(function(err) { toast(err.message || '网络错误'); });
 }
 
 function renderPermEmployees() {
