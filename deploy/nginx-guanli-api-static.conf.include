@@ -1,0 +1,27 @@
+# guanli.feijihe.top — 必须在「带 allow/deny 的 location /」之前 include
+#
+# 根因：若白名单写在 location / 上，会同时拦：
+#   /static/auth_session.js  → SY_AUTH 未定义（已通过 HTML 内联缓解）
+#   POST /api/login            → 永远登不进（内联 JS 无法解决）
+#
+# 以下两个 location 不要写 allow/deny，全部反代到 3003。
+
+location /api/ {
+    proxy_pass http://127.0.0.1:3003/api/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 120s;
+    proxy_connect_timeout 30s;
+}
+
+location /static/ {
+    proxy_pass http://127.0.0.1:3003/static/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
