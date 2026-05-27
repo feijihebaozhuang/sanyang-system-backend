@@ -121,13 +121,23 @@ def login():
     password = (data.get("password") or "").strip()
     if not username or not password:
         return jsonify({"success": False, "message": "请输入账号和密码"})
-    user = co_store.get_admin_by_username(username)
-    if not user or not user.get("enabled"):
-        return jsonify({"success": False, "message": "账号或密码错误"})
-    if user.get("password_hash") != co_store.password_hash(password):
-        return jsonify({"success": False, "message": "账号或密码错误"})
+    try:
+        user = co_store.authenticate_admin_user(username, password)
+    except Exception as e:
+        print(f"[3003 login] {e}")
+        return jsonify(
+            {
+                "success": False,
+                "message": "数据库连接失败，请检查 MySQL 配置或服务是否启动",
+            }
+        ), 503
+    if not user:
+        hint = ""
+        if username.lower() == "admin":
+            hint = "（3003 默认密码与 3001 相同：admin888）"
+        return jsonify({"success": False, "message": "账号或密码错误" + hint})
     session.permanent = True
-    session["username"] = username
+    session["username"] = user.get("username") or username
     session.modified = True
     return jsonify({"success": True, "user": _user_payload(user)})
 

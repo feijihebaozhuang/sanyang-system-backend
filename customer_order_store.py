@@ -307,9 +307,122 @@ def ensure_tables() -> None:
             ensure_schema(cur)
             _seed_defaults(cur)
             db.commit()
+            ensure_co_admin_account()
             _tables_ready = True
         finally:
             db.close()
+
+
+def ensure_co_admin_account() -> None:
+    """保证 3003 必有可用的 admin（与 3001 默认密码 admin888 一致）。"""
+    import os
+
+    default_pwd = (os.getenv("CO_ADMIN_DEFAULT_PASSWORD") or "admin888").strip() or "admin888"
+    reset = (os.getenv("CO_ADMIN_RESET_PASSWORD") or "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    ph = password_hash(default_pwd)
+    db = connect()
+    try:
+        cur = db.cursor()
+        cur.execute(
+            "SELECT id, enabled FROM co_admin_user WHERE username=%s LIMIT 1",
+            ("admin",),
+        )
+        row = cur.fetchone()
+        if not row:
+            cur.execute(
+                """
+                INSERT INTO co_admin_user (username, password_hash, display_name, role, enabled)
+                VALUES (%s, %s, %s, %s, 1)
+                """,
+                ("admin", ph, "戴雅利", "admin"),
+            )
+        elif reset or not row.get("enabled"):
+            cur.execute(
+                """
+                UPDATE co_admin_user
+                SET password_hash=%s, display_name=%s, role='admin', enabled=1
+                WHERE username=%s
+                """,
+                (ph, "戴雅利", "admin"),
+            )
+        db.commit()
+    finally:
+        db.close()
+
+
+def _co_role_from_users_role(role: str) -> str:
+    r = (role or "").strip()
+    if r in ("超级管理员", "管理", "admin", "Admin", "管理员"):
+        return "admin"
+    return "viewer"
+
+
+def _sync_co_admin_from_users_row(row: dict, pwd_hash: str) -> dict:
+    """users 表校验通过后，同步到 co_admin_user，便于 session 后续解析。"""
+    username = (row.get("username") or "").strip()
+    co_role = _co_role_from_users_role(row.get("role") or "")
+    display_name = (row.get("display_name") or username).strip()
+    db = connect()
+    try:
+        cur = db.cursor()
+        cur.execute(
+            """
+            INSERT INTO co_admin_user (username, password_hash, display_name, role, enabled)
+            VALUES (%s, %s, %s, %s, 1)
+            ON DUPLICATE KEY UPDATE
+              password_hash=VALUES(password_hash),
+              display_name=VALUES(display_name),
+              role=VALUES(role),
+              enabled=1
+            """,
+            (username, pwd_hash, display_name, co_role),
+        )
+        db.commit()
+        cur.execute(
+            "SELECT id, username, password_hash, display_name, role, enabled "
+            "FROM co_admin_user WHERE username=%s",
+            (username,),
+        )
+        return cur.fetchone() or {}
+    finally:
+        db.close()
+
+
+def authenticate_admin_user(username: str, password: str) -> dict | None:
+    """登录校验：co_admin_user 优先；失败则尝试与 3001 共用的 users 表。"""
+    username = (username or "").strip()
+    password = (password or "").strip()
+    if not username or not password:
+        return None
+    ensure_co_admin_account()
+    ph = password_hash(password)
+    user = get_admin_by_username(username)
+    if user and user.get("enabled") and user.get("password_hash") == ph:
+        return user
+    try:
+        db = connect()
+        cur = db.cursor()
+        cur.execute(
+            "SELECT username, password, display_name, role, employee_name, enabled "
+            "FROM users WHERE username=%s LIMIT 1",
+            (username,),
+        )
+        row = cur.fetchone()
+        cur.close()
+        db.close()
+        if not row or not row.get("enabled"):
+            return None
+        stored = row.get("password") or ""
+        if stored != ph:
+            return None
+        return _sync_co_admin_from_users_row(row, ph)
+    except Exception as e:
+        print(f"[customer_order_store] users 表登录回退失败: {e}")
+        return None
 
 
 def _seed_defaults(cur) -> None:
