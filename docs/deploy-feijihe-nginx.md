@@ -1,3 +1,39 @@
+# guanli.feijihe.top 管理后台登录无反应（SY_AUTH 未定义）
+
+## 根因（已确认）
+
+`guanli` 的 Nginx 在 **`location /`** 上配置了 `allow` / `deny` IP 白名单（如仅允许 `14.120.52.215`）。  
+**所有路径**（含 `/static/auth_session.js`）都走该 location，因此：
+
+- 在服务器上 `curl guanli.feijihe.top` → **403**（非白名单 IP）
+- 用户侧若 HTML 能打开但出口 IP 与白名单不一致，**JS 被 403** → 浏览器报 `SY_AUTH is not defined` → 点登录无反应
+
+这与 MySQL / `admin888` 无关，是 **静态资源被 Nginx 拦了**。
+
+## 修复（二选一，建议都做）
+
+1. **代码（已做）**：`index_customer_order.html` **内联** `auth_session.js`，首页不再请求 `/static/auth_session.js`。
+2. **Nginx（C 在 87 改）**：在 `guanli` 的 `server` 块里、带白名单的 `location /` **之前** include：
+
+   ```nginx
+   include /www/feijihe/repo/deploy/nginx-guanli-static.conf.include;
+   ```
+
+   或手写 `location /static/ { proxy_pass http://127.0.0.1:3003/static/; }`，**不要**在 `/static/` 里写 `allow/deny`。
+
+## 自检
+
+```bash
+# 应 200（勿带白名单外的测试 IP 时期望 403 仅针对 /，/static 应 200）
+curl -s -o /dev/null -w "%{http_code}\n" https://guanli.feijihe.top/static/auth_session.js
+curl -s -o /dev/null -w "%{http_code}\n" -X POST https://guanli.feijihe.top/api/login \
+  -H 'Content-Type: application/json' -d '{"username":"admin","password":"admin888"}'
+```
+
+部署：`sudo bash /www/feijihe/repo/deploy.sh`（会覆盖 `index_customer_order.html`）。
+
+---
+
 # feijihe.top 生产端部署排查（400 / SY_AUTH）
 
 ## 常见原因

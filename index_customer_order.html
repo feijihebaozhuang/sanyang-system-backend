@@ -4,7 +4,118 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>三羊客户下单 · 管理后台</title>
-<script src="/static/auth_session.js"></script>
+<script>
+/* 内联 auth_session.js：guanli Nginx IP 白名单会拦 /static/，导致 SY_AUTH 未定义、登录无反应 */
+(function (global) {
+    const ROUTE_KEY = 'sanyang_ui_route';
+    const AUTH_USER_KEY = 'sanyang_auth_user';
+    const AUTH_TOKEN_KEY = 'sanyang_auth_token';
+    function storageGet(key) {
+        try { var v = localStorage.getItem(key); if (v) return v; } catch (e) {}
+        try { return sessionStorage.getItem(key); } catch (e) {}
+        return null;
+    }
+    function storageSet(key, value) {
+        try { localStorage.setItem(key, value); } catch (e) {}
+        try { sessionStorage.setItem(key, value); } catch (e) {}
+    }
+    function storageRemove(key) {
+        try { localStorage.removeItem(key); } catch (e) {}
+        try { sessionStorage.removeItem(key); } catch (e) {}
+    }
+    function readAuthCredentials() {
+        var u = storageGet(AUTH_USER_KEY);
+        var t = storageGet(AUTH_TOKEN_KEY);
+        if (u && t) return { user: u, token: t };
+        return null;
+    }
+    function applyAuthHeaders(headers) {
+        var h = Object.assign({}, headers || {});
+        var cred = readAuthCredentials();
+        if (cred) {
+            h['X-Sanyang-User'] = cred.user;
+            h['X-Sanyang-Token'] = cred.token;
+        }
+        return h;
+    }
+    function saveAuthCredentials(user, token) {
+        if (!user) return;
+        storageSet(AUTH_USER_KEY, user);
+        if (token) storageSet(AUTH_TOKEN_KEY, token);
+    }
+    function clearAuthCredentials() {
+        storageRemove(AUTH_USER_KEY);
+        storageRemove(AUTH_TOKEN_KEY);
+    }
+    function saveRoute(top, sub) {
+        var route = { top: top || 'main', sub: sub || null };
+        try { sessionStorage.setItem(ROUTE_KEY, JSON.stringify(route)); } catch (e) {}
+        var hash = sub ? '#page=' + encodeURIComponent(top) + '&sub=' + encodeURIComponent(sub)
+            : '#page=' + encodeURIComponent(top);
+        if (location.hash !== hash) {
+            history.replaceState(null, '', location.pathname + location.search + hash);
+        }
+    }
+    function readRoute() {
+        var raw = (location.hash || '').replace(/^#/, '');
+        if (raw) {
+            var p = new URLSearchParams(raw);
+            var page = p.get('page');
+            if (page) return { top: page, sub: p.get('sub') || null };
+        }
+        try {
+            var r = JSON.parse(sessionStorage.getItem(ROUTE_KEY) || '{}');
+            if (r.top) return { top: r.top, sub: r.sub || null };
+        } catch (e) {}
+        return { top: 'main', sub: null };
+    }
+    function clearRoute() {
+        try { sessionStorage.removeItem(ROUTE_KEY); } catch (e) {}
+        if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+    }
+    function isApiPath(path) {
+        if (!path) return false;
+        if (path.indexOf('/api/') === 0) return true;
+        if (global.location && path.indexOf(global.location.origin + '/api/') === 0) return true;
+        return false;
+    }
+    function apiFetch(url, options) {
+        var opts = Object.assign({ credentials: 'same-origin' }, options || {});
+        opts.headers = applyAuthHeaders(opts.headers);
+        if (!opts.headers['Content-Type'] && opts.method && opts.method.toUpperCase() === 'POST') {
+            opts.headers['Content-Type'] = 'application/json';
+        }
+        if (opts.body === undefined && opts.method && opts.method.toUpperCase() === 'POST') {
+            opts.body = '{}';
+        }
+        return fetch(url, opts);
+    }
+    if (global.fetch && !global.__SY_FETCH_PATCHED) {
+        global.__SY_FETCH_PATCHED = true;
+        var nativeFetch = global.fetch.bind(global);
+        global.fetch = function (url, options) {
+            var opts = options ? Object.assign({}, options) : {};
+            var path = '';
+            if (typeof url === 'string') path = url;
+            else if (url && url.url) path = url.url;
+            if (isApiPath(path)) {
+                opts.credentials = opts.credentials || 'same-origin';
+                opts.headers = applyAuthHeaders(opts.headers);
+            }
+            return nativeFetch(url, opts);
+        };
+    }
+    global.SY_AUTH = {
+        saveRoute: saveRoute,
+        readRoute: readRoute,
+        clearRoute: clearRoute,
+        apiFetch: apiFetch,
+        saveAuthCredentials: saveAuthCredentials,
+        clearAuthCredentials: clearAuthCredentials,
+        readAuthCredentials: readAuthCredentials
+    };
+})(window);
+</script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif; background: #f0f2f5; color: #333; }
