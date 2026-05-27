@@ -5,7 +5,7 @@
 小马哥专属
 """
 
-from flask import Flask, jsonify, send_from_directory, request, make_response, Response, session
+from flask import Flask, jsonify, send_from_directory, request, make_response, Response, session, redirect
 from flask_cors import CORS
 from flask_session import Session as FlaskSession
 import json, datetime, csv, io, os, hashlib, copy, time, re, hmac, urllib.parse, urllib.request
@@ -4865,11 +4865,35 @@ def guanli_login_entry():
     return resp
 
 
+@app.route('/guanli/logout')
+def guanli_logout():
+    resp = redirect('/guanli/login')
+    for key in ('sanyang_auth_user', 'sanyang_auth_token'):
+        resp.delete_cookie(key, path='/')
+    return resp
+
+
 @app.route('/guanli')
 @app.route('/guanli/')
 def guanli_admin_entry():
-    """3003 统一管理后台入口（feijihe.top/guanli/）"""
-    resp = make_response(send_from_directory('.', 'index_customer_order.html'))
+    """3003 统一管理后台：须先 /guanli/login 表单登录，服务端校验 Cookie。"""
+    import guanli_server_login as _gsl
+
+    un, tok = _gsl.read_guanli_auth_from_request()
+    if not un:
+        return redirect('/guanli/login')
+    user = _gsl.fetch_co_user(un, tok)
+    if not user:
+        resp = redirect('/guanli/login?error=auth')
+        resp.delete_cookie('sanyang_auth_user', path='/')
+        resp.delete_cookie('sanyang_auth_token', path='/')
+        return resp
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    html_path = os.path.join(base_dir, 'index_customer_order.html')
+    with open(html_path, encoding='utf-8') as f:
+        html = f.read()
+    body = _gsl.inject_preauth_html(html, user)
+    resp = make_response(body)
     resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
     return resp
 

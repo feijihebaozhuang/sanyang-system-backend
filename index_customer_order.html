@@ -2023,8 +2023,18 @@ function esc(s) {
 document.getElementById('loginPwd').addEventListener('keydown', function(e) { if (e.key === 'Enter') doLogin(); });
 
 function tryRestoreSession() {
+  if (window.__SY_PREAUTH && window.__SY_PREAUTH.username) {
+    currentUser = window.__SY_PREAUTH;
+    if (globalThis.SY_AUTH) {
+      SY_AUTH.saveAuthCredentials(currentUser.username, currentUser.auth_token);
+    }
+    showApp();
+    var route = (globalThis.SY_AUTH && SY_AUTH.readRoute) ? SY_AUTH.readRoute() : { top: 'dashboard', sub: null };
+    switchPage(route.top === 'main' ? 'dashboard' : (route.top || 'dashboard'));
+    return;
+  }
   if (!globalThis.SY_AUTH) {
-    showLogin();
+    location.href = '/guanli/login';
     return;
   }
   SY_AUTH.apiFetch('/api/me').then(function(res) {
@@ -2043,7 +2053,7 @@ function tryRestoreSession() {
     }
   }).catch(function() {
     SY_AUTH.clearAuthCredentials();
-    showLogin();
+    location.href = '/guanli/login';
   });
 }
 
