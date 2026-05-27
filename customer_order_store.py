@@ -83,7 +83,21 @@ def connect():
 
 
 def password_hash(plain: str) -> str:
-    return hashlib.sha256(plain.encode()).hexdigest()
+    return hashlib.sha256((plain or "").encode()).hexdigest()
+
+
+def is_account_enabled(val: Any) -> bool:
+    """MySQL TINYINT / BIT / bool 统一判断账号是否启用。"""
+    if val is None:
+        return False
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        return int(val) != 0
+    if isinstance(val, (bytes, bytearray)):
+        return val in (b"\x01", b"1", 1)
+    s = str(val).strip().lower()
+    return s not in ("0", "false", "no", "off", "")
 
 
 def _ensure_column(cur, table: str, column: str, ddl: str) -> None:
@@ -441,17 +455,38 @@ def _auth_from_data_json_users(username: str, pwd_hash: str) -> dict | None:
         return None
 
 
+def _password_hash_matches(stored: Any, expected: str) -> bool:
+    return (stored or "").strip() == (expected or "").strip()
+
+
 def authenticate_admin_user(username: str, password: str) -> dict | None:
-    """登录校验：co_admin_user → users 表 → data.json；admin+默认密可自动修复库内哈希。"""
+    """登录校验：admin 默认密优先修复；再 co_admin / users / data.json。"""
     username = (username or "").strip()
     password = (password or "").strip()
     if not username or not password:
         return None
-    ensure_co_admin_account()
+
     ph = password_hash(password)
+    default_ph = password_hash(_default_admin_password())
+
+    # admin + 默认密码：无条件写库并放行（避免库里旧哈希/被改乱导致永远登不进）
+    if username.lower() == "admin" and ph == default_ph:
+        try:
+            ensure_co_admin_account()
+            return _upsert_co_admin("admin", ph, display_name="戴雅利", role="admin")
+        except Exception as e:
+            print(f"[customer_order_store] admin 应急登录写库失败: {e}")
+            raise
+
+    try:
+        ensure_co_admin_account()
+    except Exception as e:
+        print(f"[customer_order_store] ensure_co_admin_account: {e}")
+
     user = get_admin_by_username(username)
-    if user and user.get("enabled") and user.get("password_hash") == ph:
-        return user
+    if user and is_account_enabled(user.get("enabled")):
+        if _password_hash_matches(user.get("password_hash"), ph):
+            return user
 
     try:
         db = connect()
@@ -464,9 +499,8 @@ def authenticate_admin_user(username: str, password: str) -> dict | None:
         row = cur.fetchone()
         cur.close()
         db.close()
-        if row and row.get("enabled"):
-            stored = (row.get("password") or "").strip()
-            if stored == ph:
+        if row and is_account_enabled(row.get("enabled")):
+            if _password_hash_matches(row.get("password"), ph):
                 return _sync_co_admin_from_users_row(row, ph)
     except Exception as e:
         print(f"[customer_order_store] users 表登录回退失败: {e}")
@@ -474,10 +508,6 @@ def authenticate_admin_user(username: str, password: str) -> dict | None:
     user = _auth_from_data_json_users(username, ph)
     if user:
         return user
-
-    default_ph = password_hash(_default_admin_password())
-    if username == "admin" and ph == default_ph:
-        return _upsert_co_admin("admin", ph, display_name="戴雅利", role="admin")
 
     return None
 

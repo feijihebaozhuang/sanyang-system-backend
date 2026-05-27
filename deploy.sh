@@ -121,7 +121,13 @@ if [ -f "$TARGET_DIR/scripts/migrate_orders_cache_to_mysql.py" ]; then
     || warn "  迁移跳过或失败，可稍后手动: migrate_orders_cache_to_mysql.py --from-table orders_cache"
 fi
 
-log "[2c] Python compile check (all .py)..."
+log "[2c] 3003 管理后台 admin 账号对齐..."
+if [ -f "$TARGET_DIR/scripts/reset_co_admin_3003.py" ]; then
+  python3 "$TARGET_DIR/scripts/reset_co_admin_3003.py" \
+    || warn "  admin 重置失败（检查 stable/.env 与 MySQL）"
+fi
+
+log "[2d] Python compile check (all .py)..."
 python3 "$TARGET_DIR/scripts/compile_all_py.py" || { err "语法检查失败，中止部署"; exit 1; }
 python3 "$TARGET_DIR/scripts/check_truncation.py" || { err "截断模式检查失败，中止部署"; exit 1; }
 python3 "$TARGET_DIR/scripts/verify_webhook_route.py" || { err "Webhook 路由未注册，中止部署"; exit 1; }
@@ -134,6 +140,10 @@ fi
 
 if [ "$USE_SYSTEMD" -eq 1 ]; then
     log "[3/5] Restart via systemd (venv python)..."
+    if [ -f "$REPO_DIR/deploy/systemd/sanyang-customer-order.service" ]; then
+        sudo cp -f "$REPO_DIR/deploy/systemd/sanyang-customer-order.service" /etc/systemd/system/ 2>/dev/null \
+            || warn "  未能更新 sanyang-customer-order.service（需 root）"
+    fi
     _run_systemctl daemon-reload 2>/dev/null || true
     _run_systemctl restart sanyang-cs.service sanyang-production.service sanyang-customer-order.service \
         || { err "systemctl restart 失败，请检查 /etc/systemd/system/*.service 的 ExecStart"; exit 1; }

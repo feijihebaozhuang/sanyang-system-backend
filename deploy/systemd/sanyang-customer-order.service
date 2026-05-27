@@ -8,6 +8,7 @@ User=admin
 Group=admin
 WorkingDirectory=/www/feijihe/stable
 Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/www/feijihe/stable/.env
 ExecStart=/www/feijihe/stable/venv/bin/gunicorn -w 2 -b 0.0.0.0:3003 --timeout 120 app_customer_order:app
 Restart=on-failure
 RestartSec=5

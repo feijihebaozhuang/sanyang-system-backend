@@ -82,16 +82,18 @@ def _auth_token_for(username: str) -> str:
 
 
 def resolve_login_user() -> dict | None:
-    username = session.get("username")
-    if username:
-        user = co_store.get_admin_by_username(username)
-        if user and user.get("enabled"):
-            return user
+    if co_store is None:
+        return None
     hdr_user = (request.headers.get("X-Sanyang-User") or "").strip()
     hdr_tok = (request.headers.get("X-Sanyang-Token") or "").strip()
     if hdr_user and hdr_tok and hdr_tok == _auth_token_for(hdr_user):
         user = co_store.get_admin_by_username(hdr_user)
-        if user and user.get("enabled"):
+        if user and co_store.is_account_enabled(user.get("enabled")):
+            return user
+    username = session.get("username")
+    if username:
+        user = co_store.get_admin_by_username(username)
+        if user and co_store.is_account_enabled(user.get("enabled")):
             return user
     return None
 
@@ -138,6 +140,14 @@ app.register_blueprint(mp_bp)
 
 @app.route("/api/login", methods=["POST"])
 def login():
+    try:
+        _bootstrap_tables()
+    except Exception as e:
+        print(f"[3003 login] bootstrap: {e}")
+        return jsonify({"success": False, "message": "服务初始化失败，请联系管理员"}), 503
+    if co_store is None:
+        return jsonify({"success": False, "message": "服务未就绪"}), 503
+
     data = request.get_json(silent=True) or {}
     username = (data.get("username") or "").strip()
     password = (data.get("password") or "").strip()
@@ -147,6 +157,9 @@ def login():
         user = co_store.authenticate_admin_user(username, password)
     except Exception as e:
         print(f"[3003 login] {e}")
+        import traceback
+
+        traceback.print_exc()
         return jsonify(
             {
                 "success": False,
@@ -158,7 +171,9 @@ def login():
     session.permanent = True
     session["username"] = user.get("username") or username
     session.modified = True
-    return jsonify({"success": True, "user": _user_payload(user)})
+    payload = _user_payload(user)
+    resp = jsonify({"success": True, "user": payload})
+    return resp
 
 
 @app.route("/api/logout", methods=["POST"])

@@ -172,8 +172,16 @@ function toast(msg) {
 
 function apiFetch(url, opts) {
   return SY_AUTH.apiFetch(url, opts).then(function(r) {
-    if (r.status === 401) { showLogin(); throw new Error('未登录'); }
-    return r.json();
+    return r.json().then(function(d) {
+      if (r.status === 401) {
+        if (url.indexOf('/api/me') < 0) showLogin();
+        throw new Error((d && (d.error || d.message)) || '未登录');
+      }
+      if (!r.ok && d && !d.success && (d.error || d.message)) {
+        throw new Error(d.error || d.message);
+      }
+      return d;
+    });
   });
 }
 
@@ -1835,17 +1843,31 @@ function esc(s) {
 
 document.getElementById('loginPwd').addEventListener('keydown', function(e) { if (e.key === 'Enter') doLogin(); });
 
-apiFetch('/api/me').then(function(d) {
-  if (d.success) {
-    currentUser = d.user;
-    SY_AUTH.saveAuthCredentials(d.user.username, d.user.auth_token);
-    showApp();
-    var route = SY_AUTH.readRoute();
-    switchPage(route.top || 'dashboard');
-  } else {
+function tryRestoreSession() {
+  if (typeof globalThis.SY_AUTH === 'undefined') {
     showLogin();
+    return;
   }
-}).catch(function() { showLogin(); });
+  SY_AUTH.apiFetch('/api/me').then(function(res) {
+    return res.json().then(function(d) { return { ok: res.ok, data: d }; });
+  }).then(function(r) {
+    if (r.ok && r.data && r.data.success && r.data.user) {
+      currentUser = r.data.user;
+      SY_AUTH.saveAuthCredentials(r.data.user.username, r.data.user.auth_token);
+      showApp();
+      var route = SY_AUTH.readRoute();
+      switchPage(route.top || 'dashboard');
+    } else {
+      SY_AUTH.clearAuthCredentials();
+      showLogin();
+    }
+  }).catch(function() {
+    SY_AUTH.clearAuthCredentials();
+    showLogin();
+  });
+}
+
+tryRestoreSession();
 </script>
 </body>
 </html>
