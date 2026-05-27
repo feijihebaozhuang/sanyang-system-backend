@@ -36,8 +36,21 @@ def _connect():
     return connect()
 
 
-def load_employees_master(base_dir: str | None = None) -> list[dict[str, Any]]:
-    """全量员工主数据：优先 data.json employees_master（含美丽湾/洋坑塘 dept/group）。"""
+def _fetch_mysql_employees() -> list[dict[str, Any]]:
+    try:
+        db = _connect()
+        cur = db.cursor()
+        cur.execute("SELECT name, position, enabled FROM employees ORDER BY name")
+        rows = cur.fetchall() or []
+        cur.close()
+        db.close()
+        return list(rows)
+    except Exception:
+        return []
+
+
+def _read_employees_master_raw(base_dir: str | None = None) -> list[dict[str, Any]]:
+    """只读 data.json 的 employees_master / permission_data.employees，不做 MySQL 合并。"""
     raw = config_json.read_json_file(config_json.data_json_path(base_dir), {})
     master = raw.get("employees_master") if isinstance(raw, dict) else None
     if isinstance(master, list) and master:
@@ -47,6 +60,55 @@ def load_employees_master(base_dir: str | None = None) -> list[dict[str, Any]]:
     if isinstance(emps, list) and emps:
         return copy.deepcopy(emps)
     return []
+
+
+def load_employees_master(base_dir: str | None = None) -> list[dict[str, Any]]:
+    """全量员工主数据：employees_master + MySQL 补齐，姓名稳定排序。"""
+    return load_employees_unified(base_dir)
+
+
+def load_employees_unified(base_dir: str | None = None) -> list[dict[str, Any]]:
+    """员工列表唯一入口：JSON 主数据为准，MySQL 仅补缺失的人（避免各页名单不一致、顺序乱跳）。"""
+    master = _read_employees_master_raw(base_dir)
+    by_name: dict[str, dict[str, Any]] = {}
+    for e in master:
+        n = (e.get("name") or "").strip()
+        if n:
+            by_name[n] = copy.deepcopy(e)
+    for r in _fetch_mysql_employees():
+        n = (r.get("name") or "").strip()
+        if not n or n in by_name:
+            continue
+        by_name[n] = {
+            "name": n,
+            "position": (r.get("position") or "").strip() or "员工",
+            "group": "其他",
+            "phone": "",
+            "dept": "美丽湾工厂部",
+        }
+    return sorted(by_name.values(), key=lambda x: (x.get("name") or ""))
+
+
+def _ensure_mysql_only_in_master(base_dir: str | None = None) -> None:
+    """把仅存在于 MySQL 的员工写入 employees_master，避免各页名单不一致。"""
+    raw = _read_employees_master_raw(base_dir)
+    names = {(e.get("name") or "").strip() for e in raw}
+    extras: list[dict[str, Any]] = []
+    for r in _fetch_mysql_employees():
+        n = (r.get("name") or "").strip()
+        if n and n not in names:
+            extras.append(
+                {
+                    "name": n,
+                    "position": (r.get("position") or "").strip() or "员工",
+                    "group": "其他",
+                    "phone": "",
+                    "dept": "美丽湾工厂部",
+                }
+            )
+            names.add(n)
+    if extras:
+        _persist_employees_master(raw + extras, base_dir=base_dir)
 
 
 def load_resigned_employees(base_dir: str | None = None) -> list[dict[str, Any]]:
@@ -145,7 +207,7 @@ def load_permission_bundle(base_dir: str | None = None) -> dict[str, Any]:
         bundle["processes"] = []
     if "positions" not in bundle:
         bundle["positions"] = list(DEFAULT_POSITIONS)
-    bundle["employees"] = load_employees_master(base_dir)
+    bundle["employees"] = load_employees_unified(base_dir)
     if "permissions" not in bundle:
         bundle["permissions"] = {}
     if "employee_enabled" not in bundle:
@@ -156,35 +218,22 @@ def load_permission_bundle(base_dir: str | None = None) -> dict[str, Any]:
         bundle["employee_roles"] = {}
 
     perm_resolve.merge_employee_permissions_from_db(bundle, _connect)
-    _merge_employees_from_mysql(bundle)
+    _sync_employee_enabled_from_mysql(bundle)
     _merge_users_from_mysql(bundle)
     sync_permissions(bundle)
     return bundle
 
 
-def _merge_employees_from_mysql(bundle: dict) -> None:
-    """仅同步 enabled；MySQL 有而主数据无的员工追加到列表（不覆盖美丽湾全量）。"""
-    try:
-        db = _connect()
-        cur = db.cursor()
-        cur.execute("SELECT name, position, enabled FROM employees ORDER BY name")
-        rows = cur.fetchall() or []
-        cur.close()
-        db.close()
-    except Exception:
-        return
+def _sync_employee_enabled_from_mysql(bundle: dict) -> None:
+    """只同步 enabled 状态，不再往 employees 列表末尾追加（统一由 load_employees_unified 补齐）。"""
+    rows = _fetch_mysql_employees()
     if not rows:
         return
     enabled = bundle.setdefault("employee_enabled", {})
-    names = {e.get("name") for e in bundle.get("employees") or [] if e.get("name")}
     for r in rows:
-        name = r["name"]
-        enabled[name] = bool(r.get("enabled", 1))
-        if name not in names:
-            bundle.setdefault("employees", []).append(
-                {"name": name, "position": r.get("position") or ""}
-            )
-            names.add(name)
+        name = (r.get("name") or "").strip()
+        if name:
+            enabled[name] = bool(r.get("enabled", 1))
 
 
 def _merge_users_from_mysql(bundle: dict) -> None:
@@ -294,7 +343,8 @@ def save_permission_bundle(data: dict, *, base_dir: str | None = None) -> dict[s
 
 
 def list_employees_full() -> list[dict[str, Any]]:
-    emps = load_employees_master()
+    _ensure_mysql_only_in_master()
+    emps = load_employees_unified()
     users = {u.get("employee_name"): u for u in list_users() if u.get("employee_name")}
     out = []
     for e in emps:
@@ -322,7 +372,7 @@ def add_employee_full(
     name = (name or "").strip()
     if not name:
         raise ValueError("员工姓名不能为空")
-    emps = load_employees_master(base_dir)
+    emps = _read_employees_master_raw(base_dir)
     if any(e.get("name") == name for e in emps):
         raise ValueError(f"员工 {name} 已存在")
     emps.append(
@@ -345,9 +395,11 @@ def add_employee_full(
     cur.close()
     db.close()
     bundle = load_permission_bundle(base_dir)
-    bundle["employees"] = emps
+    bundle["employees"] = load_employees_unified(base_dir)
     sync_permissions(bundle)
-    _persist_employees_master(emps, base_dir=base_dir)
+    persist = _persist_employees_master(emps, base_dir=base_dir)
+    if not persist.get("employees_master_ok"):
+        raise RuntimeError("员工已写入 MySQL，但 data.json employees_master 保存失败，请检查目录权限")
     config_json.write_permission_overlay_detail(
         {"permissions": bundle.get("permissions"), "employee_enabled": bundle.get("employee_enabled")},
         base_dir=base_dir,
@@ -370,8 +422,21 @@ def update_employee_full(
     name = (name or "").strip()
     if not old_name or not name:
         raise ValueError("员工姓名不能为空")
-    emps = load_employees_master(base_dir)
+    emps = _read_employees_master_raw(base_dir)
     target = next((e for e in emps if e.get("name") == old_name), None)
+    if not target:
+        # 仅在 MySQL 的老员工：补进主数据
+        for r in _fetch_mysql_employees():
+            if (r.get("name") or "").strip() == old_name:
+                target = {
+                    "name": old_name,
+                    "position": (r.get("position") or "").strip() or "员工",
+                    "group": "其他",
+                    "phone": "",
+                    "dept": "美丽湾工厂部",
+                }
+                emps.append(target)
+                break
     if not target:
         raise ValueError(f"未找到员工 {old_name}")
     target["name"] = name
@@ -432,7 +497,7 @@ def resign_employee(name: str, *, operator: str = "", base_dir: str | None = Non
     name = (name or "").strip()
     if not name:
         raise ValueError("name 必填")
-    emps = load_employees_master(base_dir)
+    emps = _read_employees_master_raw(base_dir)
     emp = next((e for e in emps if e.get("name") == name), None)
     resigned = load_resigned_employees(base_dir)
     if emp:
@@ -470,7 +535,7 @@ def restore_resigned_employee(name: str, *, base_dir: str | None = None) -> None
     resigned = load_resigned_employees(base_dir)
     rec = next((e for e in resigned if e.get("name") == name), None)
     resigned = [e for e in resigned if e.get("name") != name]
-    emps = load_employees_master(base_dir)
+    emps = _read_employees_master_raw(base_dir)
     if rec and not any(e.get("name") == name for e in emps):
         row = {k: v for k, v in rec.items() if k not in ("resigned_time", "operator")}
         emps.append(row)
@@ -520,6 +585,30 @@ def upsert_employee(name: str, position: str = "", *, enabled: bool = True) -> d
     db.commit()
     cur.close()
     db.close()
+    emps = _read_employees_master_raw()
+    row = next((e for e in emps if e.get("name") == name), None)
+    if row:
+        if position:
+            row["position"] = (position or "").strip() or row.get("position") or "员工"
+    else:
+        emps.append(
+            {
+                "name": name,
+                "position": (position or "").strip() or "员工",
+                "group": "其他",
+                "phone": "",
+                "dept": "美丽湾工厂部",
+            }
+        )
+    persist = _persist_employees_master(emps)
+    if not persist.get("employees_master_ok"):
+        raise RuntimeError("MySQL 已更新，但 employees_master 写入 data.json 失败")
+    bundle = load_permission_bundle()
+    sync_permissions(bundle)
+    config_json.write_permission_overlay_detail(
+        {"permissions": bundle.get("permissions"), "employee_enabled": bundle.get("employee_enabled")},
+        keys=frozenset({"permissions", "employee_enabled"}),
+    )
     return {"name": name, "position": position, "enabled": enabled}
 
 
@@ -563,7 +652,8 @@ def list_users() -> list[dict]:
 
 def list_login_accounts() -> list[dict[str, Any]]:
     """员工主数据 + 登录账号合并视图（3003 登录账号页）。"""
-    emps = load_employees_master()
+    _ensure_mysql_only_in_master()
+    emps = load_employees_unified()
     users = list_users()
     by_emp: dict[str, dict] = {}
     emp_names: set[str] = set()

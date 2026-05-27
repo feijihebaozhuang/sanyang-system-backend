@@ -367,14 +367,17 @@ def api_perm_employee_save():
         return err
     data = request.get_json(silent=True) or {}
     try:
-        item = emp_store.upsert_employee(
+        item = emp_store.add_employee_full(
             data.get("name") or "",
-            data.get("position") or "",
-            enabled=bool(data.get("enabled", True)),
+            position=data.get("position") or "",
+            group=data.get("group") or "其他",
+            dept=data.get("dept") or "美丽湾工厂部",
         )
         return jsonify({"success": True, "item": item})
     except ValueError as e:
         return jsonify({"success": False, "error": str(e)}), 400
+    except RuntimeError as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route("/api/perm/employees/delete", methods=["POST"])
@@ -524,6 +527,8 @@ def api_employee_add():
         return jsonify({"success": True, "message": "添加成功", "item": item})
     except ValueError as e:
         return jsonify({"success": False, "message": str(e)}), 400
+    except RuntimeError as e:
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 @app.route("/api/employee/update", methods=["POST"])
@@ -544,6 +549,8 @@ def api_employee_update():
         return jsonify({"success": True, "message": "更新成功"})
     except ValueError as e:
         return jsonify({"success": False, "message": str(e)}), 400
+    except RuntimeError as e:
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 @app.route("/api/employee/delete", methods=["POST"])

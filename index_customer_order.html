@@ -929,10 +929,11 @@ function saveFullEmployeeFromForm() {
   apiFetch(url, { method: 'POST', body: JSON.stringify(payload) })
     .then(function(d) {
       if (!d.success) { toast(d.message || d.error || '保存失败'); return; }
-      toast(d.message || '已保存');
+      toast((d.message || '已保存') + '；可在「登录账号」开通登录');
       editingEmpOldName = '';
       document.getElementById('admFormArea').innerHTML = '';
       renderPermFullEmployees();
+      window._loginAccountsCache = null;
     })
     .catch(function(err) { toast(err.message || '网络错误'); });
 }
@@ -1160,44 +1161,58 @@ function addShopRow() {
     .then(function(d) { if (d.success) renderPermShop(true); else toast(d.error || '失败'); });
 }
 
-function renderPermSysUsers() {
+function renderPermSysUsers(forceReload) {
   var panel = document.getElementById('permPanel');
+  if (!forceReload && window._loginAccountsCache && window._loginAccountsCache.length) {
+    renderPermSysUsersPanel(window._loginAccountsCache);
+    return;
+  }
   panel.innerHTML = '<p class="empty">加载登录账号…</p>';
   apiFetch('/api/perm/users/accounts').then(function(d) {
     if (!d.success) {
       panel.innerHTML = '<p class="empty">加载失败</p>';
       return;
     }
-    window._loginAccounts = d.items || [];
-    var html = '<div class="info-box">以<strong>员工主数据</strong>为准：显示名应与员工姓名一致。无登录账号的行可点「开通」。编辑时可<strong>修改登录账号</strong>（原账号会替换）。</div>' +
-      '<div class="toolbar">' +
-      '<button class="btn" onclick="syncLoginAccounts()">🔄 同步显示名</button>' +
-      '<button onclick="editSysUser(null)">+ 新增登录账号</button></div>' +
-      '<div class="perm-table-wrap"><table><thead><tr><th>员工姓名</th><th>登录账号</th><th>显示名</th><th>角色</th><th>厂区</th><th>状态</th><th>操作</th></tr></thead><tbody>';
-    if (!window._loginAccounts.length) {
-      html += '<tr><td colspan="7" class="empty">暂无数据</td></tr>';
-    } else {
-      window._loginAccounts.forEach(function(r, i) {
-        var st = r.has_login
-          ? (r.enabled ? '<span class="tag tag-green">已开通</span>' : '<span class="tag tag-gray">停用</span>')
-          : '<span class="tag tag-orange">未开通</span>';
-        var orphan = r.orphan ? ' <span class="tag tag-gray">无员工</span>' : '';
-        html += '<tr><td><strong>' + esc(r.employee_name || '—') + '</strong>' + orphan + '</td>' +
-          '<td>' + esc(r.username || '—') + '</td><td>' + esc(r.display_name || '') + '</td>' +
-          '<td>' + esc(r.role || '—') + '</td><td>' + esc(r.dept || '—') + '</td><td>' + st + '</td>' +
-          '<td><button class="btn secondary" onclick="editSysUserByIdx(' + i + ')">' + (r.has_login ? '编辑' : '开通') + '</button></td></tr>';
-      });
-    }
-    html += '</tbody></table></div>';
-    panel.innerHTML = html;
+    window._loginAccountsCache = d.items || [];
+    renderPermSysUsersPanel(window._loginAccountsCache);
+  }).catch(function(e) {
+    panel.innerHTML = '<p class="empty">加载失败：' + esc(e.message) + '</p>';
   });
+}
+
+function renderPermSysUsersPanel(items) {
+  var panel = document.getElementById('permPanel');
+  if (!panel) return;
+  window._loginAccounts = items || [];
+  var html = '<div class="info-box">以<strong>员工主数据</strong>为准：显示名应与员工姓名一致。无登录账号的行可点「开通」。编辑时可<strong>修改登录账号</strong>（原账号会替换）。</div>' +
+    '<div class="toolbar">' +
+    '<button class="btn" onclick="syncLoginAccounts()">🔄 同步显示名</button>' +
+    '<button class="btn secondary" onclick="renderPermSysUsers(true)">↻ 从服务器重载</button>' +
+    '<button onclick="editSysUser(null)">+ 新增登录账号</button></div>' +
+    '<div class="perm-table-wrap"><table><thead><tr><th>员工姓名</th><th>登录账号</th><th>显示名</th><th>角色</th><th>厂区</th><th>状态</th><th>操作</th></tr></thead><tbody>';
+  if (!items.length) {
+    html += '<tr><td colspan="7" class="empty">暂无数据</td></tr>';
+  } else {
+    window._loginAccounts.forEach(function(r, i) {
+      var st = r.has_login
+        ? (r.enabled ? '<span class="tag tag-green">已开通</span>' : '<span class="tag tag-gray">停用</span>')
+        : '<span class="tag tag-orange">未开通</span>';
+      var orphan = r.orphan ? ' <span class="tag tag-gray">无员工</span>' : '';
+      html += '<tr><td><strong>' + esc(r.employee_name || '—') + '</strong>' + orphan + '</td>' +
+        '<td>' + esc(r.username || '—') + '</td><td>' + esc(r.display_name || '') + '</td>' +
+        '<td>' + esc(r.role || '—') + '</td><td>' + esc(r.dept || '—') + '</td><td>' + st + '</td>' +
+        '<td><button class="btn secondary" onclick="editSysUserByIdx(' + i + ')">' + (r.has_login ? '编辑' : '开通') + '</button></td></tr>';
+    });
+  }
+  html += '</tbody></table></div>';
+  panel.innerHTML = html;
 }
 
 function syncLoginAccounts() {
   apiFetch('/api/perm/users/sync', { method: 'POST', body: '{}' })
     .then(function(d) {
       toast(d.message || (d.success ? '已同步' : '失败'));
-      if (d.success) renderPermSysUsers();
+      if (d.success) renderPermSysUsers(true);
     });
 }
 
@@ -1316,14 +1331,20 @@ function renderPermEmployees() {
   document.getElementById('permPanel').innerHTML = html;
 }
 
-function addPermEmployee() {
+def addPermEmployee() {
   var name = prompt('员工姓名');
   if (!name) return;
-  var pos = prompt('岗位（可选）') || '';
-  apiFetch('/api/perm/employees/save', { method: 'POST', body: JSON.stringify({ name: name.trim(), position: pos.trim() }) })
+  var pos = prompt('职务（可选）') || '';
+  apiFetch('/api/employee/add', {
+    method: 'POST',
+    body: JSON.stringify({ name: name.trim(), position: pos.trim(), group: '其他', dept: '美丽湾工厂部' })
+  })
     .then(function(d) {
-      if (d.success) { toast('已添加'); loadPermissions(); }
-      else toast(d.error || '失败');
+      if (d.success) {
+        toast('已添加，请到「登录账号」页开通登录');
+        window._loginAccountsCache = null;
+        loadPermissions();
+      } else toast(d.message || d.error || '失败');
     });
 }
 
