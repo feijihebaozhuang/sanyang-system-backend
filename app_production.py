@@ -68,6 +68,10 @@ app.config['SESSION_FILE_THRESHOLD'] = 100
 FlaskSession(app)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
+import embed_frame_policy as _embed_frame_policy
+
+_embed_frame_policy.register_embed_parents(app)
+
 # 小程序 API 同时挂到 3002（feijihe.top 证书可用；guanli 子域 SSL 未配时走此入口）
 try:
     from mp_api import mp_bp as _mp_bp

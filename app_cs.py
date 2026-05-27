@@ -37,6 +37,10 @@ app.config['SESSION_COOKIE_SECURE'] = os.getenv('SESSION_COOKIE_SECURE', '').low
     '1', 'true', 'yes'
 )
 
+import embed_frame_policy as _embed_frame_policy
+
+_embed_frame_policy.register_embed_parents(app)
+
 import webhook_routes as _webhook_routes
 
 _webhook_routes.register_webhook_routes(app)

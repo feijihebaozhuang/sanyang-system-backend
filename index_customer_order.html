@@ -73,7 +73,12 @@ tr:hover td { background: #fafcff; }
 .btn-xs.green { background: #27ae60; }
 .btn-xs.blue { background: #2980b9; }
 .btn-xs.red { background: #e74c3c; }
-.pos-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 4px; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
+.main.embed-mode { max-width: none; padding: 0; margin: 0; width: 100%; }
+.embed-toolbar { padding: 8px 16px; background: #fff; border-bottom: 1px solid #e8e8e8; font-size: 13px; color: #666; display: flex; align-items: center; gap: 12px; }
+.embed-toolbar a { color: #2980b9; text-decoration: none; }
+.embed-toolbar a:hover { text-decoration: underline; }
+.embed-frame-wrap { height: calc(100vh - 52px - 45px - 37px); background: #f0f2f5; }
+.embed-frame-wrap iframe { width: 100%; height: 100%; border: none; display: block; background: #fff; }
 </style>
 </head>
 <body>
@@ -104,9 +109,9 @@ tr:hover td { background: #fafcff; }
     <button data-page="orders" onclick="switchPage('orders')">订单总览</button>
     <button data-page="cs_staff" onclick="switchPage('cs_staff')">客服员工</button>
     <button data-page="permissions" id="navPermissions" onclick="switchPage('permissions')">权限管理</button>
+    <button data-page="embed_cs" onclick="switchPage('embed_cs')">客服端</button>
+    <button data-page="embed_prod" onclick="switchPage('embed_prod')">生产端</button>
     <span class="nav-divider"></span>
-    <a class="nav-ext" href="https://zean.feijihe.top/" target="_blank" rel="noopener noreferrer">客服端 ↗</a>
-    <a class="nav-ext" href="https://feijihe.top/" target="_blank" rel="noopener noreferrer">生产端 ↗</a>
     <a class="nav-ext" href="https://erp.superboss.cc/index.html#/index/" target="_blank" rel="noopener noreferrer">快麦ERP ↗</a>
   </div>
   <div class="main" id="mainContent"></div>
@@ -120,6 +125,12 @@ var currentPage = 'dashboard';
 var csStaffCache = [];
 var categoriesCache = [];
 var customersCache = [];
+var embedIframes = {};
+
+var EMBED_URLS = {
+  embed_cs: 'https://zean.feijihe.top/',
+  embed_prod: 'https://feijihe.top/'
+};
 
 var STATUS_LABELS = {
   draft: '草稿', pending_review: '待审核', approved: '已通过',
@@ -182,17 +193,40 @@ function switchPage(page) {
     b.classList.toggle('active', b.getAttribute('data-page') === page);
   });
   SY_AUTH.saveRoute(page, null);
-  document.getElementById('mainContent').className = 'main';
+  var isEmbed = page === 'embed_cs' || page === 'embed_prod';
+  document.getElementById('mainContent').className = isEmbed ? 'main embed-mode' : 'main';
   var loaders = {
     dashboard: loadDashboard,
     categories: loadCategories,
     customers: loadCustomers,
     orders: loadOrders,
     cs_staff: loadCsStaff,
-    permissions: loadPermissions
+    permissions: loadPermissions,
+    embed_cs: loadEmbedCs,
+    embed_prod: loadEmbedProd
   };
   (loaders[page] || loadDashboard)();
 }
+
+function loadEmbedFrame(page, title) {
+  var url = EMBED_URLS[page];
+  document.getElementById('mainContent').innerHTML =
+    '<div class="embed-toolbar"><span><strong>' + esc(title) + '</strong> · 内嵌于 3003</span>' +
+    '<a href="' + url + '" target="_blank" rel="noopener noreferrer">新窗口打开 ↗</a></div>' +
+    '<div class="embed-frame-wrap" id="embedWrap"></div>';
+  var wrap = document.getElementById('embedWrap');
+  if (!embedIframes[page]) {
+    var ifr = document.createElement('iframe');
+    ifr.src = url;
+    ifr.title = title;
+    ifr.setAttribute('allow', 'clipboard-read; clipboard-write');
+    embedIframes[page] = ifr;
+  }
+  wrap.appendChild(embedIframes[page]);
+}
+
+function loadEmbedCs() { loadEmbedFrame('embed_cs', '客服端'); }
+function loadEmbedProd() { loadEmbedFrame('embed_prod', '生产端'); }
 
 function statusTag(s) {
   var cls = s === 'approved' || s === 'completed' ? 'tag-green' :
@@ -215,7 +249,7 @@ function loadDashboard() {
       '<div class="card"><h2>系统说明</h2>' +
       '<p style="font-size:14px;line-height:1.8;color:#555;">' +
       '本页为<strong>三羊统一管理入口</strong>（guanli.feijihe.top / 3003）。<br>' +
-      '顶部导航可新窗口打开客服端、生产端、快麦 ERP；权限在此统一维护。<br>' +
+      '顶部导航：<strong>客服端、生产端</strong>在本页内嵌；<strong>快麦 ERP</strong>新窗口打开。权限在此统一维护。<br>' +
       '<strong>客户下单小程序</strong>（weapp/customer-order）对接 3003。<br>' +
       '<strong>客服审单</strong>在原先<strong>报价小程序 quote-weapp</strong>（AppID wxa1d9f876327af0c0）里，首页「客户下单审单」入口，不是单独 cs-order。<br>' +
       'SKU 全量导入：在 87 执行 <code>scripts/sync_km_sku_map_from_km.py --resume</code>。' +
