@@ -1498,20 +1498,24 @@ function savePermPositions() {
 function renderPermMaterialMap() {
   var panel = document.getElementById('permPanel');
   panel.innerHTML = '<p class="empty">加载材料映射…</p>';
-  apiFetch('/api/quote_data').then(function(res) {
-    if (!res.success || !res.data) {
+  apiFetch('/api/perm/material_mapping').then(function(res) {
+    if (!res.success) {
       panel.innerHTML = '<p class="empty">加载失败</p>';
       return;
     }
-    window._quoteDataCache = res.data;
+    var rows = res.material_mapping || [];
+    window._quoteDataCache = window._quoteDataCache || {};
+    window._quoteDataCache.material_mapping = rows;
     panel.innerHTML =
-      '<p style="font-size:13px;color:#666;margin-bottom:12px;">关键词用于从订单标题/规格匹配材质，保存后同步到 <code>production_material_mapping</code>（生产打单/算料用）。纸箱请填 五层,EB,B坑 等。</p>' +
+      '<p style="font-size:13px;color:#666;margin-bottom:12px;">关键词用于从订单标题/规格匹配材质，保存后同步到 <code>production_material_mapping</code>。保存后<strong>不会</strong>自动改回默认词。纸箱请填 五层,EB,B坑 等。</p>' +
       '<div class="toolbar"><button class="btn" onclick="addMaterialMappingRow()">+ 添加</button>' +
       '<button class="btn" onclick="savePermMaterialMap()">💾 保存材料映射</button>' +
       '<span id="matMapSaveStatus" style="font-size:13px;color:#666;"></span></div>' +
       '<div class="perm-table-wrap"><table><thead><tr><th>材料</th><th>分组</th><th>关键词（逗号分隔）</th><th style="width:60px;">操作</th></tr></thead>' +
       '<tbody id="matMappingBody"></tbody></table></div>';
-    fillMaterialMappingBody(res.data.material_mapping || []);
+    fillMaterialMappingBody(rows);
+  }).catch(function(e) {
+    panel.innerHTML = '<p class="empty">加载失败：' + esc(e.message) + '</p>';
   });
 }
 
@@ -1576,19 +1580,12 @@ function savePermMaterialMap() {
       if (st) st.textContent = msg;
       if (d.success) {
         toast(d.message || '材料映射已保存');
-        return apiFetch('/api/quote_data').then(function(r) {
-          if (r.success && r.data && r.data.material_mapping) {
-            fillMaterialMappingBody(r.data.material_mapping);
-          }
-          return apiFetch('/api/perm/data');
-        }).then(function(r) {
-          if (r.success && r.data) {
-            window._permBundle = r.data;
-            normalizePermProcesses(window._permBundle);
-          }
-        });
+        var saved = d.material_mapping || mappingRows;
+        fillMaterialMappingBody(saved);
+        if (window._quoteDataCache) window._quoteDataCache.material_mapping = saved;
+      } else {
+        toast(d.error || d.message || '保存失败');
       }
-      toast(d.error || d.message || '保存失败');
     })
     .catch(function(err) {
       if (st) st.textContent = '❌ ' + (err.message || '网络错误');

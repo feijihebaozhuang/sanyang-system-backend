@@ -13,7 +13,17 @@ ROOT = Path(__file__).resolve().parent
 QUOTE_DATA_FILE = ROOT / "quote_data.json"
 
 
+def _load_quote_json_raw() -> dict[str, Any]:
+    try:
+        with QUOTE_DATA_FILE.open("r", encoding="utf-8") as f:
+            raw = json.load(f)
+        return raw if isinstance(raw, dict) else {}
+    except Exception:
+        return {}
+
+
 def load_quote_data() -> dict[str, Any] | None:
+    mysql_result: dict[str, Any] | None = None
     try:
         db = connect()
         cur = db.cursor()
@@ -32,25 +42,41 @@ def load_quote_data() -> dict[str, Any] | None:
                     pass
             result[key] = val
         if result:
-            from quote_material_defaults import enrich_quote_data
-
-            return enrich_quote_data(result)
+            mysql_result = result
     except Exception as e:
         print(f"[admin_shared_store load_quote_data] MySQL: {e}")
-    try:
-        with QUOTE_DATA_FILE.open("r", encoding="utf-8") as f:
-            from quote_material_defaults import enrich_quote_data
 
-            return enrich_quote_data(json.load(f))
-    except Exception:
-        return None
+    file_raw = _load_quote_json_raw()
+    if mysql_result and file_raw:
+        merged = dict(mysql_result)
+        file_mm = file_raw.get("material_mapping")
+        if isinstance(file_mm, list):
+            merged["material_mapping"] = file_mm
+        from quote_material_defaults import enrich_quote_data
+
+        return enrich_quote_data(merged)
+    if mysql_result:
+        from quote_material_defaults import enrich_quote_data
+
+        return enrich_quote_data(mysql_result)
+    if file_raw:
+        from quote_material_defaults import enrich_quote_data
+
+        return enrich_quote_data(file_raw)
+    return None
 
 
-def save_quote_mapping(rows: list[dict[str, Any]]) -> tuple[bool, str]:
-    """仅保存 material_mapping（MySQL 单键 + quote_data.json 局部）。"""
+def load_material_mapping_admin() -> list[dict[str, Any]]:
+    """3003 材料映射页：quote_data.json 的 material_mapping 为准（与 MySQL 合并后读取）。"""
+    qd = load_quote_data() or {}
+    return list(qd.get("material_mapping") or [])
+
+
+def save_quote_mapping(rows: list[dict[str, Any]]) -> tuple[bool, str, list[dict[str, Any]]]:
+    """仅保存 material_mapping（MySQL 单键 + quote_data.json 局部）。admin 保存不追加默认关键词。"""
     from quote_material_defaults import enrich_material_mapping
 
-    rows = enrich_material_mapping(rows if isinstance(rows, list) else [])
+    rows = enrich_material_mapping(rows if isinstance(rows, list) else [], merge_defaults=False)
     err_parts: list[str] = []
     ok_mysql = False
     try:
@@ -73,8 +99,8 @@ def save_quote_mapping(rows: list[dict[str, Any]]) -> tuple[bool, str]:
     if not ok_json:
         err_parts.append("quote_data.json 写入失败")
     if ok_mysql or ok_json:
-        return True, ""
-    return False, "; ".join(err_parts) or "保存失败"
+        return True, "", rows
+    return False, "; ".join(err_parts) or "保存失败", rows
 
 
 def save_quote_data(qd: dict[str, Any] | None) -> bool:

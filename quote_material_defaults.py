@@ -35,8 +35,10 @@ def _merge_keyword_csv(existing: str, default: str) -> str:
     return ex if not add else ex + "," + ",".join(add)
 
 
-def enrich_material_mapping(rows: list[dict] | None) -> list[dict]:
-    """补全空 keywords；已有则合并默认词（不覆盖用户已填）。"""
+def enrich_material_mapping(
+    rows: list[dict] | None, *, merge_defaults: bool = True
+) -> list[dict]:
+    """补全空 keywords；merge_defaults=False 时仅填空、不追加默认词（admin 保存用）。"""
     if not isinstance(rows, list):
         return []
     out: list[dict] = []
@@ -47,7 +49,11 @@ def enrich_material_mapping(rows: list[dict] | None) -> list[dict]:
         key = (r.get("material_key") or "").strip()
         default = MATERIAL_KEYWORD_DEFAULTS.get(key, "")
         if default:
-            r["keywords"] = _merge_keyword_csv(str(r.get("keywords") or ""), default)
+            cur = str(r.get("keywords") or "").strip()
+            if not cur:
+                r["keywords"] = default
+            elif merge_defaults:
+                r["keywords"] = _merge_keyword_csv(cur, default)
         name = (r.get("material_name") or r.get("label") or "").strip()
         if name:
             r.setdefault("material_name", name)
@@ -58,12 +64,12 @@ def enrich_material_mapping(rows: list[dict] | None) -> list[dict]:
     return out
 
 
-def enrich_quote_data(qd: dict | None) -> dict:
+def enrich_quote_data(qd: dict | None, *, merge_defaults: bool = True) -> dict:
     """对整份报价配置补全 material_mapping keywords。"""
     if not isinstance(qd, dict):
         return {}
     base = dict(qd)
     base["material_mapping"] = enrich_material_mapping(
-        base.get("material_mapping") or []
+        base.get("material_mapping") or [], merge_defaults=merge_defaults
     )
     return base

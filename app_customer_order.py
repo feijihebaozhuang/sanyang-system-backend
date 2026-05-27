@@ -609,6 +609,15 @@ def api_quote_save_config():
     return jsonify({"success": True, "message": msg, "detail": sync_detail})
 
 
+@app.route("/api/perm/material_mapping")
+def api_perm_material_mapping_get():
+    err = require_admin()
+    if err:
+        return err
+    rows = admin_store.load_material_mapping_admin()
+    return jsonify({"success": True, "material_mapping": rows})
+
+
 @app.route("/api/perm/material_mapping/save", methods=["POST"])
 def api_perm_material_mapping_save():
     err = require_admin()
@@ -618,8 +627,8 @@ def api_perm_material_mapping_save():
     rows = data.get("material_mapping")
     if not isinstance(rows, list):
         return jsonify({"success": False, "error": "material_mapping 须为数组"}), 400
-    quote_ok, quote_err = admin_store.save_quote_mapping(rows)
-    prod_map = config_json.quote_rows_to_production_mapping(rows)
+    quote_ok, quote_err, saved_rows = admin_store.save_quote_mapping(rows)
+    prod_map = config_json.quote_rows_to_production_mapping(saved_rows)
     try:
         perm_result = emp_store.save_permission_bundle(
             {"production_material_mapping": prod_map}
@@ -646,6 +655,7 @@ def api_perm_material_mapping_save():
             "message": msg,
             "mapping_count": len(prod_map),
             "quote_ok": quote_ok,
+            "material_mapping": saved_rows,
             "detail": sync_detail,
         }
     )
