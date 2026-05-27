@@ -857,6 +857,8 @@ def list_orders(
     cs_staff_id: int | None = None,
     cs_include_unassigned: bool = False,
     keyword: str = "",
+    date_from: str = "",
+    date_to: str = "",
     limit: int = 100,
     offset: int = 0,
 ) -> tuple[list[dict], int]:
@@ -880,17 +882,30 @@ def list_orders(
                 where.append("o.cs_staff_id=%s")
                 params.append(int(cs_staff_id))
         if keyword:
-            where.append("(o.order_no LIKE %s OR c.name LIKE %s OR o.outer_id LIKE %s)")
+            where.append(
+                "(o.order_no LIKE %s OR c.name LIKE %s OR o.outer_id LIKE %s "
+                "OR s.employee_name LIKE %s OR pc.name LIKE %s OR o.remark LIKE %s)"
+            )
             kw = f"%{keyword}%"
-            params.extend([kw, kw, kw])
+            params.extend([kw, kw, kw, kw, kw, kw])
+        df = (date_from or "").strip()[:10]
+        if df:
+            where.append("DATE(o.created_at) >= %s")
+            params.append(df)
+        dt = (date_to or "").strip()[:10]
+        if dt:
+            where.append("DATE(o.created_at) <= %s")
+            params.append(dt)
         wsql = " AND ".join(where)
-        cur.execute(
-            f"""
-            SELECT COUNT(*) AS c
+        join_from = """
             FROM co_order o
             LEFT JOIN co_customer c ON c.id = o.customer_id
-            WHERE {wsql}
-            """,
+            LEFT JOIN co_cs_staff s ON s.id = o.cs_staff_id
+            LEFT JOIN co_product_category pc ON pc.code = o.product_category_code
+            LEFT JOIN km_sku_map k ON k.outer_id = o.outer_id
+        """
+        cur.execute(
+            f"SELECT COUNT(*) AS c {join_from} WHERE {wsql}",
             params,
         )
         total = int((cur.fetchone() or {}).get("c") or 0)
@@ -898,11 +913,9 @@ def list_orders(
             f"""
             SELECT o.*, c.name AS customer_name, c.phone AS customer_phone,
                    c.contact_name AS customer_contact, c.wx_openid AS customer_wx_openid,
-                   s.employee_name AS cs_name, pc.name AS category_name
-            FROM co_order o
-            LEFT JOIN co_customer c ON c.id = o.customer_id
-            LEFT JOIN co_cs_staff s ON s.id = o.cs_staff_id
-            LEFT JOIN co_product_category pc ON pc.code = o.product_category_code
+                   s.employee_name AS cs_name, pc.name AS category_name,
+                   k.km_title AS sku_title, k.spec_alias AS sku_spec_alias
+            {join_from}
             WHERE {wsql}
             ORDER BY o.created_at DESC, o.id DESC
             LIMIT %s OFFSET %s

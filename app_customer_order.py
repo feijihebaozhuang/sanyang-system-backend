@@ -244,13 +244,22 @@ def api_orders():
     customer_id = request.args.get("customer_id")
     cs_staff_id = request.args.get("cs_staff_id")
     keyword = (request.args.get("keyword") or "").strip()
+    date_from = (request.args.get("date_from") or "").strip()
+    date_to = (request.args.get("date_to") or "").strip()
     limit = min(int(request.args.get("limit") or 100), 500)
     offset = max(int(request.args.get("offset") or 0), 0)
+    cs_inc = (request.args.get("cs_include_unassigned") or "").lower() in ("1", "true", "yes")
+    cs_sid = None
+    if cs_staff_id is not None and str(cs_staff_id).strip() != "":
+        cs_sid = int(cs_staff_id)
     items, total = co_store.list_orders(
         status=status,
         customer_id=int(customer_id) if customer_id else None,
-        cs_staff_id=int(cs_staff_id) if cs_staff_id else None,
+        cs_staff_id=cs_sid,
+        cs_include_unassigned=cs_inc,
         keyword=keyword,
+        date_from=date_from,
+        date_to=date_to,
         limit=limit,
         offset=offset,
     )
@@ -427,6 +436,40 @@ def api_sync_km_sku_status():
         except Exception:
             ck = {}
     return jsonify({"success": True, "row_count": kms.row_count(), "checkpoint": ck})
+
+
+@app.route("/api/admin/km_sku/search")
+def api_km_sku_search():
+    err = require_admin()
+    if err:
+        return err
+    import km_sku_map_store as kms
+
+    limit = min(int(request.args.get("limit") or 50), 200)
+    offset = max(int(request.args.get("offset") or 0), 0)
+    items, total = kms.search_rows(
+        keyword=(request.args.get("keyword") or "").strip(),
+        outer_id=(request.args.get("outer_id") or "").strip(),
+        product_type=(request.args.get("product_type") or "").strip(),
+        limit=limit,
+        offset=offset,
+    )
+    return jsonify({"success": True, "items": items, "total": total})
+
+
+@app.route("/api/admin/km_sku/save", methods=["POST"])
+def api_km_sku_save():
+    err = require_admin()
+    if err:
+        return err
+    import km_sku_map_store as kms
+
+    data = request.get_json(silent=True) or {}
+    try:
+        item = kms.upsert_one(data)
+        return jsonify({"success": True, "item": item})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
 
 
 # ---------- 员工主数据 / 回收站 / 报价 / 店铺（对齐 3001 权限页） ----------

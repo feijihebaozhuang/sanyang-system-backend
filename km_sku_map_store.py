@@ -256,6 +256,69 @@ def normalize_dim_kind(raw: str) -> str:
     return ""
 
 
+def search_rows(
+    *,
+    keyword: str = "",
+    outer_id: str = "",
+    product_type: str = "",
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    """分页搜索 km_sku_map（不加载全表）。"""
+    limit = max(1, min(int(limit or 50), 200))
+    offset = max(0, int(offset or 0))
+    where = ["1=1"]
+    params: list[Any] = []
+    oid = (outer_id or "").strip()
+    if oid:
+        where.append("outer_id LIKE %s")
+        params.append(f"%{oid}%")
+    pt = (product_type or "").strip()
+    if pt:
+        where.append("product_type=%s")
+        params.append(pt)
+    kw = (keyword or "").strip()
+    if kw:
+        where.append(
+            "(outer_id LIKE %s OR spec_alias LIKE %s OR km_title LIKE %s OR material LIKE %s)"
+        )
+        like = f"%{kw}%"
+        params.extend([like, like, like, like])
+    wsql = " AND ".join(where)
+    db = connect()
+    try:
+        cur = db.cursor()
+        ensure_schema(cur)
+        cur.execute(f"SELECT COUNT(*) AS c FROM `{_TABLE}` WHERE {wsql}", params)
+        total = int((cur.fetchone() or {}).get("c") or 0)
+        cols = ", ".join(_SELECT_COLS)
+        cur.execute(
+            f"SELECT {cols} FROM `{_TABLE}` WHERE {wsql} ORDER BY updated_at DESC LIMIT %s OFFSET %s",
+            params + [limit, offset],
+        )
+        rows = [_row_to_dict(r) for r in cur.fetchall() or []]
+        return rows, total
+    finally:
+        db.close()
+
+
+def upsert_one(row: dict[str, Any]) -> dict[str, Any]:
+    """单条写入/修正 SKU 映射（手工维护用）。"""
+    oid = (row.get("outer_id") or "").strip()
+    if not oid:
+        raise ValueError("outer_id 必填")
+    upsert_rows([row], batch_size=1)
+    db = connect()
+    try:
+        cur = db.cursor()
+        cols = ", ".join(_SELECT_COLS)
+        cur.execute(f"SELECT {cols} FROM `{_TABLE}` WHERE outer_id=%s LIMIT 1", (oid,))
+        r = cur.fetchone()
+        return _row_to_dict(r) if r else _row_to_dict(row)
+    finally:
+        db.close()
+
+
 def row_count() -> int:
     try:
         db = connect()

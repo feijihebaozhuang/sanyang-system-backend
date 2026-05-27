@@ -111,6 +111,7 @@ tr:hover td { background: #fafcff; }
     <button data-page="categories" onclick="switchPage('categories')">产品目录</button>
     <button data-page="customers" onclick="switchPage('customers')">客户管理</button>
     <button data-page="orders" onclick="switchPage('orders')">订单总览</button>
+    <button data-page="sku_lookup" onclick="switchPage('sku_lookup')">SKU查询</button>
     <button data-page="cs_staff" onclick="switchPage('cs_staff')">客服员工</button>
     <button data-page="permissions" id="navPermissions" onclick="switchPage('permissions')">权限管理</button>
     <button data-page="embed_cs" onclick="switchPage('embed_cs')">客服端</button>
@@ -138,9 +139,10 @@ var EMBED_URLS = {
 };
 
 var STATUS_LABELS = {
-  draft: '草稿', pending_review: '待审核', approved: '已通过',
-  rejected: '已驳回', in_production: '生产中', completed: '已完成', cancelled: '已取消'
+  draft: '草稿', pending_review: '待审核', pending_payment: '待付款', paid: '已付款',
+  approved: '已通过', rejected: '已驳回', in_production: '生产中', completed: '已完成', cancelled: '已取消'
 };
+var orderFilters = { status: '', cs_staff_id: '', customer_id: '', keyword: '', date_from: '', date_to: '', cs_include_unassigned: false };
 
 function toast(msg) {
   var el = document.getElementById('toast');
@@ -205,6 +207,7 @@ function switchPage(page) {
     categories: loadCategories,
     customers: loadCustomers,
     orders: loadOrders,
+    sku_lookup: loadSkuLookup,
     cs_staff: loadCsStaff,
     permissions: loadPermissions,
     embed_cs: loadEmbedCs,
@@ -465,46 +468,94 @@ function loadOrders() {
     apiFetch('/api/categories'),
     apiFetch('/api/customers?limit=500'),
     apiFetch('/api/cs_staff'),
-    apiFetch('/api/orders?limit=200')
+    apiFetch(buildOrdersUrl())
   ]).then(function(results) {
     categoriesCache = results[0].items || [];
     customersCache = results[1].items || [];
     csStaffCache = results[2].items || [];
-    var orders = results[3].items || [];
-    var html = '<div class="card"><h2>订单总览</h2>' +
+    var ordRes = results[3];
+    var orders = ordRes.items || [];
+    var total = ordRes.total || orders.length;
+    var f = orderFilters;
+    var csOpts = '<option value="">全部客服</option>' + csStaffCache.map(function(s) {
+      return '<option value="' + s.id + '"' + (String(f.cs_staff_id) === String(s.id) ? ' selected' : '') + '>' + esc(s.employee_name) + '</option>';
+    }).join('');
+    var custOpts = '<option value="">全部客户</option>' + customersCache.map(function(c) {
+      return '<option value="' + c.id + '"' + (String(f.customer_id) === String(c.id) ? ' selected' : '') + '>' + esc(c.name) + '</option>';
+    }).join('');
+    var html = '<div class="card"><h2>订单总览 <span style="font-size:13px;color:#888;font-weight:400;">共 ' + total + ' 条</span></h2>' +
       '<div class="toolbar">' +
       '<select id="ordStatus"><option value="">全部状态</option>' +
-      Object.keys(STATUS_LABELS).map(function(k) { return '<option value="' + k + '">' + STATUS_LABELS[k] + '</option>'; }).join('') +
-      '</select>' +
-      '<input id="ordKw" placeholder="单号/客户/SKU">' +
+      Object.keys(STATUS_LABELS).map(function(k) {
+        return '<option value="' + k + '"' + (f.status === k ? ' selected' : '') + '>' + STATUS_LABELS[k] + '</option>';
+      }).join('') + '</select>' +
+      '<select id="ordCs">' + csOpts + '</select>' +
+      '<label style="font-size:12px;display:inline-flex;align-items:center;gap:4px;"><input type="checkbox" id="ordCsUnassigned"' + (f.cs_include_unassigned ? ' checked' : '') + '> 含未指派</label>' +
+      '<select id="ordCustomer">' + custOpts + '</select>' +
+      '<input type="date" id="ordDateFrom" value="' + esc(f.date_from) + '" title="开始日期">' +
+      '<input type="date" id="ordDateTo" value="' + esc(f.date_to) + '" title="结束日期">' +
+      '<input id="ordKw" placeholder="单号/客户/SKU/客服/备注" value="' + esc(f.keyword) + '">' +
       '<button onclick="searchOrders()">筛选</button>' +
+      '<button class="btn secondary" onclick="resetOrderFilters()">重置</button>' +
       '<button onclick="editOrder(null)">+ 新建订单</button>' +
-      '</div><table><thead><tr><th>单号</th><th>客户</th><th>分类</th><th>规格</th><th>数量</th><th>金额</th><th>SKU</th><th>状态</th><th>操作</th></tr></thead><tbody id="ordTbody">';
-    html += renderOrderRows(orders) + '</tbody></table></div><div id="ordFormArea"></div>';
+      '</div><div class="perm-table-wrap"><table><thead><tr><th>单号</th><th>时间</th><th>客户</th><th>客服</th><th>分类</th><th>规格</th><th>数量</th><th>金额</th><th>SKU</th><th>商品名</th><th>状态</th><th>操作</th></tr></thead><tbody id="ordTbody">';
+    html += renderOrderRows(orders) + '</tbody></table></div></div><div id="ordFormArea"></div>';
     document.getElementById('mainContent').innerHTML = html;
   });
 }
 
+function buildOrdersUrl() {
+  var f = orderFilters;
+  var url = '/api/orders?limit=200';
+  if (f.status) url += '&status=' + encodeURIComponent(f.status);
+  if (f.cs_staff_id) url += '&cs_staff_id=' + encodeURIComponent(f.cs_staff_id);
+  if (f.cs_include_unassigned) url += '&cs_include_unassigned=1';
+  if (f.customer_id) url += '&customer_id=' + encodeURIComponent(f.customer_id);
+  if (f.date_from) url += '&date_from=' + encodeURIComponent(f.date_from);
+  if (f.date_to) url += '&date_to=' + encodeURIComponent(f.date_to);
+  if (f.keyword) url += '&keyword=' + encodeURIComponent(f.keyword);
+  return url;
+}
+
+function resetOrderFilters() {
+  orderFilters = { status: '', cs_staff_id: '', customer_id: '', keyword: '', date_from: '', date_to: '', cs_include_unassigned: false };
+  loadOrders();
+}
+
+function fmtOrderTime(t) {
+  if (!t) return '—';
+  return String(t).replace('T', ' ').slice(0, 16);
+}
+
 function renderOrderRows(items) {
-  if (!items.length) return '<tr><td colspan="9" class="empty">暂无订单</td></tr>';
+  if (!items.length) return '<tr><td colspan="12" class="empty">暂无订单</td></tr>';
   return items.map(function(o) {
     var spec = o.length + '×' + o.width + '×' + o.height + (o.material ? ' ' + o.material : '');
-    return '<tr><td><code>' + esc(o.order_no) + '</code></td><td>' + esc(o.customer_name) + '</td>' +
+    var skuTitle = o.sku_title || o.sku_spec_alias || '';
+    return '<tr><td><code>' + esc(o.order_no) + '</code></td><td style="font-size:12px;color:#666;">' + fmtOrderTime(o.created_at) + '</td>' +
+      '<td>' + esc(o.customer_name) + '</td><td>' + esc(o.cs_name || '—') + '</td>' +
       '<td>' + esc(o.category_name || o.product_category_code) + '</td>' +
       '<td>' + esc(spec) + '</td><td>' + o.qty + '</td><td>' + (o.total_price || 0) + '</td>' +
-      '<td>' + esc(o.outer_id || '-') + '</td><td>' + statusTag(o.status) + '</td>' +
+      '<td><code style="font-size:11px;">' + esc(o.outer_id || '-') + '</code></td>' +
+      '<td style="font-size:12px;max-width:140px;overflow:hidden;text-overflow:ellipsis;" title="' + esc(skuTitle) + '">' + esc(skuTitle || '—') + '</td>' +
+      '<td>' + statusTag(o.status) + '</td>' +
       '<td><button class="btn secondary" onclick="editOrder(' + o.id + ')">编辑</button></td></tr>';
   }).join('');
 }
 
 function searchOrders() {
-  var st = document.getElementById('ordStatus').value;
-  var kw = document.getElementById('ordKw').value.trim();
-  var url = '/api/orders?limit=200';
-  if (st) url += '&status=' + st;
-  if (kw) url += '&keyword=' + encodeURIComponent(kw);
-  apiFetch(url).then(function(d) {
-    if (d.success) document.getElementById('ordTbody').innerHTML = renderOrderRows(d.items || []);
+  orderFilters.status = document.getElementById('ordStatus').value;
+  orderFilters.cs_staff_id = document.getElementById('ordCs').value;
+  orderFilters.cs_include_unassigned = document.getElementById('ordCsUnassigned').checked;
+  orderFilters.customer_id = document.getElementById('ordCustomer').value;
+  orderFilters.date_from = document.getElementById('ordDateFrom').value;
+  orderFilters.date_to = document.getElementById('ordDateTo').value;
+  orderFilters.keyword = document.getElementById('ordKw').value.trim();
+  apiFetch(buildOrdersUrl()).then(function(d) {
+    if (!d.success) return;
+    var card = document.querySelector('.card h2');
+    if (card) card.innerHTML = '订单总览 <span style="font-size:13px;color:#888;font-weight:400;">共 ' + (d.total || 0) + ' 条</span>';
+    document.getElementById('ordTbody').innerHTML = renderOrderRows(d.items || []);
   });
 }
 
@@ -541,6 +592,7 @@ function editOrder(id) {
       field('数量', 'oQty', o.qty, '', 'number') +
       field('单价', 'oUnit', o.unit_price, '', 'number') +
       field('总价', 'oTotal', o.total_price, '', 'number') +
+      field('商家编码 SKU（可手工指定）', 'oOuterId', o.outer_id || '', '留空则按规格自动匹配') +
       '<div><label>归属客服</label><select id="oCs">' + csOpts + '</select></div>' +
       '<div><label>状态</label><select id="oStatus">' + stOpts + '</select></div>' +
       '<div style="grid-column:1/-1"><label>备注</label><textarea id="oRemark">' + esc(o.remark || '') + '</textarea></div>' +
@@ -586,6 +638,7 @@ function saveOrder(id) {
     qty: parseInt(document.getElementById('oQty').value) || 0,
     unit_price: parseFloat(document.getElementById('oUnit').value) || 0,
     total_price: parseFloat(document.getElementById('oTotal').value) || 0,
+    outer_id: document.getElementById('oOuterId').value.trim(),
     cs_staff_id: document.getElementById('oCs').value || null,
     status: document.getElementById('oStatus').value,
     remark: document.getElementById('oRemark').value.trim()
@@ -593,6 +646,105 @@ function saveOrder(id) {
     if (d.success) { toast('已保存 · SKU: ' + (d.item.outer_id || '未匹配')); loadOrders(); }
     else toast(d.error || '保存失败');
   });
+}
+
+function loadSkuLookup() {
+  document.getElementById('mainContent').innerHTML =
+    '<div class="card"><h2>快麦 SKU 查询 / 手工修正</h2>' +
+    '<div class="info-box">全库约 20 万+ 行，<strong>不会整表展示</strong>。请用编码或关键词搜索；匹配不到或规格不对时可手工修正（写入 <code>km_sku_map</code>）。<br>' +
+    '全量同步在 87 执行，见「权限管理 → 快麦 SKU 同步」。</div>' +
+    '<div class="toolbar">' +
+    '<input id="skuKw" placeholder="关键词（编码/简称/规格/材质）" style="min-width:180px;">' +
+    '<input id="skuOid" placeholder="商家编码" style="width:140px;">' +
+    '<select id="skuType"><option value="">全部分类</option>' +
+    '<option value="zhengsquare">飞机盒</option><option value="koudi">扣底</option><option value="shuangcha">双插</option><option value="juxing">纸箱</option></select>' +
+    '<button onclick="searchSkuMap()">搜索</button>' +
+    '<button class="btn secondary" onclick="showSkuEditForm(null)">+ 新增映射</button>' +
+    '<span id="skuSearchStat" style="font-size:13px;color:#666;"></span></div>' +
+    '<div class="perm-table-wrap"><table><thead><tr><th>商家编码</th><th>简称</th><th>规格别名</th><th>分类</th><th>尺寸</th><th>材质</th><th>操作</th></tr></thead>' +
+    '<tbody id="skuTbody"><tr><td colspan="7" class="empty">输入条件后点搜索</td></tr></tbody></table></div></div>' +
+    '<div id="skuFormArea"></div>';
+}
+
+function searchSkuMap() {
+  var kw = document.getElementById('skuKw').value.trim();
+  var oid = document.getElementById('skuOid').value.trim();
+  var pt = document.getElementById('skuType').value;
+  if (!kw && !oid && !pt) { toast('请输入至少一个搜索条件'); return; }
+  var st = document.getElementById('skuSearchStat');
+  if (st) st.textContent = '搜索中…';
+  var url = '/api/admin/km_sku/search?limit=100';
+  if (kw) url += '&keyword=' + encodeURIComponent(kw);
+  if (oid) url += '&outer_id=' + encodeURIComponent(oid);
+  if (pt) url += '&product_type=' + encodeURIComponent(pt);
+  apiFetch(url).then(function(d) {
+    if (st) st.textContent = d.success ? ('共 ' + (d.total || 0) + ' 条，显示前 ' + (d.items || []).length + ' 条') : '搜索失败';
+    document.getElementById('skuTbody').innerHTML = renderSkuRows(d.items || []);
+  });
+}
+
+function renderSkuRows(items) {
+  if (!items.length) return '<tr><td colspan="7" class="empty">无结果</td></tr>';
+  return items.map(function(r) {
+    var dims = r.length + '×' + r.width + '×' + r.height + (r.dim_kind ? ('(' + r.dim_kind + ')') : '');
+    return '<tr><td><code>' + esc(r.outer_id) + '</code></td><td style="font-size:12px;">' + esc(r.km_title || '—') + '</td>' +
+      '<td style="font-size:12px;">' + esc(r.spec_alias || '—') + '</td><td>' + esc(r.product_type || '—') + '</td>' +
+      '<td>' + esc(dims) + '</td><td>' + esc(r.material || '—') + '</td>' +
+      '<td><button class="btn secondary" onclick="showSkuEditForm(' + JSON.stringify(r.outer_id) + ')">编辑</button></td></tr>';
+  }).join('');
+}
+
+function showSkuEditForm(outerId) {
+  var loadP = outerId ? apiFetch('/api/admin/km_sku/search?outer_id=' + encodeURIComponent(outerId) + '&limit=1') : Promise.resolve({ items: [] });
+  loadP.then(function(d) {
+    var r = (d.items && d.items[0]) || { outer_id: outerId || '', spec_alias: '', product_type: 'zhengsquare', length: 0, width: 0, height: 0, dim_kind: 'outer', material: '', km_title: '' };
+    document.getElementById('skuFormArea').innerHTML =
+      '<div class="card"><h2>' + (outerId ? '编辑 SKU 映射' : '新增 SKU 映射') + '</h2>' +
+      '<div class="form-grid">' +
+      field('商家编码 outer_id', 'skOid', r.outer_id, '必填', outerId ? 'readonly' : '') +
+      field('快麦简称', 'skTitle', r.km_title || '') +
+      field('规格别名', 'skAlias', r.spec_alias || '') +
+      selectField('产品分类', 'skType', r.product_type || 'zhengsquare', [
+        {v:'zhengsquare',l:'飞机盒'},{v:'koudi',l:'扣底'},{v:'shuangcha',l:'双插'},{v:'juxing',l:'纸箱'},{v:'daikou',l:'带扣'},{v:'zhenzhenmian',l:'珍珠棉'}
+      ]) +
+      field('长', 'skL', r.length, '', 'number') +
+      field('宽', 'skW', r.width, '', 'number') +
+      field('高', 'skH', r.height, '', 'number') +
+      selectField('尺寸类型', 'skDim', r.dim_kind || 'outer', [{v:'outer',l:'外径'},{v:'inner',l:'内径'},{v:'',l:'未指定'}]) +
+      field('材质', 'skMat', r.material || '') +
+      '</div><div class="form-actions">' +
+      '<button class="btn" onclick="saveSkuRow()">保存到 km_sku_map</button>' +
+      '<button class="btn secondary" onclick="document.getElementById(\'skuFormArea\').innerHTML=\'\'">取消</button></div></div>';
+    if (outerId) {
+      var el = document.getElementById('skOid');
+      if (el) el.readOnly = true;
+    }
+  });
+}
+
+function saveSkuRow() {
+  var data = {
+    outer_id: document.getElementById('skOid').value.trim(),
+    km_title: document.getElementById('skTitle').value.trim(),
+    spec_alias: document.getElementById('skAlias').value.trim(),
+    product_type: document.getElementById('skType').value,
+    length: parseFloat(document.getElementById('skL').value) || 0,
+    width: parseFloat(document.getElementById('skW').value) || 0,
+    height: parseFloat(document.getElementById('skH').value) || 0,
+    dim_kind: document.getElementById('skDim').value,
+    material: document.getElementById('skMat').value.trim()
+  };
+  if (!data.outer_id) { toast('商家编码必填'); return; }
+  apiFetch('/api/admin/km_sku/save', { method: 'POST', body: JSON.stringify(data) })
+    .then(function(d) {
+      if (d.success) {
+        toast('SKU 已保存');
+        document.getElementById('skuFormArea').innerHTML = '';
+        document.getElementById('skuOid').value = data.outer_id;
+        document.getElementById('skuKw').value = '';
+        searchSkuMap();
+      } else toast(d.error || '保存失败');
+    });
 }
 
 function loadPermissions() {
@@ -666,9 +818,20 @@ function renderPermCoAdmin() {
 function renderPermKmSync() {
   var st = window._kmSkuStatus || {};
   var ck = st.checkpoint || {};
+  var rowCount = st.row_count || 0;
+  var ckPage = ck.next_page;
+  var ckWritten = ck.total_written || 0;
+  var syncHint = '';
+  if (ckPage === 1 && ckWritten >= rowCount && rowCount > 100000) {
+    syncHint = '<p style="color:#27ae60;font-size:13px;margin-bottom:8px;">✅ 断点 next_page=1 且已写入行数 ≥ 表行数，通常表示<strong>全量同步已完成</strong>（非卡住）。</p>';
+  } else if (ckPage && ckPage > 1) {
+    syncHint = '<p style="color:#e67e22;font-size:13px;margin-bottom:8px;">⏳ 同步进行中，断点 next_page=' + esc(ckPage) + '，可 <code>--resume</code> 续跑。</p>';
+  }
   document.getElementById('permPanel').innerHTML =
+    syncHint +
     '<p style="font-size:14px;line-height:1.8;color:#555;margin-bottom:12px;">' +
-    '当前 <code>km_sku_map</code> 表：<strong>' + (st.row_count || 0) + '</strong> 行。<br>' +
+    '当前 <code>km_sku_map</code> 表：<strong>' + rowCount + '</strong> 行。<br>' +
+    '20 万+ 商品<strong>不在此整表列出</strong>，请用顶栏「SKU查询」按编码/关键词搜索；个别规格不对可手工修正。<br>' +
     '全量同步在 87 服务器执行（需数小时，支持断点续跑）：</p>' +
     '<pre style="background:#f6f8fa;padding:12px;border-radius:6px;font-size:12px;overflow:auto;">' +
     'cd /www/feijihe/stable\n' +
@@ -676,8 +839,8 @@ function renderPermKmSync() {
     'python3 scripts/sync_km_sku_map_from_km.py --resume\n' +
     '# 可选：python3 scripts/sync_km_sku_map_from_km.py --enrich-order-cache' +
     '</pre>' +
-    '<p style="font-size:13px;color:#888;">断点：next_page=' + esc(ck.next_page || '-') +
-    '，已写入 ' + esc(ck.total_written || 0) + ' 行</p>';
+    '<p style="font-size:13px;color:#888;">断点：next_page=' + esc(ckPage || '-') +
+    '，checkpoint 累计写入 ' + esc(ckWritten) + ' 行</p>';
 }
 
 function deptLabel(dept) {
@@ -1416,7 +1579,9 @@ function saveAdmin(id) {
 }
 
 function field(label, id, val, ph, type) {
-  return '<div><label>' + label + '</label><input id="' + id + '" value="' + esc(val == null ? '' : val) + '" placeholder="' + esc(ph || '') + '"' + (type ? ' type="' + type + '"' : '') + '></div>';
+  var ro = type === 'readonly' ? ' readOnly' : '';
+  var tp = (type && type !== 'readonly') ? type : 'text';
+  return '<div><label>' + label + '</label><input id="' + id + '" value="' + esc(val == null ? '' : val) + '" placeholder="' + esc(ph || '') + '" type="' + tp + '"' + ro + '></div>';
 }
 
 function selectField(label, id, val, opts) {
