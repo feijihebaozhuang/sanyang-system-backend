@@ -9,23 +9,27 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { min-height: 100vh; display: flex; align-items: center; justify-content: center;
   font-family: -apple-system, "PingFang SC", sans-serif; background: linear-gradient(135deg, #1a5276, #2980b9); }
-.box { background: #fff; padding: 36px 40px; border-radius: 12px; width: 400px; box-shadow: 0 8px 32px rgba(0,0,0,.15); }
-h1 { font-size: 20px; color: #1a5276; margin-bottom: 6px; }
-p { font-size: 13px; color: #888; margin-bottom: 16px; line-height: 1.6; }
+.box { background: #fff; padding: 36px 40px; border-radius: 12px; width: 360px; box-shadow: 0 8px 32px rgba(0,0,0,.15); }
+h1 { font-size: 20px; color: #1a5276; margin-bottom: 24px; text-align: center; }
 input { width: 100%; padding: 10px 12px; margin-bottom: 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px; }
 button { width: 100%; padding: 11px; background: #2980b9; color: #fff; border: none; border-radius: 6px; font-size: 15px; cursor: pointer; }
 button:hover { background: #1a5276; }
-.err { color: #e74c3c; font-size: 13px; margin-top: 10px; min-height: 18px; }
-.warn { background: #fff3cd; color: #856404; padding: 10px 12px; border-radius: 6px; font-size: 12px; margin-bottom: 14px; line-height: 1.5; }
+.err { color: #e74c3c; font-size: 13px; margin-top: 10px; min-height: 18px; text-align: center; }
 </style>
+<script>
+(function () {
+  var host = (location.hostname || '').toLowerCase();
+  if (host === 'guanli.feijihe.top' || host === 'www.guanli.feijihe.top') {
+    location.replace('https://feijihe.top/guanli/login' + (location.search || ''));
+  }
+})();
+</script>
 </head>
 <body>
 <div class="box">
-  <h1>三羊统一管理后台（3003）</h1>
-  <p>请用本页登录，<strong>不要用 guanli.feijihe.top</strong>（该域名证书已坏）。</p>
-  <div class="warn">账号：<strong>admin</strong>　密码：<strong>admin888</strong><br>（与 zean/feijihe 客服账号不是同一套）<br><strong>必须在本页点登录，不要直接打开 /guanli/</strong></div>
+  <h1>三羊统一管理后台</h1>
   <form method="POST" action="/guanli/login/submit" accept-charset="UTF-8">
-    <input name="username" placeholder="账号" autocomplete="username" value="admin" required>
+    <input name="username" placeholder="账号" autocomplete="username" required>
     <input name="password" type="password" placeholder="密码" autocomplete="current-password" required>
     <button type="submit">登录</button>
   </form>
@@ -33,17 +37,12 @@ button:hover { background: #1a5276; }
 </div>
 <script>
 (function () {
-  var host = (location.hostname || '').toLowerCase();
-  if (host === 'guanli.feijihe.top' || host === 'www.guanli.feijihe.top') {
-    location.replace('https://feijihe.top/guanli/login');
-    return;
-  }
   var err = (new URLSearchParams(location.search)).get('error');
   var el = document.getElementById('msg');
   var map = {
     empty: '请输入账号和密码',
-    auth: '账号或密码错误（3003 请用 admin / admin888）',
-    server: '3003 服务不可用，请在服务器执行 ensure_guanli_login_87.sh'
+    auth: '账号或密码错误',
+    server: '服务暂不可用，请稍后重试'
   };
   if (err && map[err]) el.textContent = map[err];
 })();
