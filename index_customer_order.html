@@ -1532,7 +1532,7 @@ function renderPermEmployees() {
   document.getElementById('permPanel').innerHTML = html;
 }
 
-def addPermEmployee() {
+function addPermEmployee() {
   var name = prompt('员工姓名');
   if (!name) return;
   var pos = prompt('职务（可选）') || '';
