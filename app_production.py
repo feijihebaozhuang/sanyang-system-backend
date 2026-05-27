@@ -4851,6 +4851,12 @@ def production_flow_step():
         return jsonify({'success': False, 'error': str(e)})
 
 # ==================== 静态文件（必须放在所有 /api 路由之后）====================
+@app.route('/guanli/login/submit', methods=['POST'])
+def guanli_login_submit():
+    import guanli_server_login as _gsl
+    return _gsl.handle_guanli_form_login()
+
+
 @app.route('/guanli/login')
 @app.route('/login_guanli.html')
 def guanli_login_entry():

@@ -44,5 +44,9 @@ code=$(curl -s -o /dev/null -w "%{http_code}" "https://feijihe.top/guanli/login"
 echo "  GET  https://feijihe.top/guanli/login → HTTP $code (独立登录页)"
 
 echo ""
-echo "请用浏览器打开: https://feijihe.top/guanli/login"
-echo "账号 admin  密码 admin888"
+echo "========== 服务端表单登录 POST =========="
+code=$(curl -s -o /tmp/sy_form_login.html -w "%{http_code}" \
+  -X POST "https://feijihe.top/guanli/login/submit" \
+  -d "username=admin&password=admin888" || echo "000")
+echo "  POST /guanli/login/submit → HTTP $code (期望 302 跳转 /guanli/)"
+head -c 80 /tmp/sy_form_login.html 2>/dev/null; echo

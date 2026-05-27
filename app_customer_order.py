@@ -141,6 +141,12 @@ def guanli_index():
     return _no_cache_html(make_response(send_from_directory(".", "index_customer_order.html")))
 
 
+@app.route("/guanli/login/submit", methods=["POST"])
+def guanli_login_submit_direct():
+    import guanli_server_login as _gsl
+    return _gsl.handle_guanli_form_login()
+
+
 @app.route("/guanli/login")
 @app.route("/login_guanli.html")
 def guanli_login_page():

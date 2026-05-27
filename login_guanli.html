@@ -9,132 +9,44 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { min-height: 100vh; display: flex; align-items: center; justify-content: center;
   font-family: -apple-system, "PingFang SC", sans-serif; background: linear-gradient(135deg, #1a5276, #2980b9); }
-.box { background: #fff; padding: 36px 40px; border-radius: 12px; width: 380px; box-shadow: 0 8px 32px rgba(0,0,0,.15); }
+.box { background: #fff; padding: 36px 40px; border-radius: 12px; width: 400px; box-shadow: 0 8px 32px rgba(0,0,0,.15); }
 h1 { font-size: 20px; color: #1a5276; margin-bottom: 6px; }
-p { font-size: 13px; color: #888; margin-bottom: 20px; line-height: 1.6; }
+p { font-size: 13px; color: #888; margin-bottom: 16px; line-height: 1.6; }
 input { width: 100%; padding: 10px 12px; margin-bottom: 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px; }
 button { width: 100%; padding: 11px; background: #2980b9; color: #fff; border: none; border-radius: 6px; font-size: 15px; cursor: pointer; }
 button:hover { background: #1a5276; }
-button:disabled { opacity: .6; cursor: wait; }
 .err { color: #e74c3c; font-size: 13px; margin-top: 10px; min-height: 18px; }
-.ok { color: #27ae60; font-size: 13px; margin-top: 10px; }
+.warn { background: #fff3cd; color: #856404; padding: 10px 12px; border-radius: 6px; font-size: 12px; margin-bottom: 14px; line-height: 1.5; }
 </style>
+</head>
+<body>
+<div class="box">
+  <h1>三羊统一管理后台（3003）</h1>
+  <p>请用本页登录，<strong>不要用 guanli.feijihe.top</strong>（该域名证书已坏）。</p>
+  <div class="warn">账号：<strong>admin</strong>　密码：<strong>admin888</strong><br>（与 zean/feijihe 客服账号不是同一套）</div>
+  <form method="POST" action="/guanli/login/submit" accept-charset="UTF-8">
+    <input name="username" placeholder="账号" autocomplete="username" value="admin" required>
+    <input name="password" type="password" placeholder="密码" autocomplete="current-password" required>
+    <button type="submit">登录</button>
+  </form>
+  <div id="msg" class="err"></div>
+</div>
 <script>
 (function () {
   var host = (location.hostname || '').toLowerCase();
   if (host === 'guanli.feijihe.top' || host === 'www.guanli.feijihe.top') {
-    location.replace('https://feijihe.top/guanli/login' + (location.search || ''));
+    location.replace('https://feijihe.top/guanli/login');
+    return;
   }
+  var err = (new URLSearchParams(location.search)).get('error');
+  var el = document.getElementById('msg');
+  var map = {
+    empty: '请输入账号和密码',
+    auth: '账号或密码错误（3003 请用 admin / admin888）',
+    server: '3003 服务不可用，请在服务器执行 ensure_guanli_login_87.sh'
+  };
+  if (err && map[err]) el.textContent = map[err];
 })();
-
-function loginApiUrl() {
-  var path = location.pathname || '';
-  if (path.indexOf('/guanli') === 0) return '/api/co/login';
-  return '/api/login';
-}
-
-function homeUrl() {
-  var path = location.pathname || '';
-  if (path.indexOf('/guanli') === 0) return '/guanli/';
-  return '/';
-}
-
-function saveAuth(user, token) {
-  try { localStorage.setItem('sanyang_auth_user', user); } catch (e) {}
-  try { sessionStorage.setItem('sanyang_auth_user', user); } catch (e) {}
-  try { localStorage.setItem('sanyang_auth_token', token); } catch (e) {}
-  try { sessionStorage.setItem('sanyang_auth_token', token); } catch (e) {}
-}
-
-function readAuth() {
-  var u = null, t = null;
-  try { u = localStorage.getItem('sanyang_auth_user'); t = localStorage.getItem('sanyang_auth_token'); } catch (e) {}
-  if (u && t) return { user: u, token: t };
-  try { u = sessionStorage.getItem('sanyang_auth_user'); t = sessionStorage.getItem('sanyang_auth_token'); } catch (e) {}
-  if (u && t) return { user: u, token: t };
-  return null;
-}
-
-function parseJsonRes(res) {
-  return res.text().then(function (text) {
-    var t = (text || '').trim();
-    if (t.charAt(0) === '<') {
-      throw new Error('接口返回网页而非 JSON（HTTP ' + res.status + '），请联系管理员检查 Nginx');
-    }
-    var d = {};
-    try { d = JSON.parse(t || '{}'); } catch (e) {
-      throw new Error('响应不是 JSON（HTTP ' + res.status + '）');
-    }
-    return { ok: res.ok, status: res.status, data: d };
-  });
-}
-
-function meApiUrl() {
-  var path = location.pathname || '';
-  if (path.indexOf('/guanli') === 0) return '/api/co/me';
-  return '/api/me';
-}
-
-function checkAlreadyLoggedIn() {
-  var cred = readAuth();
-  if (!cred) return;
-  fetch(meApiUrl(), {
-    headers: { 'X-Sanyang-User': cred.user, 'X-Sanyang-Token': cred.token }
-  }).then(parseJsonRes).then(function (r) {
-    if (r.ok && r.data && r.data.success) {
-      document.getElementById('msg').textContent = '已登录，正在进入…';
-      document.getElementById('msg').className = 'ok';
-      location.href = homeUrl();
-    }
-  }).catch(function () {});
-}
-
-function doLogin() {
-  var u = document.getElementById('user').value.trim();
-  var p = document.getElementById('pwd').value;
-  var err = document.getElementById('msg');
-  var btn = document.getElementById('btn');
-  err.textContent = '';
-  err.className = 'err';
-  if (!u || !p) { err.textContent = '请输入账号和密码'; return; }
-  btn.disabled = true;
-  err.textContent = '正在登录…';
-  fetch(loginApiUrl(), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: u, password: p })
-  }).then(parseJsonRes).then(function (r) {
-    var d = r.data || {};
-    if (!r.ok || !d.success || !d.user) {
-      throw new Error(d.message || d.error || ('登录失败 HTTP ' + r.status));
-    }
-    saveAuth(d.user.username, d.user.auth_token);
-    err.textContent = '登录成功，正在进入…';
-    err.className = 'ok';
-    location.href = homeUrl();
-  }).catch(function (e) {
-    err.textContent = e.message || '网络错误';
-    err.className = 'err';
-    btn.disabled = false;
-  });
-}
-
-document.addEventListener('DOMContentLoaded', function () {
-  document.getElementById('pwd').addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') doLogin();
-  });
-  checkAlreadyLoggedIn();
-});
 </script>
-</head>
-<body>
-<div class="box">
-  <h1>三羊统一管理后台</h1>
-  <p>推荐地址：<strong>https://feijihe.top/guanli/</strong><br>账号 admin，初始密码 admin888</p>
-  <input id="user" placeholder="账号" autocomplete="username" value="admin">
-  <input id="pwd" type="password" placeholder="密码" autocomplete="current-password">
-  <button id="btn" type="button" onclick="doLogin()">登录</button>
-  <div id="msg" class="err"></div>
-</div>
 </body>
 </html>

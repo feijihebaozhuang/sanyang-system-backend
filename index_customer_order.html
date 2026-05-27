@@ -32,9 +32,15 @@
         try { localStorage.removeItem(key); } catch (e) {}
         try { sessionStorage.removeItem(key); } catch (e) {}
     }
+    function readCookie(name) {
+        try {
+            var m = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=([^;]*)'));
+            return m ? decodeURIComponent(m[1]) : null;
+        } catch (e) { return null; }
+    }
     function readAuthCredentials() {
-        var u = storageGet(AUTH_USER_KEY);
-        var t = storageGet(AUTH_TOKEN_KEY);
+        var u = readCookie(AUTH_USER_KEY) || storageGet(AUTH_USER_KEY);
+        var t = readCookie(AUTH_TOKEN_KEY) || storageGet(AUTH_TOKEN_KEY);
         if (u && t) return { user: u, token: t };
         return null;
     }
@@ -51,6 +57,11 @@
         if (!user) return;
         storageSet(AUTH_USER_KEY, user);
         if (token) storageSet(AUTH_TOKEN_KEY, token);
+        try {
+            var secure = location.protocol === 'https:';
+            document.cookie = AUTH_USER_KEY + '=' + encodeURIComponent(user) + '; path=/; max-age=' + (86400 * 31) + '; samesite=lax' + (secure ? '; secure' : '');
+            if (token) document.cookie = AUTH_TOKEN_KEY + '=' + encodeURIComponent(token) + '; path=/; max-age=' + (86400 * 31) + '; samesite=lax' + (secure ? '; secure' : '');
+        } catch (e) {}
     }
     function clearAuthCredentials() {
         storageRemove(AUTH_USER_KEY);
