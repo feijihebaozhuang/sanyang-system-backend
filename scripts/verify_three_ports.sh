@@ -22,6 +22,7 @@ echo ""
 echo "========== 域名（若配置了 HTTPS）=========="
 for url in \
   "https://zean.feijihe.top/" \
+  "https://zean.feijihe.top/api/dashboard" \
   "https://feijihe.top/" \
   "https://guanli.feijihe.top/" \
   "https://guanli.feijihe.top/api/health" \

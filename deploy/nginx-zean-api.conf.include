@@ -1,5 +1,6 @@
 # zean.feijihe.top → 3001 客服端
-# 必须在 location / 或 try_files 之前 include
+# 必须在「错误的 location / try_files」之前 include
+# 若 server 里已有 location /，请改为 proxy_pass 3001（见 nginx-zean.example.conf）
 
 location /api/ {
     proxy_pass http://127.0.0.1:3001/api/;
@@ -9,10 +10,14 @@ location /api/ {
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_read_timeout 120s;
+    proxy_connect_timeout 30s;
 }
 
 location /static/ {
     proxy_pass http://127.0.0.1:3001/static/;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
 }
