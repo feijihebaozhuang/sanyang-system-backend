@@ -1768,6 +1768,7 @@
     // ===== 统一权限检查函数（唯一权限来源，前端永不自行推断）=====
     function hasPerm(feature) {
         if (!_currentUser) return false;
+        if (_currentUser.is_system || _currentUser.username === 'admin') return true;
         if (_currentUser.role === '超级管理员') return true;
         if (window._myPerms && window._myPerms[feature] === true) return true;
         if (feature === '快麦ERP' && window._myPerms && window._myPerms['聚水潭'] === true) return true;

@@ -54,6 +54,36 @@ def merge_employee_permissions_from_db(
     permission_data["permissions"] = base
 
 
+def normalize_user_record(username: str, user: dict | None) -> dict:
+    """保证 admin 系统账号永不被 employee_roles 同步降为普通员工。"""
+    u = dict(user or {})
+    un = (username or "").strip()
+    if un == "admin" or u.get("is_system"):
+        u["is_system"] = True
+        u["role"] = "超级管理员"
+    return u
+
+
+def install_users_from_persistent(registry: dict, loaded: dict | None) -> None:
+    """从 data.json / MySQL 合并登录账号，并规范化 admin。"""
+    for uid, uinfo in (loaded or {}).items():
+        if "employee_name" in (uinfo or {}):
+            employee_name = uinfo.get("employee_name") or ""
+        elif uid == "admin":
+            employee_name = ""
+        else:
+            employee_name = (uinfo or {}).get("name", uid) or uid
+        entry = {
+            "password": (uinfo or {}).get("password", ""),
+            "name": (uinfo or {}).get("name", uid),
+            "role": (uinfo or {}).get("role", "员工"),
+            "employee_name": employee_name,
+        }
+        if (uinfo or {}).get("is_system"):
+            entry["is_system"] = True
+        registry[uid] = normalize_user_record(uid, entry)
+
+
 def permission_lookup_name(
     user: dict,
     username: str,

@@ -238,13 +238,15 @@ def load_data():
         cur.execute("SELECT username, password, display_name, role, employee_name, enabled FROM users")
         rows = cur.fetchall()
         users = {}
+        import permission_resolve as _pr_load
         for r in rows:
-            users[r['username']] = {
+            uid = r['username']
+            users[uid] = _pr_load.normalize_user_record(uid, {
                 'password': r['password'],
                 'name': r['display_name'] or r['username'],
                 'role': r['role'] or '员工',
                 'employee_name': r['employee_name'] or ''
-            }
+            })
         # 从employees表读取
         cur.execute("SELECT name, position, enabled FROM employees")
         emp_rows = cur.fetchall()
@@ -377,14 +379,10 @@ import agent_self_repair as _agent_repair
 _agent_repair.run_boot_repair()
 
 # 从data.json加载所有用户（覆盖并扩展USERS字典）
+import permission_resolve as _perm_resolve_boot
+
 _loaded_users = persistent_data.get("users", {})
-for uid, uinfo in _loaded_users.items():
-    USERS[uid] = {
-        "password": uinfo.get("password", ""),
-        "name": uinfo.get("name", uid),
-        "role": uinfo.get("role", "员工"),
-        "employee_name": uinfo.get("employee_name", uinfo.get("name", uid))
-    }
+_perm_resolve_boot.install_users_from_persistent(USERS, _loaded_users)
 _employee_today_status = persistent_data.get("employee_status", {})
 _order_extra = persistent_data.get("order_extra", {})
 import order_extra_store as _order_extra_store
@@ -471,7 +469,10 @@ def login():
     user = USERS.get(username)
     if not user:
         return jsonify({"success": False, "message": "账号或密码错误"})
-    
+    import permission_resolve as _perm_resolve_login
+    user = _perm_resolve_login.normalize_user_record(username, user)
+    USERS[username] = user
+
     pwd_hash = hashlib.sha256(password.encode()).hexdigest()
     if user['password'] != pwd_hash:
         return jsonify({"success": False, "message": "账号或密码错误"})
@@ -480,7 +481,7 @@ def login():
     employee_name = user.get('employee_name', '')
     enabled_map = _permission_data.get("employee_enabled", {})
     # 默认启用，只有明确设为 False 才禁用
-    if enabled_map.get(employee_name, True) is False:
+    if employee_name and enabled_map.get(employee_name, True) is False:
         return jsonify({"success": False, "message": "该账号已被禁用，请联系管理员"})
     
     session.permanent = True
@@ -506,6 +507,7 @@ def login():
             "name": user['name'],
             "role": user['role'],
             "employee_name": user['employee_name'],
+            "is_system": bool(user.get("is_system")),
             "dept": emp_dept
         }
     })
@@ -582,6 +584,9 @@ def get_current_user():
     if un:
         user = USERS.get(un)
         if user:
+            import permission_resolve as _perm_resolve_me
+            user = _perm_resolve_me.normalize_user_record(un, user)
+            USERS[un] = user
             return jsonify({
                 "logged_in": True,
                 "auth_token": _auth_token_for(un),
@@ -589,10 +594,43 @@ def get_current_user():
                     "username": un,
                     "name": user['name'],
                     "role": user['role'],
-                    "employee_name": user['employee_name']
+                    "employee_name": user['employee_name'],
+                    "is_system": bool(user.get("is_system")),
                 }
             })
     return jsonify({"logged_in": False})
+
+
+@app.route('/api/my_permissions')
+def get_my_permissions_cs():
+    """返回当前登录用户的权限（与生产端一致，避免用 display_name 查 permissions 键）。"""
+    import permission_resolve as _perm_resolve_mp
+    _cfg_json_cs.reload_permission_memory(_permission_data)
+    _sync_all_employees_perms()
+    un = resolve_login_user()
+    if not un:
+        return jsonify({"error": "未登录", "code": 401}), 401
+    user = USERS.get(un)
+    if not user:
+        return jsonify({"error": "用户不存在", "code": 401}), 401
+    user = _perm_resolve_mp.normalize_user_record(un, user)
+    USERS[un] = user
+    if user.get("is_system") or user.get("role") == "超级管理员" or un == "admin":
+        my_perm = {f: True for f in PERM_FEATURES}
+    else:
+        subject = _perm_resolve_mp.permission_lookup_name(user, un, _permission_data)
+        my_perm = _perm_resolve_mp.migrate_perm_dict(
+            dict(_permission_data.get("permissions", {}).get(subject, {}))
+        )
+        for f in PERM_FEATURES:
+            if f not in my_perm:
+                my_perm[f] = False
+    return jsonify({
+        "success": True,
+        "my_permissions": my_perm,
+        "all_permissions": _permission_data.get("permissions", {}),
+        "all_employees": _employees_master_list,
+    })
 
 # ==================== 规格解析工具函数 ====================
 

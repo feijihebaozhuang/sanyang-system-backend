@@ -312,14 +312,10 @@ import agent_self_repair as _agent_repair
 _agent_repair.run_boot_repair()
 
 # 从data.json加载所有用户（覆盖并扩展USERS字典）
+import permission_resolve as _perm_resolve_boot
+
 _loaded_users = persistent_data.get("users", {})
-for uid, uinfo in _loaded_users.items():
-    USERS[uid] = {
-        "password": uinfo.get("password", ""),
-        "name": uinfo.get("name", uid),
-        "role": uinfo.get("role", "员工"),
-        "employee_name": uinfo.get("employee_name", uinfo.get("name", uid))
-    }
+_perm_resolve_boot.install_users_from_persistent(USERS, _loaded_users)
 _employee_today_status = persistent_data.get("employee_status", {})
 _employee_leave_counts = persistent_data.get("employee_leave_counts", {})
 _order_extra = persistent_data.get("order_extra", {})
@@ -396,7 +392,9 @@ def login():
     user = USERS.get(username)
     if not user:
         return jsonify({"success": False, "message": "账号或密码错误"})
-    
+    user = _perm_resolve.normalize_user_record(username, user)
+    USERS[username] = user
+
     pwd_hash = hashlib.sha256(password.encode()).hexdigest()
     if user['password'] != pwd_hash:
         return jsonify({"success": False, "message": "账号或密码错误"})
@@ -507,6 +505,8 @@ def get_current_user():
     if un:
         user = USERS.get(un)
         if user:
+            user = _perm_resolve.normalize_user_record(un, user)
+            USERS[un] = user
             return jsonify({
                 "logged_in": True,
                 "auth_token": _auth_token_for(un),
@@ -514,7 +514,8 @@ def get_current_user():
                     "username": un,
                     "name": user['name'],
                     "role": user['role'],
-                    "employee_name": user['employee_name']
+                    "employee_name": user['employee_name'],
+                    "is_system": bool(user.get("is_system")),
                 }
             })
     return jsonify({"logged_in": False})
@@ -1578,8 +1579,10 @@ def _get_effective_permissions(employee_name: str, user: dict | None = None) -> 
 def _apply_employee_roles_to_users(employee_roles: dict) -> None:
     for ename, role in (employee_roles or {}).items():
         users_role = _users_role_for_perm_role(str(role))
-        for u in USERS.values():
-            if u.get("employee_name") == ename and not u.get("is_system"):
+        for uid, u in USERS.items():
+            if uid == "admin" or u.get("is_system"):
+                continue
+            if u.get("employee_name") == ename:
                 u["role"] = users_role
 
 
@@ -1832,9 +1835,11 @@ def get_my_permissions():
     user = USERS.get(un)
     if not user:
         return jsonify({"error": "用户不存在", "code": 401}), 401
+    user = _perm_resolve.normalize_user_record(un, user)
+    USERS[un] = user
     name = user['employee_name']
     _sync_all_employees_perms()
-    if user.get("is_system") or user.get("role") == "超级管理员":
+    if user.get("is_system") or user.get("role") == "超级管理员" or un == "admin":
         my_perm = {f: True for f in PERM_FEATURES}
     else:
         my_perm = _get_effective_permissions(name, user)
