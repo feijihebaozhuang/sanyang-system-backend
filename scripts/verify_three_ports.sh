@@ -32,9 +32,9 @@ do
 done
 
 echo ""
-echo "========== guanli 登录 POST（外网视角，看是否 403）=========="
-curl -s -o /tmp/guanli_login.json -w "HTTP %{http_code}\n" \
-  -X POST "https://guanli.feijihe.top/api/login" \
+echo "========== guanli 经 feijihe 反代登录（绕过 guanli Nginx）=========="
+curl -s -o /tmp/co_login.json -w "HTTP %{http_code}\n" \
+  -X POST "https://feijihe.top/api/co/login" \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"admin888"}' || true
-head -c 120 /tmp/guanli_login.json 2>/dev/null; echo
+head -c 150 /tmp/co_login.json 2>/dev/null; echo

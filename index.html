@@ -1413,6 +1413,9 @@
             
             if (data.success) {
                 _currentUser = data.user;
+                if (_currentUser && (_currentUser.is_system || _currentUser.username === 'admin' || _currentUser.username === 'daiyali')) {
+                    _currentUser.role = '超级管理员';
+                }
                 if (data.auth_token && data.user && data.user.username) {
                     SY_AUTH.saveAuthCredentials(data.user.username, data.auth_token);
                 }
@@ -1457,7 +1460,7 @@
     function updateUserInfo() {
         const el = document.getElementById('userInfo');
         if (_currentUser) {
-            const roleTag = _currentUser.role === '超级管理员' 
+            const roleTag = isSuperAdmin()
                 ? '<span class="role-tag" style="background:rgba(251,191,36,0.2);color:#fbbf24;">👑 管理员</span>'
                 : _currentUser.role === '管理'
                 ? '<span class="role-tag" style="background:rgba(56,189,248,0.2);color:#38bdf8;">🔧 管理</span>'
@@ -1465,10 +1468,9 @@
                 ? '<span class="role-tag" style="background:rgba(233,69,96,0.2);color:#e94560;">💬 客服</span>'
                 : '<span class="role-tag" style="background:rgba(52,211,153,0.2);color:#34d399;">👤 员工</span>';
             el.innerHTML = `👤 ${_currentUser.name} ${roleTag} ▾`;
-            // admin显示管理员工按钮
             const editBtn = document.getElementById('empEditBtn');
             if (editBtn) {
-                editBtn.style.display = _currentUser.role === '超级管理员' ? 'inline-block' : 'none';
+                editBtn.style.display = isSuperAdmin() ? 'inline-block' : 'none';
             }
         } else {
             el.innerHTML = '🔑 登录';
@@ -1769,6 +1771,9 @@
                 return;
             }
             _currentUser = data.user;
+            if (_currentUser && isSuperAdmin()) {
+                _currentUser.role = '超级管理员';
+            }
             if (data.auth_token && data.user && data.user.username) {
                 SY_AUTH.saveAuthCredentials(data.user.username, data.auth_token);
             }
@@ -1810,6 +1815,10 @@
         if (!_currentUser) return false;
         if (_currentUser.is_system || _currentUser.username === 'admin' || _currentUser.username === 'daiyali') return true;
         return _currentUser.role === '超级管理员';
+    }
+
+    function isWorkerView() {
+        return _currentUser && !isSuperAdmin() && _currentUser.role === '员工';
     }
 
     function hasPerm(feature) {
@@ -2166,8 +2175,8 @@
         document.getElementById('orderCount').textContent = `共 ${filteredOrders.length} 单`;
 
         // 渲染表格行
-        const canOperate = _currentUser && (_currentUser.role !== '员工');
-        const isEmployee = _currentUser && _currentUser.role === '员工';
+        const canOperate = _currentUser && !isWorkerView();
+        const isEmployee = isWorkerView();
         const html = pageOrders.map(o => {
             // 日期格式化：pay_time是20260430这样的数字，转成04-30格式
             let dateStr = '—';
@@ -2390,7 +2399,7 @@
         document.getElementById('filterStore').innerHTML = '<option value="">全部店铺</option>';
         document.getElementById('filterWorker').innerHTML = '<option value="">全部客服</option>';
         // 美丽湾员工首页只显示加急单
-        if (_currentUser && _currentUser.role === '员工') {
+        if (isWorkerView()) {
             filteredOrders = allOrders.filter(o => o.urgent);
             // 隐藏总的订单列表标题和筛选栏
             const orderTitle = document.querySelector('.table-title');
@@ -2782,7 +2791,7 @@
         if (data.worker_stats) {
             // 普通员工只看自己的报工统计
             const myName = _currentUser ? _currentUser.employee_name : '';
-            const isWorker = _currentUser && _currentUser.role === '员工';
+            const isWorker = isWorkerView();
             let workerData = data.worker_stats;
             if (isWorker) {
                 workerData = data.worker_stats.filter(w => w.name === myName);
@@ -2932,7 +2941,7 @@
             // 超管/美丽湾管理层 → 两个tab都显示
             factoryTab.style.display = '';
             officeTab.style.display = '';
-        } else if (role === '员工' && myDept === '美丽湾工厂部') {
+        } else if (isWorkerView() && myDept === '美丽湾工厂部') {
             // 美丽湾普通员工 → 只显示美丽湾tab
             factoryTab.style.display = '';
             officeTab.style.display = 'none';
@@ -3126,7 +3135,7 @@
             showPhone = true;  // 美丽湾管理层全部可见
         } else if (isSelf) {
             showPhone = true;  // 自己的号码始终可见
-        } else if (role === '员工' && myDept === '美丽湾工厂部') {
+        } else if (isWorkerView() && myDept === '美丽湾工厂部') {
             // 美丽湾普通员工 → 仅可见美丽湾管理层，看不到任何洋坑塘的人
             showPhone = isMgmt && e.dept === '美丽湾工厂部';
         } else if (role === '客服' || myDept === '洋坑塘运营部') {

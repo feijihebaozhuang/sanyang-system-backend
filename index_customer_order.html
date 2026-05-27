@@ -76,11 +76,28 @@
     function isApiPath(path) {
         if (!path) return false;
         if (path.indexOf('/api/') === 0) return true;
+        if (path.indexOf('https://feijihe.top/api/co/') === 0) return true;
         if (global.location && path.indexOf(global.location.origin + '/api/') === 0) return true;
         return false;
     }
+    function coApiRoot() {
+        var host = (global.location && global.location.hostname) || '';
+        if (host === 'guanli.feijihe.top' || host === 'www.guanli.feijihe.top') {
+            return 'https://feijihe.top/api/co';
+        }
+        return '/api';
+    }
+    function resolveCoApiUrl(url) {
+        if (!url || url.indexOf('http') === 0) return url;
+        var root = coApiRoot();
+        if (root === '/api') return url;
+        if (url.indexOf('/api/') === 0) return root + url.substring(4);
+        return url;
+    }
     function apiFetch(url, options) {
-        var opts = Object.assign({ credentials: 'same-origin' }, options || {});
+        url = resolveCoApiUrl(url);
+        var cross = url.indexOf('http') === 0 && global.location && url.indexOf(global.location.origin) !== 0;
+        var opts = Object.assign({ credentials: cross ? 'omit' : 'same-origin' }, options || {});
         opts.headers = applyAuthHeaders(opts.headers);
         if (!opts.headers['Content-Type'] && opts.method && opts.method.toUpperCase() === 'POST') {
             opts.headers['Content-Type'] = 'application/json';
@@ -99,7 +116,10 @@
             if (typeof url === 'string') path = url;
             else if (url && url.url) path = url.url;
             if (isApiPath(path)) {
-                opts.credentials = opts.credentials || 'same-origin';
+                path = resolveCoApiUrl(path);
+                url = path;
+                opts.credentials = (path.indexOf('http') === 0 && global.location && path.indexOf(global.location.origin) !== 0)
+                    ? 'omit' : (opts.credentials || 'same-origin');
                 opts.headers = applyAuthHeaders(opts.headers);
             }
             return nativeFetch(url, opts);

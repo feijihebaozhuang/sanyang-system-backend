@@ -31,13 +31,40 @@ def resolve_login_user() -> str | None:
     hdr_user = (request.headers.get("X-Sanyang-User") or "").strip()
     hdr_tok = (request.headers.get("X-Sanyang-Token") or "").strip()
     if hdr_user in USERS and hdr_tok and hdr_tok == _auth_token_for(hdr_user):
+        _bind_session_for_user(hdr_user)
         return hdr_user
     return None
 
 
+def _active_user(username: str | None = None) -> dict | None:
+    """当前登录用户（规范化 role，并回写 Session，避免旧 Session 仍为「员工」）。"""
+    import permission_resolve as _pr
+
+    un = (username or session.get("username") or "").strip()
+    if not un:
+        hdr_user = (request.headers.get("X-Sanyang-User") or "").strip()
+        hdr_tok = (request.headers.get("X-Sanyang-Token") or "").strip()
+        if hdr_user in USERS and hdr_tok and hdr_tok == _auth_token_for(hdr_user):
+            un = hdr_user
+    if not un:
+        return None
+    user = USERS.get(un)
+    if not user:
+        return None
+    user = _pr.normalize_user_record(un, user)
+    USERS[un] = user
+    if session.get("username") == un:
+        if session.get("role") != user.get("role"):
+            session["role"] = user["role"]
+        if session.get("employee_name") != user.get("employee_name"):
+            session["employee_name"] = user.get("employee_name", "")
+        session.modified = True
+    return user
+
+
 def _bind_session_for_user(username: str) -> None:
     """Header 令牌鉴权通过后写入 Session，避免刷新后仅 Cookie 失效导致接口 401。"""
-    user = USERS.get(username)
+    user = _active_user(username)
     if not user or session.get("username") == username:
         return
     session.permanent = True
@@ -77,6 +104,13 @@ try:
     from mp_api import mp_bp as _mp_bp
 
     app.register_blueprint(_mp_bp)
+except ImportError:  # pragma: no cover
+    pass
+
+try:
+    import co_admin_proxy as _co_proxy
+
+    _co_proxy.register_co_admin_proxy(app)
 except ImportError:  # pragma: no cover
     pass
 
@@ -412,6 +446,8 @@ def login():
     session['role'] = user['role']
     session['employee_name'] = user['employee_name']
     session.modified = True
+    if user.get("is_system"):
+        persist()
 
     # 查找用户所属部门
     emp_dept = ''
@@ -504,10 +540,8 @@ def admin_reset_password():
 def get_current_user():
     un = resolve_login_user()
     if un:
-        user = USERS.get(un)
+        user = _active_user(un)
         if user:
-            user = _perm_resolve.normalize_user_record(un, user)
-            USERS[un] = user
             return jsonify({
                 "logged_in": True,
                 "auth_token": _auth_token_for(un),
@@ -1658,6 +1692,14 @@ _merge_employee_permissions_from_db()
 for _uid, _u in list(USERS.items()):
     USERS[_uid] = _perm_resolve.normalize_user_record(_uid, _u)
 
+
+@app.before_request
+def _refresh_login_user_role():
+    """每个 API 请求刷新 Session 中的 role（修复旧 Session 仍为「员工」）。"""
+    if request.path.startswith("/api/") and session.get("username"):
+        _active_user(session["username"])
+
+
 DEFAULT_PRODUCTION_MATERIAL_MAPPING = [
     {"keywords": "特硬,外径特硬,内径特硬,D6D,国产,加硬", "label": "特硬"},
     {"keywords": "优质,Q7Q,特价", "label": "优质"},
@@ -2643,11 +2685,14 @@ def load_inventory_cached():
 
 def _has_dimoldb_edit_perm():
     """检查是否有刀模库编辑权限"""
-    if not resolve_login_user():
-        return False
-    user = USERS.get(session['username'])
+    import permission_resolve as _pr
+
+    user = _active_user()
     if not user:
         return False
+    un = session.get("username") or ""
+    if _pr.is_super_admin_account(un, user):
+        return True
     if user['role'] in ('超级管理员', '管理'):
         return True
     # 检查功能权限
