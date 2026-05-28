@@ -15,24 +15,23 @@ if (-not (Test-Path $CfgFile)) {
     exit 1
 }
 
-# 避免重复启动；清理 cwd 不对的 orphan server.mjs
-$bridgeServer = Join-Path $Bridge "server.mjs"
+# 清理所有 server.mjs（避免 orphan 占长连接）
 Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
     Where-Object { $_.CommandLine -match 'server\.mjs' } |
     ForEach-Object {
-        $cwd = $_.ExecutablePath
-        $cmd = $_.CommandLine
-        if ($cmd -notmatch [regex]::Escape($Bridge)) {
-            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
-        }
+        Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
     }
-$existing = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-    Where-Object { $_.CommandLine -match [regex]::Escape($bridgeServer) -or ($_.CommandLine -match 'server\.mjs' -and $_.CommandLine -match 'feishu_cursor') }
-if ($existing) {
-    Write-Host "Bridge already running (PID $($existing.ProcessId -join ','))"
-    if (-not $Background) { Get-Content $LogFile -Tail 5 -ErrorAction SilentlyContinue }
-    exit 0
+Start-Sleep -Seconds 1
+
+$pidFile = Join-Path $Bridge "bridge.pid"
+if (Test-Path $pidFile) {
+    $oldPid = Get-Content $pidFile -ErrorAction SilentlyContinue
+    if ($oldPid -match '^\d+$') {
+        Stop-Process -Id ([int]$oldPid) -Force -ErrorAction SilentlyContinue
+    }
 }
+
+$bridgeServer = Join-Path $Bridge "server.mjs"
 
 Set-Location $Bridge
 if (-not (Test-Path "node_modules")) {
@@ -71,9 +70,10 @@ if ($Background) {
     $env:FEISHU_CURSOR_AUTOSTART = "1"
     $nodeExe = (Get-Command node -ErrorAction SilentlyContinue).Source
     if (-not $nodeExe) { $nodeExe = "node" }
-    Start-Process -FilePath $nodeExe -ArgumentList "`"$bridgeServer`"" -WorkingDirectory $Bridge `
-        -WindowStyle Hidden -RedirectStandardOutput $LogFile -RedirectStandardError $ErrFile
-    Write-Host "Started in background."
+    $proc = Start-Process -FilePath $nodeExe -ArgumentList "`"$bridgeServer`"" -WorkingDirectory $Bridge `
+        -WindowStyle Hidden -PassThru -RedirectStandardOutput $LogFile -RedirectStandardError $ErrFile
+    $proc.Id | Set-Content $pidFile -Encoding ASCII
+    Write-Host "Started in background (PID $($proc.Id))."
 } else {
     Write-Host "飞书后台: 事件订阅 -> 使用长连接（勿填 HTTP 地址）"
     Write-Host ""
