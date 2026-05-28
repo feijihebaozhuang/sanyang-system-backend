@@ -103,7 +103,12 @@
 |------|------|
 | `km_api.py` | HMAC-MD5 签名、`open.token.refresh`、outstock 拉单、**商品 SKU 尺寸 `erp.item.single.sku.get`** |
 | `alibaba_orders.py` | 1688 开放平台直连（可选兜底） |
-| `order_sync.py` | outstock 全平台 + 可选 1688 直连 → 缓存 |
+| `order_sync.py` | outstock 全平台 + 可选 1688 直连 → 缓存；同步后限流回填 `km_sku_map` |
+| `km_sku_sync.py` | 快麦 `item.list.query` 增量/全量 → `km_sku_map` |
+| `km_stock_store.py` | 快麦库存只读镜像表 `km_stock_shadow` |
+| `scripts/km_sku_sync_once.py` | systemd：SKU 增量同步（6h） |
+| `scripts/km_stock_sync_once.py` | systemd：库存镜像（10min） |
+| `scripts/reconcile_dimoldb_km.py` | 刀模 `km_mapping_code` ↔ `km_sku_map` 对账 |
 | `scripts/km_fetch_orders.py` | 服务器手动拉单/探测 |
 | `scripts/km_probe_orders.py` | 快速探测 |
 | `app_cs.py` / `app_production.py` | 后台同步、`POST /api/sync/force` |
@@ -126,3 +131,12 @@
 4. **禁止**从 `22*10 白色外径;长度26cm` 类买家文本猜长宽高  
 
 探测：`python3 scripts/km_probe_sku_dims.py 51714`
+
+## 11. 库存只读镜像（2026-05）
+
+| 接口 | 方法名 | 用途 |
+|------|--------|------|
+| 仓库库存 | `erp.item.warehouse.list.get` | 分页拉可售/锁定库存 → MySQL `km_stock_shadow` |
+
+定时：`deploy/install-km-timers.sh` 安装 `sanyang-km-stock-sync.timer`（10 分钟）。  
+**写回** `erp.item.available.stock.update` 待业务定稿后再做。

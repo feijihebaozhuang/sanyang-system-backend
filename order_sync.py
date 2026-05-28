@@ -110,6 +110,21 @@ def _prepare_pending_items(pending: list[dict]) -> None:
                     it["display"] = (it.get("spec") or "").strip()
 
 
+def _maybe_enrich_sku_map(report: dict[str, Any]) -> None:
+    """订单同步后补全缺失商家编码（限流，不阻塞主流程）。"""
+    if os.getenv("KM_SKU_ENRICH_AFTER_ORDER", "1") == "0":
+        return
+    try:
+        import km_sku_sync as kss
+
+        rep = kss.enrich_unknown_skus_from_orders()
+        if rep.get("enriched"):
+            report["km_sku_enriched"] = rep
+            print(f"[订单同步] 补 SKU 映射 {rep.get('enriched')} 条")
+    except Exception as ex:
+        report.setdefault("errors", []).append({"msg": f"SKU 回填: {ex}"})
+
+
 def _write_mysql_snapshot(
     merged: dict[str, dict],
     report: dict[str, Any],
@@ -148,6 +163,7 @@ def _write_mysql_snapshot(
         _pdc.invalidate_dashboard_cache()
     except ImportError:
         pass
+    _maybe_enrich_sku_map(report)
     return len(pending)
 
 

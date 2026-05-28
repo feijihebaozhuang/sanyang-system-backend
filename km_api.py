@@ -1928,6 +1928,110 @@ def km_item_sku_list_get(
     return list(rows or [])
 
 
+def _km_stock_list_ok(res: dict[str, Any]) -> bool:
+    if res.get("success") is False:
+        return False
+    for key in ("stocks", "stockList", "items", "itemStocks", "list"):
+        if key in res and res[key] is not None:
+            return True
+    data = res.get("data")
+    if isinstance(data, dict):
+        for key in ("stocks", "stockList", "items", "itemStocks", "list"):
+            if key in data and data[key] is not None:
+                return True
+    if isinstance(data, list):
+        return True
+    return res.get("success") is True
+
+
+def _km_stock_list_payload(res: dict[str, Any]) -> tuple[list[dict], int]:
+    if not _km_stock_list_ok(res):
+        return [], 0
+    data = res.get("data")
+    rows: list | None = None
+    total = 0
+    if isinstance(data, list):
+        rows = data
+    elif isinstance(data, dict):
+        rows = (
+            data.get("stocks")
+            or data.get("stockList")
+            or data.get("items")
+            or data.get("itemStocks")
+            or data.get("list")
+        )
+        total = int(data.get("total") or data.get("totalCount") or 0)
+    if rows is None:
+        rows = (
+            res.get("stocks")
+            or res.get("stockList")
+            or res.get("items")
+            or res.get("itemStocks")
+            or res.get("list")
+        )
+    if not isinstance(rows, list):
+        if isinstance(rows, dict):
+            rows = [rows]
+        else:
+            rows = []
+    if not total:
+        total = int(res.get("total") or res.get("totalCount") or len(rows))
+    out = [r for r in rows if isinstance(r, dict)]
+    return out, total
+
+
+def km_item_warehouse_list_get(
+    *,
+    page_no: int = 1,
+    page_size: int = 200,
+    outer_id: str = "",
+    warehouse_id: str = "",
+    sys_item_id: int | str | None = None,
+) -> dict[str, Any]:
+    """erp.item.warehouse.list.get — 仓库库存查询（只读镜像用）。"""
+    page_size = max(20, min(200, int(page_size)))
+    biz: dict[str, Any] = {
+        "pageNo": str(max(1, int(page_no))),
+        "pageSize": str(page_size),
+    }
+    if (outer_id or "").strip():
+        biz["outerId"] = str(outer_id).strip()
+    if (warehouse_id or "").strip():
+        biz["warehouseId"] = str(warehouse_id).strip()
+    if sys_item_id not in (None, ""):
+        biz["sysItemId"] = int(sys_item_id)
+    res = km_request("erp.item.warehouse.list.get", biz)
+    if _km_stock_list_ok(res):
+        return res
+    return km_request("item.warehouse.list.get", biz)
+
+
+def km_stock_row_to_shadow(row: dict[str, Any]) -> dict[str, Any] | None:
+    """快麦库存行 → km_stock_shadow 行。"""
+    oid = str(
+        row.get("outerId")
+        or row.get("skuOuterId")
+        or row.get("sysOuterId")
+        or row.get("itemOuterId")
+        or ""
+    ).strip()
+    if not oid:
+        return None
+    wid = str(row.get("warehouseId") or row.get("warehouseid") or "").strip()
+    return {
+        "outer_id": oid,
+        "warehouse_id": wid,
+        "warehouse_name": (row.get("warehouseName") or row.get("warehouse") or "").strip(),
+        "qty": row.get("stock") or row.get("qty") or row.get("quantity") or 0,
+        "available_qty": row.get("availableStock")
+        or row.get("available")
+        or row.get("availableQty")
+        or 0,
+        "lock_qty": row.get("lockStock") or row.get("lock") or row.get("lockQty") or 0,
+        "km_title": (row.get("title") or row.get("shortTitle") or "").strip(),
+    }
+
+
 def km_infer_product_type_from_title(title: str, *, l: float = 0, w: float = 0) -> str:
     import km_sku_map_store as kms
 
