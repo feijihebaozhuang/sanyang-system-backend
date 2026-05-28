@@ -43,10 +43,8 @@ _CARTON_EXCLUDE_ROW_MARKERS = (
 )
 
 MAX_REMAINDER_INCH = 1.0
-# 纸箱大板：余料 <5cm 或 >25cm 才可用（5~25cm 视为浪费）；度/长优先试开4→3→2→1
-CARTON_REM_OK_LT_CM = 5.0
-CARTON_REM_OK_GT_CM = 25.0
-CARTON_CUT_TRY_ORDER = (4, 3, 2, 1)
+# 纸箱大板：余料 ≤5.08cm(2英寸) 写「略」；>5.08cm 写「浪费请自定」；开数优先 1→2→3→4…
+CARTON_REM_OK_MAX_CM = 5.08
 
 _raw_cache: dict[str, Any] = {"ts": 0, "rows": []}
 _calc_cache: dict[str, dict] = {}
@@ -154,10 +152,10 @@ def _cm_disp(v: float) -> str:
 
 
 def _rem_disp_cm(rem_cm: float) -> str:
-    """余料展示：<5cm 写「略」，否则写厘米数。"""
-    if float(rem_cm) < CARTON_REM_OK_LT_CM:
+    """余料展示：≤5.08cm 写「略」，否则「浪费请自定」。"""
+    if float(rem_cm) <= CARTON_REM_OK_MAX_CM:
         return "略"
-    return f"{_cm_disp(rem_cm)}cm"
+    return "浪费请自定"
 
 
 def format_paper_shortage_message(
@@ -263,6 +261,8 @@ def match_paper(
                 cuts_l = layout["cuts_length"]
                 per_board = layout["sheets_per_board"]
                 waste = layout["waste_inch"]
+                rem_w_cm = layout["rem_w_cm"]
+                rem_l_cm = layout["rem_l_cm"]
             else:
                 rem_w = _leftover_inch(pw, need_w)
                 rem_l = _leftover_inch(pl, need_l)
@@ -274,6 +274,8 @@ def match_paper(
                 if per_board < 1:
                     continue
                 waste = rem_w + rem_l
+                rem_w_cm = rem_w * 2.54
+                rem_l_cm = rem_l * 2.54
             out.append(
                 {
                     "row": row,
@@ -285,6 +287,8 @@ def match_paper(
                     "cuts_l": cuts_l,
                     "per_board": per_board,
                     "qty_on_hand": int(row.get("qty") or 0),
+                    "rem_w_cm": rem_w_cm,
+                    "rem_l_cm": rem_l_cm,
                 }
             )
         return out
@@ -325,12 +329,14 @@ def match_paper(
     if _is_carton_product(product_type, attrs):
         best = min(
             candidates,
-            key=lambda x: (
-                -x["per_board"],
-                -max(x["cuts_w"], x["cuts_l"]),
+            key=lambda x: _carton_pick_key(
+                x.get("rem_w_cm", 999),
+                x.get("rem_l_cm", 999),
+                x["cuts_w"],
+                x["cuts_l"],
                 x["waste"],
                 x["area"],
-                -x["qty_on_hand"],
+                x["qty_on_hand"],
             ),
         )
     else:
@@ -370,28 +376,53 @@ def _layer_short_label(mat_suffix: str) -> str:
 
 
 def _remainder_ok_cm(rem_cm: float) -> bool:
-    """余料可用：小于 5cm，或大于 25cm（中间区间视为浪费）。 """
-    return rem_cm < CARTON_REM_OK_LT_CM or rem_cm > CARTON_REM_OK_GT_CM
+    """余料合规：≤5.08cm（2英寸）。"""
+    return float(rem_cm) <= CARTON_REM_OK_MAX_CM
+
+
+def _carton_pick_key(
+    rem_w_cm: float,
+    rem_l_cm: float,
+    cuts_w: int,
+    cuts_l: int,
+    waste: float,
+    area: float,
+    qty_on_hand: int,
+) -> tuple:
+    ok_axes = int(_remainder_ok_cm(rem_w_cm)) + int(_remainder_ok_cm(rem_l_cm))
+    return (
+        -ok_axes,
+        rem_w_cm + rem_l_cm,
+        cuts_w + cuts_l,
+        waste,
+        area,
+        -qty_on_hand,
+    )
 
 
 def _cuts_one_axis(stock_inch: float, need_inch: float) -> tuple[int, float] | None:
-    """单方向开数：先试开4，不行 3→2→1，且余料须满足 _remainder_ok_cm。"""
+    """单方向：开1→2→3… 取首个余料≤5.08cm；若无则取余料最小的开数。"""
     if need_inch <= 0 or stock_inch < need_inch:
         return None
     max_n = int(stock_inch // need_inch)
-    for target in CARTON_CUT_TRY_ORDER:
-        if target > max_n:
-            continue
+    if max_n < 1:
+        return None
+    fallback: tuple[int, float] | None = None
+    for target in range(1, max_n + 1):
         rem_cm = (stock_inch - target * need_inch) * 2.54
         if _remainder_ok_cm(rem_cm):
             return target, rem_cm
-    return None
+        if fallback is None or rem_cm < fallback[1] or (
+            rem_cm == fallback[1] and target < fallback[0]
+        ):
+            fallback = (target, rem_cm)
+    return fallback
 
 
 def _calc_cut_layout(
     stock_w: float, stock_l: float, need_w: float, need_l: float
 ) -> dict[str, Any] | None:
-    """纸箱大板开料：度=need_w，长=need_l；开数 4→3→2→1，余料 <5cm 或 >25cm。"""
+    """纸箱大板开料：开数 1→2→3…，余料 ≤5.08cm 为略，否则浪费请自定。"""
     w_axis = _cuts_one_axis(stock_w, need_w)
     l_axis = _cuts_one_axis(stock_l, need_l)
     if not w_axis or not l_axis:
@@ -437,12 +468,14 @@ def _best_carton_board_layout(
             "paper_length_inch": pl,
             "qty_on_hand": int(row.get("qty") or 0),
         }
-        key = (
-            -item["sheets_per_board"],
-            -max(layout["cuts_width"], layout["cuts_length"]),
-            item["waste_inch"],
+        key = _carton_pick_key(
+            layout["rem_w_cm"],
+            layout["rem_l_cm"],
+            layout["cuts_width"],
+            layout["cuts_length"],
+            layout["waste_inch"],
             pw * pl,
-            -item["qty_on_hand"],
+            int(row.get("qty") or 0),
         )
         if best is None or key < best["_sort_key"]:
             item["_sort_key"] = key
