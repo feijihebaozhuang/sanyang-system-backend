@@ -23,9 +23,9 @@ Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
     }
 Start-Sleep -Seconds 1
 
-$pidFile = Join-Path $Bridge "bridge.pid"
-if (Test-Path $pidFile) {
-    $oldPid = Get-Content $pidFile -ErrorAction SilentlyContinue
+$bridgePidFile = Join-Path $Bridge "bridge.pid"
+if (Test-Path $bridgePidFile) {
+    $oldPid = Get-Content $bridgePidFile -ErrorAction SilentlyContinue
     if ($oldPid -match '^\d+$') {
         Stop-Process -Id ([int]$oldPid) -Force -ErrorAction SilentlyContinue
     }
@@ -72,8 +72,8 @@ if ($Background) {
     if (-not $nodeExe) { $nodeExe = "node" }
     $proc = Start-Process -FilePath $nodeExe -ArgumentList "`"$bridgeServer`"" -WorkingDirectory $Bridge `
         -WindowStyle Hidden -PassThru -RedirectStandardOutput $LogFile -RedirectStandardError $ErrFile
-    $proc.Id | Set-Content $pidFile -Encoding ASCII
-    Write-Host "Started in background (PID $($proc.Id))."
+    $proc.Id | Set-Content $bridgePidFile -Encoding ASCII
+    Write-Host ("Started in background, process " + $proc.Id)
 } else {
     Write-Host "飞书后台: 事件订阅 -> 使用长连接（勿填 HTTP 地址）"
     Write-Host ""
