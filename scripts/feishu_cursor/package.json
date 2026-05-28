@@ -1,0 +1,8 @@
+{
+  "name": "feishu-cursor-local",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "feishu-agent-bridge": "^1.2.6"
+  }
+}

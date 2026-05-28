@@ -1,5 +1,8 @@
 .env
 feishu_dify.local.url
+scripts/feishu_cursor/node_modules/
+feishu_cursor.log
+feishu_cursor.err.log
 km_token.json
 wx_pay_apiclient_key.pem
 # 小程序仅本地维护，不推 Gitee（桌面 quote-weapp / customer-order-weapp）
