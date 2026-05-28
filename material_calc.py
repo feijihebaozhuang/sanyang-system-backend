@@ -539,8 +539,8 @@ def format_carton_kuaimai_exec_std(
     cw = int(board["cuts_width"])
     cl = int(board["cuts_length"])
     return (
-        f"{head} {sw}度开{cw} 余{_rem_disp_cm(board['rem_w_cm'])} "
-        f"{sl}长开{cl} 余{_rem_disp_cm(board['rem_l_cm'])}"
+        f"{head} {sw}度开{cw} {_rem_disp_cm(board['rem_w_cm'])} "
+        f"{sl}长开{cl} {_rem_disp_cm(board['rem_l_cm'])}"
     )
 
 
