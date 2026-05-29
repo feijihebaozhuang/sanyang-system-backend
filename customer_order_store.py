@@ -291,7 +291,10 @@ def ensure_schema(cur) -> None:
     _ensure_column(
         cur,
         "co_order",
-        "pay_out_trade_no",
+        "dimoldb_id",
+        "dimoldb_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT '匹配刀模ID' AFTER outer_id",
+    )
+    _ensure_column(
         "pay_out_trade_no VARCHAR(64) NOT NULL DEFAULT '' COMMENT '微信支付商户单号' AFTER km_pushed_at",
     )
     _ensure_column(
@@ -1371,6 +1374,29 @@ def upsert_order(data: dict, *, created_by: str = "admin") -> dict:
         match = lookup_sku_match(product_category_code, length, width, height, material, dim_kind)
         outer_id = (match or {}).get("outer_id") or ""
 
+    # 自动匹配刀模
+    dimoldb_id = (data.get("dimoldb_id") or "").strip()
+    if not dimoldb_id:
+        try:
+            import dimoldb_store as _ds
+            from settings import get_db_config
+            import pymysql
+            def _get_db():
+                cfg = get_db_config()
+                return pymysql.connect(**cfg)
+            dm_rows = _ds.load_dimoldb_cached(_get_db)
+            pt = product_category_code
+            # dim_kind='inner' 时匹配内径，否则外径
+            dm_type = "inner" if dim_kind == "inner" else "outer"
+            best = _ds.find_best_dimoldb_match(
+                length, width, height, dm_rows,
+                product_type=pt, diameter_type=dm_type,
+            )
+            if best:
+                dimoldb_id = str(best.get("id") or "")
+        except Exception:
+            pass
+
     oid = data.get("id")
     db = connect()
     try:
@@ -1381,7 +1407,7 @@ def upsert_order(data: dict, *, created_by: str = "admin") -> dict:
                 UPDATE co_order SET
                   customer_id=%s, cs_staff_id=%s, product_category_code=%s,
                   length=%s, width=%s, height=%s, material=%s, dim_kind=%s,
-                  outer_id=%s, qty=%s, unit_price=%s, total_price=%s,
+                  outer_id=%s, dimoldb_id=%s, qty=%s, unit_price=%s, total_price=%s,
                   status=%s, remark=%s, ship_contact=%s, ship_phone=%s, ship_address=%s,
                   express_company=%s, express_no=%s
                 WHERE id=%s
@@ -1389,7 +1415,7 @@ def upsert_order(data: dict, *, created_by: str = "admin") -> dict:
                 (
                     customer_id, cs_staff_id, product_category_code,
                     length, width, height, material, dim_kind,
-                    outer_id, qty, unit_price, total_price,
+                    outer_id, dimoldb_id, qty, unit_price, total_price,
                     status, remark, ship_contact, ship_phone, ship_address,
                     express_company, express_no, oid,
                 ),
@@ -1400,15 +1426,15 @@ def upsert_order(data: dict, *, created_by: str = "admin") -> dict:
                 """
                 INSERT INTO co_order (
                   order_no, customer_id, cs_staff_id, product_category_code,
-                  length, width, height, material, dim_kind, outer_id,
+                  length, width, height, material, dim_kind, outer_id, dimoldb_id,
                   qty, unit_price, total_price, status, remark,
                   ship_contact, ship_phone, ship_address,
                   express_company, express_no, created_by
-                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """,
                 (
                     order_no, customer_id, cs_staff_id, product_category_code,
-                    length, width, height, material, dim_kind, outer_id,
+                    length, width, height, material, dim_kind, outer_id, dimoldb_id,
                     qty, unit_price, total_price, status, remark,
                     ship_contact, ship_phone, ship_address,
                     express_company, express_no, created_by,

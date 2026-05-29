@@ -106,6 +106,40 @@ def _sanitize_customer_quote(res: dict) -> dict:
     return out
 
 
+def _check_inventory_for_order(order: dict) -> str:
+    """检查订单对应成品库存是否充足，返回警告文字（空 = 充足）。"""
+    import dimoldb_store as _ds
+    from settings import get_db_config
+    import pymysql
+
+    dimoldb_id = (order.get("dimoldb_id") or "").strip()
+    if not dimoldb_id:
+        return ""
+    try:
+        cfg = get_db_config()
+        db = pymysql.connect(**cfg)
+        try:
+            cur = db.cursor(pymysql.cursors.DictCursor)
+            # 查库存表中所有成品
+            cur.execute(
+                "SELECT id, name, spec, product_type, material, location, qty, last_month_qty, length, width, height, dim_type FROM inventory ORDER BY created_at DESC"
+            )
+            inv_items = cur.fetchall()
+            # 查刀模行
+            cur.execute("SELECT * FROM dimoldb WHERE id=%s", (dimoldb_id,))
+            dm = cur.fetchone()
+            if dm:
+                stock_qty = _ds.calc_dimoldb_stock(dm, inv_items)
+                order_qty = int(order.get("qty") or 0)
+                if stock_qty < order_qty:
+                    return f"成品库存不足：现有约 {stock_qty} 个，订单需 {order_qty} 个"
+        finally:
+            db.close()
+    except Exception:
+        pass
+    return ""
+
+
 def _proxy_json(method: str, path: str, payload: dict | None = None) -> dict:
     url = _QUOTE_PROXY + path
     data = None
@@ -581,18 +615,15 @@ def mp_cs_order_review():
     if status == "approved":
         if float(payload.get("total_price") or 0) <= 0:
             return jsonify({"success": False, "error": "请确认订单金额后再通过"}), 400
+
+        # 查库存是否充足（仅提示，不拦截）
+        stock_warning = _check_inventory_for_order(existing)
         payload["status"] = "pending_payment"
-    else:
-        payload["status"] = status
-    payload["remark"] = (data.get("remark") or existing.get("remark") or "").strip()
-    if cs_id:
-        payload["cs_staff_id"] = cs_id
-    item = co_store.upsert_order(payload, created_by=f"cs:{cs.get('username')}")
-    return jsonify({
-        "success": True,
-        "item": item,
-        "msg": "已确认价格，等待客户微信支付" if status == "approved" else "",
-    })
+        item = co_store.upsert_order(payload, created_by=f"cs:{cs.get('username')}")
+        resp = {"success": True, "item": item}
+        if stock_warning:
+            resp["stock_warning"] = stock_warning
+        return jsonify(resp)
 
 
 @mp_bp.route("/cs/order/km-push", methods=["POST"])

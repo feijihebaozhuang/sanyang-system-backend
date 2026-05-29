@@ -1961,6 +1961,30 @@ def calculate_quote():
         detail["sell_price_per_unit_discounted"] = round(detail["sell_price_per_unit"] * discount, 4)
         detail["total_price_discounted"] = round(detail["total_price"] * discount, 2)
 
+        # 查询匹配刀模（仅返回数据让前端展示，不拦截）
+        matched_dimoldb = None
+        try:
+            dm_rows = load_dimoldb()
+            dm_type = "inner" if ptype.endswith("-inner") else "outer"
+            best = _dimoldb_store.find_best_dimoldb_match(
+                length, width, height, dm_rows,
+                product_type=base_type, diameter_type=dm_type,
+            )
+            if best:
+                matched_dimoldb = {
+                    "id": str(best.get("id") or ""),
+                    "code": str(best.get("code") or ""),
+                    "production_spec": str(best.get("production_spec") or ""),
+                    "name": str(best.get("name") or ""),
+                    "length": float(best.get("length") or 0),
+                    "width": float(best.get("width") or 0),
+                    "height": float(best.get("height") or 0),
+                    "dim_type": str(best.get("dim_type") or ""),
+                }
+        except Exception:
+            pass
+        detail["matched_dimoldb"] = matched_dimoldb
+
         return jsonify({"success": True, "detail": detail})
 
     except Exception as e:
