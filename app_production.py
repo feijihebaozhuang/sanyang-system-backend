@@ -665,6 +665,7 @@ def dashboard():
             "process": "待发货",
             "status": "待发货",
             "urgent": saved.get("urgent", False),
+            "refund_status": str(o.get("refund_status") or "").strip(),
             "remark": saved.get("remark", "") or o.get('seller_memo', ''),
             "pay_time": o.get('pay_time', '') or o.get('created', ''),
         })
@@ -773,6 +774,78 @@ def scan_report():
 def scan_logs():
     return jsonify({"logs": ph.fetch_scan_logs(DB_CONFIG, 80)})
 
+
+# ==================== 退款审核 ====================
+
+@app.route('/api/refund/orders')
+def refund_orders():
+    """获取有退款的订单列表（生产端/客服端共用）。"""
+    try:
+        import order_cache_store as ocs
+        orders, _, _ = ocs.load_orders_for_api()
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)})
+    refund_list = []
+    for o in orders:
+        rs = str(o.get("refund_status") or "").strip()
+        if rs and rs != "无":
+            items = o.get("items") or []
+            product = items[0].get("display") or items[0].get("name") or "" if items else ""
+            refund_list.append({
+                "so_id": o.get("so_id") or o.get("id") or "",
+                "shop_name": o.get("shop_name", ""),
+                "receiver_name": o.get("receiver_name", ""),
+                "total_amount": o.get("total_amount", 0),
+                "refund_status": rs,
+                "refund_detail": o.get("refund_detail", ""),
+                "product": product,
+                "created": o.get("created", ""),
+            })
+    return jsonify({"success": True, "orders": refund_list})
+
+
+@app.route('/api/refund/approve', methods=['POST'])
+def refund_approve():
+    """审核退款订单，恢复生产流程。仅超级管理员/管理员/客服端可操作。"""
+    user = _active_user()
+    if not user:
+        return jsonify({"success": False, "message": "未登录"})
+    role = (user.get("role") or "").strip()
+    if role not in ("admin", "manager", "cs"):
+        return jsonify({"success": False, "message": "无权限：仅超级管理员/管理员/客服可审核退款"})
+    data = request.get_json() or {}
+    so_id = (data.get("so_id") or "").strip()
+    action = (data.get("action") or "approve").strip()
+    if not so_id:
+        return jsonify({"success": False, "message": "缺少订单号"})
+    try:
+        import order_cache_store as ocs
+        orders, _, _ = ocs.load_orders_for_api()
+        found = None
+        for o in orders:
+            if o.get("so_id") == so_id or o.get("id") == so_id:
+                found = o
+                break
+        if not found:
+            return jsonify({"success": False, "message": f"未找到订单 {so_id}"})
+        if action == "approve":
+            found["refund_status"] = "无"
+            found["refund_detail"] = ""
+            # 回写 MySQL order_json
+            db = get_db()
+            cur = db.cursor()
+            cur.execute(
+                "UPDATE order_cache_orders SET order_json=%s WHERE so_id=%s",
+                (json.dumps(found, ensure_ascii=False, default=str), so_id),
+            )
+            db.commit()
+            cur.close()
+            db.close()
+            return jsonify({"success": True, "message": f"订单 {so_id} 退款已审核，已恢复生产流程"})
+        return jsonify({"success": False, "message": f"未知操作: {action}"})
+    except Exception as e:
+        return jsonify({"success": False, "message": f"审核失败: {e}"})
+
 # ==================== 日报表 ====================
 @app.route('/api/daily_report')
 def daily_report():
@@ -874,6 +947,8 @@ def search_order():
         "urgent": bool(extra.get("urgent")),
         "production_status": _production_status_from_flow(flow),
         "order_detail": detail,
+        "refund_status": str(o.get("refund_status") or "").strip(),
+        "refund_detail": str(o.get("refund_detail") or "").strip(),
         "jst_detail": detail,
     })
 

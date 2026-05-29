@@ -2181,6 +2181,7 @@
                 <td>
                     <span class="tag ${o.status==='已完成'?'tag-done':o.status==='待审单'?'tag-pending':'tag-production'}">${o.status}</span>
                     ${o.urgent ? '<span class="urgent-badge">🔴加急</span>' : ''}
+                    ${o.refund_status && o.refund_status !== '无' ? `<span class="urgent-badge" style="background:#e8453c;">🔴退款</span>` : ''}
                 </td>
                 <td>
                     <div style="display:flex;gap:3px;flex-wrap:wrap;">

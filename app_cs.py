@@ -1340,6 +1340,82 @@ for key, default_val in _permission_data_init.items():
 _sync_all_employees_perms()
 
 
+# ==================== 退款审核（客服端） ====================
+
+@app.route('/api/refund/orders')
+def refund_orders_cs():
+    """获取有退款的订单列表（客服端）。"""
+    return _refund_orders_impl()
+
+
+@app.route('/api/refund/approve', methods=['POST'])
+def refund_approve_cs():
+    """审核退款订单，恢复生产流程。仅超级管理员/管理员/客服端可操作。"""
+    un = resolve_login_user()
+    if not un:
+        return jsonify({"success": False, "message": "未登录"})
+    user = USERS.get(un)
+    role = (user.get("role") or "").strip() if user else ""
+    if role not in ("admin", "manager", "cs"):
+        return jsonify({"success": False, "message": "无权限：仅超级管理员/管理员/客服可审核退款"})
+    return _refund_approve_impl(get_db)
+
+
+def _refund_orders_impl():
+    try:
+        import order_cache_store as ocs
+        orders, _, _ = ocs.load_orders_for_api()
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)})
+    refund_list = []
+    for o in orders:
+        rs = str(o.get("refund_status") or "").strip()
+        if rs and rs != "无":
+            items = o.get("items") or []
+            product = items[0].get("display") or items[0].get("name") or "" if items else ""
+            refund_list.append({
+                "so_id": o.get("so_id") or o.get("id") or "",
+                "shop_name": o.get("shop_name", ""),
+                "receiver_name": o.get("receiver_name", ""),
+                "total_amount": o.get("total_amount", 0),
+                "refund_status": rs,
+                "refund_detail": o.get("refund_detail", ""),
+                "product": product,
+                "created": o.get("created", ""),
+            })
+    return jsonify({"success": True, "orders": refund_list})
+
+
+def _refund_approve_impl(get_db_fn):
+    data = request.get_json() or {}
+    so_id = (data.get("so_id") or "").strip()
+    if not so_id:
+        return jsonify({"success": False, "message": "缺少订单号"})
+    try:
+        import order_cache_store as ocs
+        orders, _, _ = ocs.load_orders_for_api()
+        found = None
+        for o in orders:
+            if o.get("so_id") == so_id or o.get("id") == so_id:
+                found = o
+                break
+        if not found:
+            return jsonify({"success": False, "message": f"未找到订单 {so_id}"})
+        found["refund_status"] = "无"
+        found["refund_detail"] = ""
+        db = get_db_fn()
+        cur = db.cursor()
+        cur.execute(
+            "UPDATE order_cache_orders SET order_json=%s WHERE so_id=%s",
+            (json.dumps(found, ensure_ascii=False, default=str), so_id),
+        )
+        db.commit()
+        cur.close()
+        db.close()
+        return jsonify({"success": True, "message": f"订单 {so_id} 退款已审核，已恢复生产流程"})
+    except Exception as e:
+        return jsonify({"success": False, "message": f"审核失败: {e}"})
+
 # ==================== 报价系统 ====================
 
 _quote_data_cache: dict = {"data": None, "ts": 0.0}

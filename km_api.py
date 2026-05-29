@@ -2442,8 +2442,56 @@ def km_trade_to_cache_order(trade: dict, shops: dict[str, dict] | None = None) -
         "km_source": order_source,
         "km_user_id": uid,
     }
+    # 退款检测
+    _inject_refund_status(order, trade)
+
     order["status"] = order["status_label"] or "待处理"
     return finalize_cache_order(order)
+
+
+def km_refund_status_label(status: str) -> str:
+    """退款状态标签。"""
+    labels = {
+        "": "无",
+        "none": "无",
+        "WAIT_SELLER_AGREE": "待卖家同意",
+        "WAIT_SELLER_CONFIRM_GOODS": "待卖家确认收货",
+        "WAIT_BUYER_RETURN_GOODS": "待买家退货",
+        "WAIT_BUYER_CONFIRM_GOODS": "待买家确认收货",
+        "SELLER_CONFIRM_GOODS": "卖家已收货",
+        "REFUND_SUCCESS": "退款成功",
+        "REFUND_CLOSED": "退款关闭",
+    }
+    return labels.get(status, status or "无")
+
+
+def _inject_refund_status(order: dict, trade: dict) -> None:
+    """检查快麦订单退款标记，写入 order.refund_status。"""
+    is_refund = trade.get("isRefund") or 0
+    try:
+        is_refund = int(is_refund)
+    except (TypeError, ValueError):
+        is_refund = 0
+
+    if is_refund != 1:
+        order["refund_status"] = "无"
+        order["refund_detail"] = ""
+        return
+
+    lines = trade.get("orders") or trade.get("orderList") or []
+    detail_parts = []
+    for it in lines:
+        if not isinstance(it, dict):
+            continue
+        rid = it.get("refundId") or ""
+        rstatus = str(it.get("refundStatus") or "").strip()
+        if rid or rstatus:
+            label = km_refund_status_label(rstatus)
+            title = (it.get("shortTitle") or it.get("title") or "")[:40]
+            detail_parts.append(f"{title}: {label}")
+
+    order["refund_status"] = "退款中" if detail_parts else "已退款"
+    order["refund_detail"] = ";".join(detail_parts) if detail_parts else "有退款申请"
 
 
 def km_probe() -> dict[str, Any]:

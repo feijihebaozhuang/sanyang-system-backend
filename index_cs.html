@@ -595,6 +595,7 @@
         <a onclick="switchTopPage('inventory', this)">📦 库存</a>
         <a onclick="switchTopPage('employee', this)">👥 员工</a>
         <a class="nav-erp" onclick="switchTopPage('erp', this)">🔗 快麦ERP</a>
+        <a onclick="openRefundReview()" style="background:#e8453c;color:#fff;padding:6px 12px;border-radius:4px;font-size:13px;cursor:pointer;">🔴退款审核</a>
     </div>
     <div class="user" id="userInfo" onclick="showUserMenu()">🔑 登录</div>
 </div>
@@ -2455,6 +2456,7 @@
                 <td data-label="状态">
                     <span class="tag ${o.status==='已完成'?'tag-done':o.status==='待审单'?'tag-pending':'tag-production'}">${o.status}</span>
                     ${o.urgent ? '<span class="urgent-badge">🔴加急</span>' : ''}
+                    ${o.refund_status && o.refund_status !== '无' ? '<span class="urgent-badge" style="background:#e8453c;">🔴退款</span>' : ''}
                 </td>
                 <td data-label="操作">
                     <div style="display:flex;gap:3px;flex-wrap:wrap;">
@@ -2572,6 +2574,68 @@
         if (data.success) {
             o.remark = newRemark;
             renderOrderPage();
+        }
+    }
+
+    // ===== 退款审核弹窗 =====
+    async function openRefundReview() {
+        const canOperate = _currentUser && (_currentUser.role !== '员工');
+        if (!canOperate) { alert('无权限审核退款'); return; }
+        const res = await fetch('/api/refund/orders');
+        const data = await res.json();
+        if (!data.success) { alert('加载退款订单失败: ' + data.message); return; }
+        if (!data.orders || data.orders.length === 0) {
+            alert('暂无待审核的退款订单');
+            return;
+        }
+        let html = '<div class="modal-overlay" id="refundModal" onclick="if(event.target===this)closeRefundReview()" style="display:flex;align-items:center;justify-content:center;">';
+        html += '<div style="background:#fff;border-radius:12px;padding:20px;max-width:700px;width:90%;max-height:80vh;overflow-y:auto;">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">';
+        html += '<h3 style="margin:0;">🔴 退款审核 (' + data.orders.length + ' 单)</h3>';
+        html += '<button onclick="closeRefundReview()" style="border:none;background:none;font-size:20px;cursor:pointer;">✕</button></div>';
+        html += '<table style="width:100%;border-collapse:collapse;"><thead><tr style="background:#fafafa;">';
+        html += '<th style="padding:8px;text-align:left;font-size:12px;">单号</th>';
+        html += '<th style="padding:8px;text-align:left;font-size:12px;">店铺</th>';
+        html += '<th style="padding:8px;text-align:left;font-size:12px;">产品</th>';
+        html += '<th style="padding:8px;text-align:left;font-size:12px;">金额</th>';
+        html += '<th style="padding:8px;text-align:left;font-size:12px;">状态</th>';
+        html += '<th style="padding:8px;text-align:center;font-size:12px;">操作</th>';
+        html += '</tr></thead><tbody>';
+        for (const o of data.orders) {
+            html += '<tr style="border-top:1px solid #f0f0f0;">';
+            html += '<td style="padding:8px;font-size:12px;">' + o.so_id + '</td>';
+            html += '<td style="padding:8px;font-size:12px;">' + o.shop_name + '</td>';
+            html += '<td style="padding:8px;font-size:12px;">' + (o.product || '').substring(0, 30) + '</td>';
+            html += '<td style="padding:8px;font-size:12px;">¥' + o.total_amount + '</td>';
+            html += '<td style="padding:8px;font-size:12px;color:#e8453c;">' + o.refund_status + '</td>';
+            html += '<td style="padding:8px;text-align:center;"><button onclick="approveRefund(\'' + o.so_id + '\')" style="padding:4px 12px;background:#52c41a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">✅ 审核通过</button></td>';
+            html += '</tr>';
+        }
+        html += '</tbody></table></div></div>';
+        const div = document.createElement('div');
+        div.innerHTML = html;
+        document.body.appendChild(div);
+    }
+
+    function closeRefundReview() {
+        const m = document.getElementById('refundModal');
+        if (m) m.remove();
+    }
+
+    async function approveRefund(soId) {
+        if (!confirm('确认审核通过订单 ' + soId + ' 的退款？恢复后可正常报工')) return;
+        const res = await fetch('/api/refund/approve', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({so_id: soId, action: 'approve'})
+        });
+        const data = await res.json();
+        if (data.success) {
+            alert(data.message);
+            closeRefundReview();
+            loadDashboard();
+        } else {
+            alert('审核失败: ' + data.message);
         }
     }
 

@@ -486,6 +486,14 @@ def apply_scan_report(
     o = find_order_in_cache(orders, order_id)
     if not o:
         return {"success": False, "msg": f"未找到订单 {order_id}"}
+
+    # 退款拦截
+    rs = str(o.get("refund_status") or "").strip()
+    if rs and rs != "无":
+        detail = str(o.get("refund_detail") or "").strip()
+        reason = detail if detail else f"订单已{rs}"
+        return {"success": False, "msg": f"订单 {order_id} 已退款，无法报工（{reason}）"}
+
     oid = internal_order_id(o)
     order_type = infer_order_type(o)
     steps = get_or_create_flow_steps(db_config, process_tree, oid, order_type)
