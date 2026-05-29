@@ -55,12 +55,20 @@ def wx_code_to_session(code: str, *, app: str = "customer") -> dict[str, Any]:
 
     app=customer → 客户下单小程序（WX_MP_*）
     app=cs       → 报价/客服小程序 quote-weapp（WX_CS_MP_*，缺省回退 WX_MP_*）
+    app=scan     → 生产报工小程序 scan-weapp（WX_SCAN_MP_*）
     未配 AppSecret 时开发模式。
     """
     code = (code or "").strip()
     if not code:
         raise ValueError("code 必填")
-    if app == "cs":
+    if app == "scan":
+        appid = os.getenv("WX_SCAN_MP_APPID", "").strip() or "wxf5aa61511c679684"
+        secret = os.getenv("WX_SCAN_MP_SECRET", "").strip()
+        if not secret:
+            raise RuntimeError(
+                "未配置生产报工小程序 AppSecret：请在服务器 .env 设置 WX_SCAN_MP_SECRET"
+            )
+    elif app == "cs":
         appid = os.getenv("WX_CS_MP_APPID", "").strip() or "wxa1d9f876327af0c0"
         secret = os.getenv("WX_CS_MP_SECRET", "").strip()
         cust_appid = os.getenv("WX_MP_APPID", "").strip()
@@ -102,6 +110,15 @@ def wx_code_to_session(code: str, *, app: str = "customer") -> dict[str, Any]:
 
 
 QUOTE_WEAPP_ROLES = frozenset({"客服", "超级管理员"})
+
+
+def user_can_use_scan_weapp(user: dict | None) -> bool:
+    """生产报工小程序：已启用的登录账号均可使用（含员工）。"""
+    if not user:
+        return False
+    if not user.get("enabled", 1):
+        return False
+    return True
 
 
 def user_can_use_quote_weapp(user: dict | None) -> bool:

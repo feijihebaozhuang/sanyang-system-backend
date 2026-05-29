@@ -30,50 +30,13 @@ def resolve_login_user() -> str | None:
         return un
     hdr_user = (request.headers.get("X-Sanyang-User") or "").strip()
     hdr_tok = (request.headers.get("X-Sanyang-Token") or "").strip()
-    if hdr_user in USERS and hdr_tok and hdr_tok == _auth_token_for(hdr_user):
-        _bind_session_for_user(hdr_user)
-        return hdr_user
+    if hdr_user and hdr_tok and hdr_tok == _auth_token_for(hdr_user):
+        if hdr_user not in USERS:
+            _sync_user_from_mysql(hdr_user)
+        if hdr_user in USERS:
+            _bind_session_for_user(hdr_user)
+            return hdr_user
     return None
-
-
-def _try_wx_auth(wx_auth: str, wx_openid: str):
-    """尝试用微信 token 认证，成功则绑定 session。"""
-    import pymysql
-    from settings import get_db_config
-
-    def _scan_wx_token_for(openid: str, username: str) -> str:
-        secret = os.getenv("MP_TOKEN_SECRET", "").strip() or FLASK_SECRET_KEY
-        raw = f"scan_wx:{secret}:{openid}:{username}"
-        return hashlib.sha256(raw.encode()).hexdigest()[:32]
-
-    try:
-        cfg = dict(get_db_config())
-        db = pymysql.connect(**cfg, cursorclass=pymysql.cursors.DictCursor)
-        try:
-            cur = db.cursor()
-            cur.execute(
-                "SELECT * FROM co_scan_worker WHERE openid=%s AND enabled=1 LIMIT 1",
-                (wx_openid,),
-            )
-            worker = cur.fetchone()
-            if not worker:
-                return
-            expected = _scan_wx_token_for(wx_openid, worker["username"])
-            if wx_auth != expected:
-                return
-            username = worker["username"]
-            if not session.get("username"):
-                session["username"] = username
-                user = USERS.get(username)
-                if user:
-                    session["user_name"] = user.get("name") or username
-                    session["role"] = user.get("role") or ""
-                    session["employee_name"] = user.get("employee_name") or ""
-                session.modified = True
-        finally:
-            db.close()
-    except Exception:
-        pass
 
 
 def _active_user(username: str | None = None) -> dict | None:
@@ -169,12 +132,6 @@ def _sync_login_session_from_token():
     un = resolve_login_user()
     if un:
         _bind_session_for_user(un)
-        return
-    # 微信 token 认证（报工小程序）
-    wx_auth = request.headers.get("Authorization", "").replace("Bearer", "").strip()
-    wx_openid = request.headers.get("X-Scan-Openid", "").strip()
-    if wx_auth and wx_openid:
-        _try_wx_auth(wx_auth, wx_openid)
 
 
 import webhook_routes as _webhook_routes
@@ -459,6 +416,59 @@ def persist():
     return bool(_perm_save_detail.get("local_ok"))
 
 # ==================== 登录API ====================
+
+def _sync_user_from_mysql(username: str) -> dict | None:
+    """3003 MySQL 登录账号同步到内存 USERS（员工账号常在 MySQL 不在 data.json）。"""
+    import mp_auth as _mp_auth
+
+    row = _mp_auth.find_user_by_username(username)
+    if not row or not row.get("enabled", 1):
+        return None
+    import permission_resolve as _pr
+    entry = {
+        "password": row.get("password") or "",
+        "name": row.get("display_name") or username,
+        "role": row.get("role") or "员工",
+        "employee_name": row.get("employee_name") or "",
+    }
+    USERS[username] = _pr.normalize_user_record(username, entry)
+    return USERS[username]
+
+
+def _login_success_payload(username: str, user: dict) -> dict:
+    """构造登录成功 JSON（账号密码 / 微信登录共用）。"""
+    import permission_resolve as _pr_login
+
+    employee_name = user.get("employee_name", "")
+    enabled_map = _permission_data.get("employee_enabled", {})
+    if enabled_map.get(employee_name, True) is False:
+        return {"success": False, "message": "该账号已被禁用，请联系管理员"}
+
+    session.permanent = True
+    session["username"] = username
+    session["user_name"] = user.get("name") or username
+    session["role"] = user["role"]
+    session["employee_name"] = employee_name
+    session.modified = True
+    if user.get("is_system"):
+        persist()
+
+    emp_dept = ""
+    for emp in _employees_master_list:
+        if emp["name"] == user.get("employee_name"):
+            emp_dept = emp.get("dept", "")
+            break
+
+    pub = _pr_login.user_public_payload(username, user)
+    pub["dept"] = emp_dept
+    return {
+        "success": True,
+        "message": "登录成功",
+        "auth_token": _auth_token_for(username),
+        "user": pub,
+    }
+
+
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.get_json()
@@ -470,6 +480,8 @@ def login():
     
     user = USERS.get(username)
     if not user:
+        user = _sync_user_from_mysql(username)
+    if not user:
         return jsonify({"success": False, "message": "账号或密码错误"})
     import permission_resolve as _pr_login
     user = _pr_login.normalize_user_record(username, user)
@@ -479,37 +491,83 @@ def login():
     if user['password'] != pwd_hash:
         return jsonify({"success": False, "message": "账号或密码错误"})
     
-    # 检查员工是否被禁用
-    employee_name = user.get('employee_name', '')
-    enabled_map = _permission_data.get("employee_enabled", {})
-    # 默认启用，只有明确设为 False 才禁用
-    if enabled_map.get(employee_name, True) is False:
-        return jsonify({"success": False, "message": "该账号已被禁用，请联系管理员"})
-    
-    session.permanent = True
-    session['username'] = username
-    session['user_name'] = user.get('name') or username
-    session['role'] = user['role']
-    session['employee_name'] = user.get('employee_name', '')
-    session.modified = True
-    if user.get("is_system"):
-        persist()
+    payload = _login_success_payload(username, user)
+    if not payload.get("success"):
+        return jsonify(payload)
+    return jsonify(payload)
 
-    # 查找用户所属部门
-    emp_dept = ''
-    for emp in _employees_master_list:
-        if emp['name'] == user.get('employee_name'):
-            emp_dept = emp.get('dept', '')
-            break
 
-    pub = _pr_login.user_public_payload(username, user)
-    pub["dept"] = emp_dept
-    return jsonify({
-        "success": True,
-        "message": "登录成功",
-        "auth_token": _auth_token_for(username),
-        "user": pub
-    })
+@app.route('/api/scan/wx/login', methods=['POST'])
+def scan_wx_login():
+    """生产报工小程序：微信一键登录（已绑定账号）。"""
+    import mp_auth as _mp_auth
+    import scan_mp_store as _sms
+
+    data = request.get_json(silent=True) or {}
+    code = (data.get("code") or "").strip()
+    if not code:
+        return jsonify({"success": False, "error": "code 必填"}), 400
+    try:
+        sess = _mp_auth.wx_code_to_session(code, app="scan")
+        openid = (sess.get("openid") or "").strip()
+        row = _sms.find_user_by_scan_openid(openid)
+        if not row:
+            return jsonify(
+                {
+                    "success": False,
+                    "need_bind": True,
+                    "openid": openid,
+                    "error": "首次使用请绑定三羊系统账号",
+                }
+            )
+        username = (row.get("username") or "").strip()
+        user = _sync_user_from_mysql(username)
+        if not user or not _mp_auth.user_can_use_scan_weapp(row):
+            return jsonify({"success": False, "error": "账号不可用"}), 403
+        payload = _login_success_payload(username, user)
+        if not payload.get("success"):
+            return jsonify({"success": False, "error": payload.get("message")}), 403
+        payload["openid"] = openid
+        payload["auth_mode"] = "wx"
+        return jsonify(payload)
+    except (ValueError, RuntimeError) as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
+
+@app.route('/api/scan/wx/bind', methods=['POST'])
+def scan_wx_bind():
+    """生产报工小程序：首次微信登录绑定三羊账号。"""
+    import mp_auth as _mp_auth
+    import scan_mp_store as _sms
+
+    data = request.get_json(silent=True) or {}
+    code = (data.get("code") or "").strip()
+    username = (data.get("username") or "").strip()
+    password = (data.get("password") or "").strip()
+    if not code:
+        return jsonify({"success": False, "error": "code 必填"}), 400
+    if not username or not password:
+        return jsonify({"success": False, "error": "请输入账号和密码"}), 400
+    user = _mp_auth.verify_user_password(username, password)
+    if not user:
+        return jsonify({"success": False, "error": "账号或密码错误"}), 401
+    if not _mp_auth.user_can_use_scan_weapp(user):
+        return jsonify({"success": False, "error": "该账号不可使用生产报工小程序"}), 403
+    try:
+        sess = _mp_auth.wx_code_to_session(code, app="scan")
+        openid = (sess.get("openid") or "").strip()
+        _sms.bind_scan_openid(username, openid)
+        synced = _sync_user_from_mysql(username)
+        if not synced:
+            return jsonify({"success": False, "error": "账号同步失败"}), 500
+        payload = _login_success_payload(username, synced)
+        if not payload.get("success"):
+            return jsonify({"success": False, "error": payload.get("message")}), 403
+        payload["openid"] = openid
+        payload["auth_mode"] = "wx"
+        return jsonify(payload)
+    except (ValueError, RuntimeError) as e:
+        return jsonify({"success": False, "error": str(e)}), 400
 
 @app.route('/api/logout')
 def logout():
