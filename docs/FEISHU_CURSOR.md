@@ -1,15 +1,21 @@
-# 飞书 ↔ Cursor（不是 OpenClaw）
+# 飞书 ↔ DeepSeek（原飞书-Cursor 桥接）
 
-## 分工
+## 说明
+
+桥接已从 **Cursor Agent CLI** 改为直接调用 **DeepSeek API**：
+
+- 原因：Cursor Pro 配额有限且 agent CLI 不支持自定义模型
+- 模型：`deepseek-v4-flash`（可通过环境变量 `DEEPSEEK_MODEL` 切换）
+- API Key 来自 Cursor 桌面端原有的 DeepSeek 配置
+
+## 飞书后台（此应用）
 
 | 组件 | 飞书应用 | 作用 |
 |------|----------|------|
 | **OpenClaw** | 你已配好的另一个应用 | 不再改动 |
-| **Cursor 飞书桥接** | `cli_a96c20180038dbde` | 飞书消息 → 本机 **`agent` CLI**（非 cursor.exe）→ 回飞书 |
+| **飞书-DeepSeek 桥接** | `cli_a96c20180038dbde` | 飞书消息 → **DeepSeek API** → 回飞书 |
 
 凭证文件：`%USERPROFILE%\.config\feishu-agent-bridge\feishu.json`
-
-## 飞书后台（此应用）
 
 1. [开放平台](https://open.feishu.cn/app/cli_a96c20180038dbde/event)
 2. 事件订阅：**使用长连接接收事件**（不要 HTTP / ngrok）
@@ -17,14 +23,14 @@
 4. 权限：`im:message`、`im:message:send_as_bot`、`im:chat`
 5. 发布应用，添加机器人
 
-## 一键配置（推荐）
+## 一键配置
 
 ```powershell
 cd D:\Desktop\sanyang-system
 .\scripts\setup_feishu_cursor.ps1
 ```
 
-会自动：校验飞书凭证 → 安装依赖 → 创建桌面快捷方式 → 注册开机自启 → 启动桥接。
+自动：校验飞书凭证 → 安装依赖 → 创建桌面快捷方式 → 注册开机自启 → 启动桥接。
 
 ## 日常启动
 
@@ -35,22 +41,24 @@ cd D:\Desktop\sanyang-system
 
 ```powershell
 cd D:\Desktop\sanyang-system
-.\scripts\start_feishu_cursor.ps1          # 前台
+.\scripts\start_feishu_cursor.ps1              # 前台
 .\scripts\start_feishu_cursor.ps1 -Background  # 后台
 ```
 
-电脑需 **已 `agent login`**（Cursor Agent CLI，不是编辑器登录）。未登录时双击 **登录 Cursor Agent.bat**。
+## 环境变量
 
-首次安装 Agent CLI：
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `DEEPSEEK_API_KEY` | Cursor settings 中的值 | DeepSeek API 密钥 |
+| `DEEPSEEK_MODEL` | `deepseek-v4-flash` | 模型名（也可用 `deepseek-v4-pro`） |
+| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com/v1` | API 地址 |
 
-```powershell
-irm 'https://cursor.com/install?win32=true' | iex
-agent login
-```
+## Cursor 桌面端
+
+桌面 Cursor 的 DeepSeek 模型已同步更新：
+
+- 旧：`deepseek-chat` → 新：`deepseek-v4-flash`
+- 同时支持 `deepseek-v4-pro`
+- 旧模型名将在 2026-07-24 停用，已提前迁移
 
 日志：`feishu_cursor.log`、`feishu_cursor.err.log`
-
-## 说明
-
-- Cursor 聊天窗口里的 AI **不会自动**收到飞书消息；靠本桥接调用 **Cursor Agent CLI**（命令名 `agent`，不是 `cursor`）。
-- `sk-abaf...` 是 **Dify** 用，与飞书-Cursor 桥接无关。

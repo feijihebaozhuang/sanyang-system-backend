@@ -1,120 +1,105 @@
 /**
- * 飞书 -> 本机 Cursor Agent CLI（不是 cursor.exe 编辑器）
- * 飞书后台：长连接 + im.message.receive_v1
+ * Feishu -> DeepSeek API（长连接 WebSocket）
  *
- * 前置：irm 'https://cursor.com/install?win32=true' | iex
- *       agent login   （或设置 CURSOR_API_KEY）
+ * 收到飞书消息后直接调用 DeepSeek API（OpenAI 兼容格式），
+ * 不再依赖 Cursor Agent CLI（因 Cursor Pro 配额有限且不支持自定义模型）。
+ *
+ * 环境变量：
+ *   DEEPSEEK_API_KEY   - DeepSeek API 密钥（默认读取 settings.json 中的值）
+ *   DEEPSEEK_MODEL     - 模型名（默认 deepseek-v4-flash）
+ *   DEEPSEEK_BASE_URL  - API 地址（默认 https://api.deepseek.com/v1）
  */
-import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { createFeishuService } from "feishu-agent-bridge";
 
 const WORKDIR = process.env.FEISHU_CURSOR_WORKDIR || "D:/Desktop/sanyang-system";
-const AGENT_MODE = process.env.FEISHU_CURSOR_MODE || "ask";
-const AGENT_BIN =
-  process.env.CURSOR_AGENT_BIN ||
-  (process.platform === "win32"
-    ? `${process.env.LOCALAPPDATA || ""}/cursor-agent/agent.cmd`
-    : "agent");
+const LOGFILE = WORKDIR + "/feishu_cursor.log";
 
-function resolveAgentBin() {
-  if (existsSync(AGENT_BIN)) return AGENT_BIN;
-  return "agent";
+function log(msg) {
+  const ts = new Date().toISOString();
+  const line = `[${ts}] ${msg}`;
+  console.log(msg);
+  try { writeFileSync(LOGFILE, line + "\n", { flag: "a" }); } catch {}
 }
 
-function runCursorAgent(prompt, senderId) {
-  return new Promise((resolve, reject) => {
-    const bin = resolveAgentBin();
-    const args = [
-      "-p",
-      "--trust",
-      "--mode",
-      AGENT_MODE,
-      "--workspace",
-      WORKDIR,
-      "--output-format",
-      "text",
-      prompt,
-    ];
-    const child = spawn(bin, args, {
-      cwd: WORKDIR,
-      shell: process.platform === "win32",
-      env: { ...process.env, FEISHU_USER: senderId },
-      windowsHide: true,
-    });
-    let out = "";
-    let err = "";
-    const timer = setTimeout(() => {
-      child.kill("SIGTERM");
-      reject(new Error("Cursor Agent 超时（5 分钟）"));
-    }, 300000);
-    child.stdout?.on("data", (d) => {
-      out += d.toString();
-    });
-    child.stderr?.on("data", (d) => {
-      err += d.toString();
-    });
-    child.on("error", (e) => {
-      clearTimeout(timer);
-      reject(
-        new Error(
-          `找不到 agent 命令：${e.message}\n请先安装：irm 'https://cursor.com/install?win32=true' | iex`
-        )
-      );
-    });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      const text = (out || err || "").trim();
-      if (/Authentication required|agent login/i.test(text)) {
-        reject(
-          new Error(
-            "Cursor Agent 未登录。请在 PowerShell 运行：agent login\n或设置环境变量 CURSOR_API_KEY"
-          )
-        );
-        return;
-      }
-      if (/Run with 'cursor -'/i.test(text)) {
-        reject(
-          new Error(
-            "误用了 cursor.exe（编辑器），需要 Cursor Agent CLI。\n请运行：irm 'https://cursor.com/install?win32=true' | iex"
-          )
-        );
-        return;
-      }
-      if (!text && code !== 0) {
-        reject(new Error(`agent 退出码 ${code}`));
-        return;
-      }
-      resolve(text.slice(0, 3800) || "（Agent 无文本输出）");
-    });
+// ---------- 配置 ----------
+
+const DEEPSEEK_API_KEY =
+  process.env.DEEPSEEK_API_KEY ||
+  "sk-9a48f1ea984344fb8b72453aacb944cc";
+
+const DEEPSEEK_BASE_URL =
+  process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com/v1";
+
+const MODEL = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
+
+// ---------- DeepSeek API 调用 ----------
+
+async function callDeepSeek(prompt) {
+  const url = `${DEEPSEEK_BASE_URL}/chat/completions`;
+  const body = {
+    model: MODEL,
+    messages: [
+      { role: "system", content: "你是一个智能助手。回答简洁准确，使用中文。" },
+      { role: "user", content: prompt },
+    ],
+    stream: false,
+    max_tokens: 4096,
+    temperature: 0.7,
+  };
+
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${DEEPSEEK_API_KEY}`,
+    },
+    body: JSON.stringify(body),
   });
+
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => "(no body)");
+    throw new Error(`DeepSeek API ${resp.status}: ${errText.slice(0, 200)}`);
+  }
+
+  const data = await resp.json();
+  const content = data?.choices?.[0]?.message?.content || "";
+  return content.slice(0, 3800) || "(no response)";
 }
+
+// ---------- 启动 ----------
+
+log("Starting Feishu -> DeepSeek bridge...");
+log("Workspace: " + WORKDIR);
+log("Model: " + MODEL);
+log("API: " + DEEPSEEK_BASE_URL);
 
 const service = await createFeishuService({
   transport: "ws",
   onMessage: async (msg) => {
     if (!msg.shouldReply) return;
+    const chatId = msg.chatId;
+    const content = msg.content;
+    const msgId = msg.messageId;
+    log(`WS msg chatId=${chatId} msgId=${msgId} preview=${(content || "").slice(0, 60)}`);
     const sender = service.getSender();
-    await sender.sendText(msg.chatId, "收到，Cursor Agent 处理中…");
     try {
-      const reply = await runCursorAgent(msg.content, msg.senderId);
-      await sender.sendText(msg.chatId, reply);
+      const reply = await callDeepSeek(content);
+      log(`DeepSeek reply OK len=${reply.length}`);
+      await sender.sendText(chatId, reply);
+      log("Reply sent to " + chatId);
     } catch (e) {
-      await sender.sendText(
-        msg.chatId,
-        `处理失败：${e.message}\n\n请确认：1) 已安装 agent CLI  2) 已 agent login  3) 飞书应用已开长连接`
-      );
+      log("DeepSeek error: " + e.message);
+      const errMsg = "处理失败：" + e.message.slice(0, 200);
+      await sender.sendText(chatId, errMsg);
     }
   },
   onBotAdded: async (chatId) => {
-    await service.getSender().sendText(
-      chatId,
-      "已连接 Cursor 飞书桥接（agent CLI）。直接发消息即可。\n首次使用请在电脑运行：agent login"
-    );
+    log("Bot added to chat " + chatId);
+    const sender = service.getSender();
+    await sender.sendText(chatId, "飞书-DeepSeek 桥接已连接。发送消息即可。");
   },
 });
 
-console.log("[feishu-cursor] WebSocket 启动，工作区:", WORKDIR);
-console.log("[feishu-cursor] Agent:", resolveAgentBin(), "mode:", AGENT_MODE);
-console.log("[feishu-cursor] 配置: ~/.config/feishu-agent-bridge/feishu.json");
+log("Bridge entered running state.");
 await service.run();

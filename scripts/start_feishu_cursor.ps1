@@ -1,4 +1,4 @@
-# 飞书 <-> Cursor Agent 桥接（长连接 WebSocket）
+# 飞书 <-> DeepSeek API 桥接（长连接 WebSocket）
 param(
     [switch]$Background
 )
@@ -42,27 +42,12 @@ if (-not (Test-Path "node_modules")) {
 $env:FEISHU_TRANSPORT = "ws"
 $env:FEISHU_CURSOR_WORKDIR = $Root
 
-$agentCmd = Join-Path $env:LOCALAPPDATA "cursor-agent\agent.cmd"
-if (-not (Test-Path $agentCmd)) {
-    Write-Host "未检测到 Cursor Agent CLI，正在安装..."
-    irm 'https://cursor.com/install?win32=true' | iex
-}
+# DeepSeek 配置（可通过环境变量覆盖）
+$model = if ($env:DEEPSEEK_MODEL) { $env:DEEPSEEK_MODEL } else { "deepseek-v4-flash" }
 
-$agentStatus = & agent status 2>&1 | Out-String
-if ($agentStatus -match 'Not logged in') {
-    Write-Host ""
-    Write-Host "【警告】Cursor Agent 尚未登录 — 飞书能收到消息但 AI 会失败。" -ForegroundColor Yellow
-    Write-Host "请运行: agent login  或双击桌面「登录 Cursor Agent.bat」"
-    Write-Host ""
-    if (-not $Background -and -not $env:FEISHU_CURSOR_AUTOSTART) {
-        $ans = Read-Host "仍要启动桥接? (y/N)"
-        if ($ans -notmatch '^[yY]') { exit 1 }
-    }
-} else {
-    Write-Host "Cursor Agent 已登录 ✓"
-}
-
-Write-Host "启动飞书-Cursor 长连接..."
+Write-Host "启动飞书-DeepSeek 长连接..."
+Write-Host "DeepSeek 模型: $model"
+Write-Host "API: https://api.deepseek.com/v1"
 Write-Host "工作区: $Root"
 Write-Host "日志: $LogFile"
 
