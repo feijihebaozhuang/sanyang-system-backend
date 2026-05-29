@@ -701,7 +701,8 @@ def parse_quantity_info(text: str, platform_qty: int = 0) -> dict[str, Any]:
             "qty_label": f"{n}个",
             "qty_source": "bracket",
         }
-    if m_simple:
+    # 【100个】无"数量"前缀时，仅 platform_qty <= 1 才优先（否则和组数冲突）
+    if m_simple and int(platform_qty or 0) <= 1:
         n = int(m_simple.group(1))
         return {
             "total_qty": n,
@@ -711,18 +712,30 @@ def parse_quantity_info(text: str, platform_qty: int = 0) -> dict[str, Any]:
             "qty_source": "bracket_qty",
         }
 
+    # 规格尾部的"100个"（如【28*23】100个），仅 platform_qty <= 1 才优先
     m_tail = re.search(
         r"(?:cm|CM|厘米|mm|MM|毫米|】)\s*(\d+)\s*个",
         raw,
         re.I,
     )
     if m_tail:
-        n = int(m_tail.group(1))
+        n_tail = int(m_tail.group(1))
+        plat = int(platform_qty or 0)
+        if plat > 1:
+            # platform_qty > 1 说明"100个"是"每份数量"而非总数
+            total = n_tail * plat
+            return {
+                "total_qty": total,
+                "order_qty": plat,
+                "per_group_qty": n_tail,
+                "qty_label": f"×{total}个（{total}={n_tail}个×{plat}组）",
+                "qty_source": "tail_bundle",
+            }
         return {
-            "total_qty": n,
-            "order_qty": n,
+            "total_qty": n_tail,
+            "order_qty": n_tail,
             "per_group_qty": 0,
-            "qty_label": f"×{n}个",
+            "qty_label": f"×{n_tail}个",
             "qty_source": "tail_qty",
         }
 
