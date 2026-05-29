@@ -2076,8 +2076,8 @@
 
         // iframe懒加载
         if (name === 'erp' || name === 'jst') {
-            const targetIframe = document.querySelector(`#page-${name} iframe[data-src]`);
-            if (targetIframe && !targetIframe.src) {
+            const targetIframe = document.querySelector(`#page-${name} iframe`);
+            if (targetIframe && (!targetIframe.getAttribute('src') || targetIframe.getAttribute('src') === 'about:blank')) {
                 targetIframe.src = targetIframe.dataset.src;
             }
         }
@@ -2160,8 +2160,10 @@
         } else if (name === 'jst') {
             document.getElementById('page-main').classList.remove('active');
             document.getElementById('page-jst').classList.add('active');
-            const iframe = document.querySelector('#page-jst iframe[data-src]');
-            loadDiemoldIframe();
+            const iframe = document.querySelector('#page-jst iframe');
+            if (iframe && (!iframe.getAttribute('src') || iframe.getAttribute('src') === 'about:blank')) {
+                iframe.src = iframe.dataset.src || '';
+            }
         } else {
             document.body.classList.remove('dark-bg');
             document.querySelector('.content').classList.remove('databoard-mode');
