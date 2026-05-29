@@ -869,7 +869,7 @@ def refund_approve():
     if not user:
         return jsonify({"success": False, "message": "未登录"})
     role = (user.get("role") or "").strip()
-    if role not in ("admin", "manager", "cs"):
+    if role not in ("admin", "manager", "cs", "超级管理员", "管理", "客服"):
         return jsonify({"success": False, "message": "无权限：仅超级管理员/管理员/客服可审核退款"})
     data = request.get_json() or {}
     so_id = (data.get("so_id") or "").strip()

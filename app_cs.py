@@ -1356,7 +1356,7 @@ def refund_approve_cs():
         return jsonify({"success": False, "message": "未登录"})
     user = USERS.get(un)
     role = (user.get("role") or "").strip() if user else ""
-    if role not in ("admin", "manager", "cs"):
+    if role not in ("admin", "manager", "cs", "超级管理员", "管理", "客服"):
         return jsonify({"success": False, "message": "无权限：仅超级管理员/管理员/客服可审核退款"})
     return _refund_approve_impl(get_db)
 
