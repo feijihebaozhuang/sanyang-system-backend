@@ -1329,8 +1329,14 @@ _sync_all_employees_perms()
 
 # ==================== 报价系统 ====================
 
+_quote_data_cache: dict = {"data": None, "ts": 0.0}
+
 def load_quote_data():
-    """从MySQL加载报价配置"""
+    """从MySQL加载报价配置（300s内存缓存）。"""
+    import time as _t
+    now = _t.time()
+    if _quote_data_cache["data"] is not None and now - _quote_data_cache["ts"] < 300:
+        return _quote_data_cache["data"]
     try:
         db = get_db()
         cur = db.cursor()
@@ -1350,15 +1356,19 @@ def load_quote_data():
             result[key] = val
         if result:
             from quote_material_defaults import enrich_quote_data
-
-            return enrich_quote_data(result)
+            qd = enrich_quote_data(result)
+            _quote_data_cache["data"] = qd
+            _quote_data_cache["ts"] = now
+            return qd
     except Exception as e:
         print(f'[MySQL load_quote_data] 错误: {e}')
     try:
         with open(QUOTE_DATA_FILE, "r", encoding="utf-8") as f:
             from quote_material_defaults import enrich_quote_data
-
-            return enrich_quote_data(json.load(f))
+            qd = enrich_quote_data(json.load(f))
+            _quote_data_cache["data"] = qd
+            _quote_data_cache["ts"] = now
+            return qd
     except Exception:
         return None
 
@@ -2359,7 +2369,7 @@ def load_inventory():
         return {"finished": [], "raw": [], "returned": []}
 
 _inv_mem_cache: dict = {"data": None, "ts": 0.0}
-_INV_CACHE_TTL = 60.0
+_INV_CACHE_TTL = 300.0
 
 
 def load_inventory_cached():

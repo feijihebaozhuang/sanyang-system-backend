@@ -55,7 +55,7 @@ def _row_to_dict(r: dict) -> dict[str, Any]:
 
 _dim_cache_lock = threading.Lock()
 _dim_cache: dict[str, Any] = {"rows": [], "ts": 0.0}
-_DIM_CACHE_TTL = float(__import__("os").getenv("DIMOLDB_CACHE_TTL_SEC", "120"))
+_DIM_CACHE_TTL = float(__import__("os").getenv("DIMOLDB_CACHE_TTL_SEC", "300"))
 
 
 def invalidate_dimoldb_cache() -> None:

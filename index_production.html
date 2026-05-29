@@ -1734,17 +1734,15 @@
             }
             overlay.style.display = 'none';
             updateUserInfo();
-            try {
-                await loadPermissions();
-                restorePageAfterLogin();
-            } catch (e) {
-                console.error('登录后初始化失败（仍保持登录）:', e);
-            }
+            // 并行发起权限/首页/报价请求，不相互等待
+            Promise.all([
+                loadPermissions().catch(e => console.error('权限加载失败:', e)),
+                new Promise(r => { restorePageAfterLogin(); r(); }),
+            ]).catch(e => console.error('登录后初始化失败:', e));
         } catch (e) {
             console.error('checkLogin:', e);
             overlay.style.display = 'flex';
         }
-    }
 
     // ===== 加载权限数据（通过 /api/my_permissions 一次获取）=====
     async function loadPermissions() {

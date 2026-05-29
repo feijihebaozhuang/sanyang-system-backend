@@ -1901,8 +1901,14 @@ def scan_workers():
 # ==================== 报价系统 ====================
 QUOTE_DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'quote_data.json')
 
+_quote_data_cache: dict = {"data": None, "ts": 0.0}
+
 def load_quote_data():
-    """优先 MySQL quote_config，与客服端一致；失败时回退 quote_data.json。"""
+    """优先 MySQL quote_config，与客服端一致；失败时回退 quote_data.json。有300s内存缓存。"""
+    import time as _t
+    now = _t.time()
+    if _quote_data_cache["data"] is not None and now - _quote_data_cache["ts"] < 300:
+        return _quote_data_cache["data"]
     try:
         db = get_db()
         cur = db.cursor()
@@ -1922,15 +1928,19 @@ def load_quote_data():
             result[key] = val
         if result:
             from quote_material_defaults import enrich_quote_data
-
-            return enrich_quote_data(result)
+            qd = enrich_quote_data(result)
+            _quote_data_cache["data"] = qd
+            _quote_data_cache["ts"] = now
+            return qd
     except Exception as e:
         print(f"[load_quote_data] MySQL: {e}")
     try:
         with open(QUOTE_DATA_FILE, "r", encoding="utf-8") as f:
             from quote_material_defaults import enrich_quote_data
-
-            return enrich_quote_data(json.load(f))
+            qd = enrich_quote_data(json.load(f))
+            _quote_data_cache["data"] = qd
+            _quote_data_cache["ts"] = now
+            return qd
     except Exception:
         return None
 
@@ -2586,7 +2596,7 @@ def save_dimoldb(data):
 
 
 _inv_mem_cache: dict = {"data": None, "ts": 0.0}
-_INV_CACHE_TTL = float(os.getenv("INV_CACHE_TTL_SEC", "120"))
+_INV_CACHE_TTL = float(os.getenv("INV_CACHE_TTL_SEC", "300"))
 
 _dim_match_index_cache: dict = {"index": None, "ts": 0.0}
 
@@ -2598,7 +2608,7 @@ def get_dim_match_index_cached():
     now = _t.time()
     if _dim_match_index_cache["index"] is not None and now - float(
         _dim_match_index_cache["ts"] or 0
-    ) < 120.0:
+    ) < 300.0:
         return _dim_match_index_cache["index"]
     rows = load_dimoldb()
     idx = _dimoldb_store.build_dim_match_index(rows)
