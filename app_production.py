@@ -546,6 +546,20 @@ def get_current_user():
             })
     return jsonify({"logged_in": False})
 
+
+@app.route('/api/dashboard/summary')
+def dashboard_summary():
+    """极速统计：从预计算的 stats_cache 直接读取，不遍历订单。"""
+    try:
+        import order_cache_store as _ocs
+        stats = _ocs.read_stats_cache("dashboard_summary")
+        if stats:
+            return jsonify({"success": True, "summary": stats, "from_cache": True})
+    except Exception:
+        pass
+    return jsonify({"success": False, "error": "统计缓存未就绪"})
+
+
 # ==================== 首页 - 生产概览 ====================
 @app.route('/api/dashboard')
 def dashboard():
@@ -4150,6 +4164,38 @@ def api_realtime_orders():
     n = payload.get("total", 0)
     print(f"[实时订单] MySQL {payload.get('cache_status')}: {n} 条")
     return jsonify(payload)
+
+
+@app.route('/api/realtime/orders/stream')
+def realtime_orders_stream():
+    """SSE 推送：订单缓存更新时主动通知前端刷新。"""
+    from flask import Response, stream_with_context
+    import order_cache_store as _ocs
+    import time as _t
+
+    def event_stream():
+        last_ts = 0.0
+        while True:
+            try:
+                meta = _ocs.read_meta()
+                ts = float(meta.get("updated_at") or 0)
+                if ts > last_ts:
+                    if last_ts > 0:
+                        yield "data: refresh\n\n"
+                    last_ts = ts
+            except Exception:
+                pass
+            _t.sleep(5)
+
+    return Response(
+        stream_with_context(event_stream()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 # ==================== 店铺客服配置 API ====================

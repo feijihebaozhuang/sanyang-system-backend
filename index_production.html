@@ -1744,14 +1744,29 @@
             overlay.style.display = 'flex';
         }
 
-    // ===== 加载权限数据（通过 /api/my_permissions 一次获取）=====
+    // ===== 加载权限数据（通过 /api/my_permissions 一次获取，localStorage 缓存 60s）=====
+    const _PERM_CACHE_KEY = '_sanyang_perm_cache';
+    const _QUOTE_CACHE_KEY = '_sanyang_quote_cache';
     async function loadPermissions() {
+        const cached = localStorage.getItem(_PERM_CACHE_KEY);
+        if (cached) {
+            try {
+                const c = JSON.parse(cached);
+                if (c.ts && Date.now() - c.ts < 60000) {
+                    window._myPerms = c.data.my_permissions || {};
+                    window._allPerms = c.data.all_permissions || {};
+                    window._allEmployees = c.data.all_employees || [];
+                    return;
+                }
+            } catch(e) {}
+        }
         try {
             const data = await getAPI('/api/my_permissions');
             if (data.success) {
                 window._myPerms = data.my_permissions || {};
                 window._allPerms = data.all_permissions || {};
                 window._allEmployees = data.all_employees || [];
+                localStorage.setItem(_PERM_CACHE_KEY, JSON.stringify({ts: Date.now(), data: data}));
             } else {
                 window._myPerms = {};
                 window._allPerms = {};
@@ -1777,9 +1792,24 @@
     function initPages() {
         document.getElementById('datePicker').value = new Date().toISOString().split('T')[0];
         updateNavByRole();
-        loadDashboard();
+        // 先极速接口显示统计数字，完整列表后台加载
+        loadDashboardSummary();
+        setTimeout(loadDashboard, 50);
         loadQuoteConfig(); // 加载报价配置
         onQuoteTypeChange(); // 初始化材质选项
+    }
+
+    // 极速统计数字（从预计算缓存读，不遍历订单）
+    async function loadDashboardSummary() {
+        try {
+            const data = await getAPI('/api/dashboard/summary');
+            if (data.success && data.summary) {
+                document.getElementById('statTotal').textContent = data.summary.total_orders || 0;
+                document.getElementById('statProduction').textContent = data.summary.in_production || 0;
+                document.getElementById('statUrgent').textContent = data.summary.urgent_orders || 0;
+                document.getElementById('statDone').textContent = data.summary.completed || 0;
+            }
+        } catch(e) { /* 静默，等完整 loadDashboard 覆盖 */ }
     }
 
     // ===== 页面切换 =====
@@ -3870,14 +3900,25 @@
     let _selectedQty = 1000;
     let _quoteConfig = null;
 
-    // 加载报价配置
+    // 加载报价配置（localStorage 缓存 120s）
     async function loadQuoteConfig() {
+        const cached = localStorage.getItem(_QUOTE_CACHE_KEY);
+        if (cached) {
+            try {
+                const c = JSON.parse(cached);
+                if (c.ts && Date.now() - c.ts < 120000) {
+                    _quoteConfig = c.data;
+                    onQuoteTypeChange();
+                    return;
+                }
+            } catch(e) {}
+        }
         try {
             const res = await fetch('/api/quote_data');
             const data = await res.json();
             if (data.success) {
                 _quoteConfig = data.data;
-                // 自动触发材质加载
+                localStorage.setItem(_QUOTE_CACHE_KEY, JSON.stringify({ts: Date.now(), data: data.data}));
                 onQuoteTypeChange();
             }
         } catch(e) {}
@@ -5980,6 +6021,31 @@
     // 页面加载后立即自动加载实时订单
     // 这样切到实时订单页时已经有数据了
     rtLoadOrders();  // 直接加载，不延迟！有缓存则毫秒返回
+
+    // SSE 实时推送：订单缓存有更新时自动静默刷新
+    (function connectOrderSSE() {
+        try {
+            const es = new EventSource('/api/realtime/orders/stream');
+            es.onmessage = function(e) {
+                if (e.data === 'refresh') {
+                    rtRefreshSilent();
+                    // 首页面板也刷新（如果在首页）
+                    const page = document.getElementById('page-main');
+                    if (page && page.classList.contains('active')) {
+                        loadDashboardSummary();
+                        setTimeout(loadDashboard, 50);
+                    }
+                    // 打单管理缓存失效（下次切到时重建）
+                    window._prodCacheStale = true;
+                }
+            };
+            es.onerror = function() {
+                es.close();
+                // 5秒后重连
+                setTimeout(connectOrderSSE, 5000);
+            };
+        } catch(e) {}
+    })();
 
     // 刷新店铺过滤按钮 + 重新加载订单数据（联动客服配置变更）
     function rtReloadShopFilter() {

@@ -1968,14 +1968,29 @@
         }
     }
 
-    // ===== 加载权限数据（通过 /api/permissions/data 一次获取）=====
+    // ===== 加载权限数据（通过 /api/permissions/data 一次获取，localStorage 缓存 60s）=====
+    const _PERM_CACHE_KEY = '_sanyang_perm_cache';
+    const _QUOTE_CACHE_KEY = '_sanyang_quote_cache';
     async function loadPermissions() {
+        const cached = localStorage.getItem(_PERM_CACHE_KEY);
+        if (cached) {
+            try {
+                const c = JSON.parse(cached);
+                if (c.ts && Date.now() - c.ts < 60000) {
+                    window._myPerms = c.data.my_permissions || {};
+                    window._allPerms = c.data.all_permissions || {};
+                    window._allEmployees = c.data.all_employees || [];
+                    return;
+                }
+            } catch(e) {}
+        }
         try {
             const data = await getAPI('/api/my_permissions');
             if (data && data.success) {
                 window._myPerms = data.my_permissions || {};
                 window._allPerms = data.all_permissions || {};
                 window._allEmployees = data.all_employees || [];
+                localStorage.setItem(_PERM_CACHE_KEY, JSON.stringify({ts: Date.now(), data: data}));
             } else {
                 window._myPerms = {};
                 window._allPerms = {};
@@ -2004,9 +2019,26 @@
     function initPages() {
         document.getElementById('datePicker').value = localTodayStr();
         updateNavByRole();
-        loadDashboard();
+        loadDashboardSummary();
+        setTimeout(loadDashboard, 50);
         loadQuoteConfig(); // 加载报价配置
         onQuoteTypeChange(); // 初始化材质选项
+    }
+
+    async function loadDashboardSummary() {
+        try {
+            const data = await getAPI('/api/dashboard/summary');
+            if (data.success && data.summary) {
+                const s = data.summary;
+                document.getElementById('statTotal').textContent = s.total_orders || 0;
+                document.getElementById('statProduction').textContent = s.in_production || 0;
+                document.getElementById('statUrgent').textContent = s.urgent_orders || 0;
+                const sales = s.total_sales;
+                document.getElementById('statDone').textContent = sales != null
+                    ? ('¥' + Number(sales).toLocaleString('zh-CN', {maximumFractionDigits: 0}))
+                    : '--';
+            }
+        } catch(e) {}
     }
 
     // ===== 页面切换 =====
@@ -4078,14 +4110,25 @@
     let _selectedQty = 1000;
     let _quoteConfig = null;
 
-    // 加载报价配置
+    // 加载报价配置（localStorage 缓存 120s）
     async function loadQuoteConfig() {
+        const cached = localStorage.getItem(_QUOTE_CACHE_KEY);
+        if (cached) {
+            try {
+                const c = JSON.parse(cached);
+                if (c.ts && Date.now() - c.ts < 120000) {
+                    _quoteConfig = c.data;
+                    onQuoteTypeChange();
+                    return;
+                }
+            } catch(e) {}
+        }
         try {
             const res = await fetch('/api/quote_data');
             const data = await res.json();
             if (data.success) {
                 _quoteConfig = data.data;
-                // 自动触发材质加载
+                localStorage.setItem(_QUOTE_CACHE_KEY, JSON.stringify({ts: Date.now(), data: data.data}));
                 onQuoteTypeChange();
             }
         } catch(e) {}
@@ -6158,18 +6201,41 @@
     let _rtAutoTimer = null;
     function startRtAutoRefresh() {
         stopRtAutoRefresh();
+        // SSE 优先，降级到 30 秒轮询
+        try {
+            const es = new EventSource('/api/realtime/orders/stream');
+            window._rtSSE = es;
+            es.onmessage = function(e) {
+                if (e.data === 'refresh') {
+                    var page = document.getElementById('page-realtime');
+                    if (page && page.classList.contains('active')) {
+                        rtLoadOrders(true);
+                    } else {
+                        // 不在实时页面也静默刷新数据
+                        rtLoadOrders(true);
+                    }
+                }
+            };
+            es.onerror = function() {
+                es.close();
+                setTimeout(startRtAutoRefresh, 5000);
+            };
+            return;
+        } catch(e) {}
+        // SSE 不可用时回退到 15 秒轮询
         _rtAutoTimer = setInterval(function() {
             var page = document.getElementById('page-realtime');
             if (page && page.classList.contains('active')) {
                 rtLoadOrders(true);
             }
-        }, 30000);
+        }, 15000);
     }
     function stopRtAutoRefresh() {
         if (_rtAutoTimer) {
             clearInterval(_rtAutoTimer);
             _rtAutoTimer = null;
         }
+        try { if (window._rtSSE) { window._rtSSE.close(); window._rtSSE = null; } } catch(e) {}
     }
 
     async function rtLoadOrders(silent) {

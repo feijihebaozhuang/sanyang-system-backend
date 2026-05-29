@@ -592,6 +592,19 @@ def get_current_user():
     return jsonify({"logged_in": False})
 
 
+@app.route('/api/dashboard/summary')
+def dashboard_summary():
+    """极速统计：从预计算的 stats_cache 直接读取。"""
+    try:
+        import order_cache_store as _ocs
+        stats = _ocs.read_stats_cache("dashboard_summary")
+        if stats:
+            return jsonify({"success": True, "summary": stats, "from_cache": True})
+    except Exception:
+        pass
+    return jsonify({"success": False, "error": "统计缓存未就绪"})
+
+
 @app.route('/api/my_permissions')
 def get_my_permissions_cs():
     """3001：登录即全部功能可用；权限配置请用 3003。"""
