@@ -489,7 +489,8 @@
         }
         try {
             var qs = window.prodBuildDashboardQuery();
-            if (options.forceRefresh || options.paging || window._prodPage > 1) {
+            // 仅在首屏或手动刷新时 force refresh；翻页走缓存不要重建
+            if (options.forceRefresh || (window._prodPage === 1 && !options.paging && !hadCache)) {
                 qs += (qs ? '&' : '') + 'refresh=1';
             }
             if (options.paging) {

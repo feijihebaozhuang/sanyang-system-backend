@@ -67,9 +67,9 @@ _NUM2_RE = re.compile(
     re.I,
 )
 _BUNDLE_RE = re.compile(
-    r"""[-/／\-]?\s*【?\s*(\d+)\s*个\s*[/／]?(?:一|1)?(捆|组|袋|包)\s*】?""",
+    r"""[-/／\-]?\s*【?\s*(\d+)\s*个\s*[/／]?(?:一|(\d+))?(捆|组|袋|包)\s*】?""",
     re.I,
-)
+)  # group(1)=每份数量, group(3)=单位, group(2)=份数(无则为1)
 _QTY_BRACKET_RE = re.compile(r"【\s*数量\s*(\d+)\s*个\s*】", re.I)
 _QTY_SIMPLE_BRACKET_RE = re.compile(r"【\s*(\d+)\s*个\s*】", re.I)
 _INNER_MARK_RE = re.compile(r"【\s*内\s*】|内径|内尺寸|\(内\)|（内）", re.I)
@@ -669,12 +669,13 @@ def _parse_diameter_type(text: str) -> str:
 
 
 def parse_group_info(text: str) -> tuple[int, str]:
+    """返回 (per_group_qty, bundle_label)，组数在外部从 platform_qty 或正则捕获。"""
     if not text:
         return 0, ""
     m = _BUNDLE_RE.search(text)
     if m:
         n = int(m.group(1))
-        unit = (m.group(2) or "组").strip()
+        unit = (m.group(3) or "组").strip()
         return n, f"{n}个/{unit}"
     m_legacy = re.search(r"【?\s*(\d+)\s*个一捆\s*】?", text, re.I)
     if m_legacy:
@@ -728,10 +729,12 @@ def parse_quantity_info(text: str, platform_qty: int = 0) -> dict[str, Any]:
     per_group, bundle_label = parse_group_info(raw)
     plat = int(platform_qty or 0)
     if per_group > 0:
-        groups = plat if plat > 0 else 1
+        m = _BUNDLE_RE.search(raw)
+        groups_from_text = int(m.group(2)) if (m and m.group(2)) else 0
+        groups = max(groups_from_text, plat) if (groups_from_text or plat) else 1
         total = groups * per_group
         label = bundle_label
-        if plat > 1:
+        if groups > 1:
             label = f"×{total}个（{total}={per_group}个×{groups}组）"
         else:
             label = f"×{total}个" if total else bundle_label
