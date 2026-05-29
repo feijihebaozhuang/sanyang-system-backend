@@ -295,6 +295,9 @@ def ensure_schema(cur) -> None:
         "dimoldb_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT '匹配刀模ID' AFTER outer_id",
     )
     _ensure_column(
+        cur,
+        "co_order",
+        "pay_out_trade_no",
         "pay_out_trade_no VARCHAR(64) NOT NULL DEFAULT '' COMMENT '微信支付商户单号' AFTER km_pushed_at",
     )
     _ensure_column(
