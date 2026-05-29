@@ -36,6 +36,46 @@ def resolve_login_user() -> str | None:
     return None
 
 
+def _try_wx_auth(wx_auth: str, wx_openid: str):
+    """尝试用微信 token 认证，成功则绑定 session。"""
+    import pymysql
+    from settings import get_db_config
+
+    def _scan_wx_token_for(openid: str, username: str) -> str:
+        secret = os.getenv("MP_TOKEN_SECRET", "").strip() or FLASK_SECRET_KEY
+        raw = f"scan_wx:{secret}:{openid}:{username}"
+        return hashlib.sha256(raw.encode()).hexdigest()[:32]
+
+    try:
+        cfg = dict(get_db_config())
+        db = pymysql.connect(**cfg, cursorclass=pymysql.cursors.DictCursor)
+        try:
+            cur = db.cursor()
+            cur.execute(
+                "SELECT * FROM co_scan_worker WHERE openid=%s AND enabled=1 LIMIT 1",
+                (wx_openid,),
+            )
+            worker = cur.fetchone()
+            if not worker:
+                return
+            expected = _scan_wx_token_for(wx_openid, worker["username"])
+            if wx_auth != expected:
+                return
+            username = worker["username"]
+            if not session.get("username"):
+                session["username"] = username
+                user = USERS.get(username)
+                if user:
+                    session["user_name"] = user.get("name") or username
+                    session["role"] = user.get("role") or ""
+                    session["employee_name"] = user.get("employee_name") or ""
+                session.modified = True
+        finally:
+            db.close()
+    except Exception:
+        pass
+
+
 def _active_user(username: str | None = None) -> dict | None:
     """当前登录用户（规范化 role，并回写 Session，避免旧 Session 仍为「员工」）。"""
     import permission_resolve as _pr
@@ -129,6 +169,12 @@ def _sync_login_session_from_token():
     un = resolve_login_user()
     if un:
         _bind_session_for_user(un)
+        return
+    # 微信 token 认证（报工小程序）
+    wx_auth = request.headers.get("Authorization", "").replace("Bearer", "").strip()
+    wx_openid = request.headers.get("X-Scan-Openid", "").strip()
+    if wx_auth and wx_openid:
+        _try_wx_auth(wx_auth, wx_openid)
 
 
 import webhook_routes as _webhook_routes

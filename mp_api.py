@@ -805,6 +805,239 @@ def mp_order_pay_prepay():
     })
 
 
+# ==================== 生产报工小程序微信登录 ====================
+
+# 报工小程序 AppID（与 project.config.json 一致）
+_SCAN_WX_APPID = "wxf5aa61511c679684"
+_SCAN_WX_SECRET_ENV = "WX_SCAN_MP_SECRET"
+
+
+def _scan_wx_code_to_session(code: str) -> dict[str, Any]:
+    """报工小程序 code → openid"""
+    import urllib.request as _ur
+    import urllib.parse as _up
+
+    secret = os.getenv(_SCAN_WX_SECRET_ENV, "").strip()
+    if not secret:
+        oid = f"dev_scan_{hashlib.sha256(code.encode()).hexdigest()[:20]}"
+        return {"openid": oid, "session_key": "", "dev_mode": True}
+    url = (
+        "https://api.weixin.qq.com/sns/jscode2session"
+        f"?appid={_up.quote(_SCAN_WX_APPID)}"
+        f"&secret={_up.quote(secret)}"
+        f"&js_code={_up.quote(code)}"
+        "&grant_type=authorization_code"
+    )
+    try:
+        with _ur.urlopen(url, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"微信登录失败: {e}") from e
+    if data.get("errcode"):
+        raise RuntimeError(data.get("errmsg") or f"微信 errcode {data.get('errcode')}")
+    openid = (data.get("openid") or "").strip()
+    if not openid:
+        raise RuntimeError("微信未返回 openid")
+    return {"openid": openid, "session_key": data.get("session_key") or "", "dev_mode": False}
+
+
+def _scan_wx_token(openid: str, username: str) -> str:
+    """报工小程序 token"""
+    import hashlib as _hl
+    secret = _mp_secret()
+    raw = f"scan_wx:{secret}:{openid}:{username}"
+    return _hl.sha256(raw.encode()).hexdigest()[:32]
+
+
+def _find_scan_worker_by_openid(openid: str) -> dict | None:
+    """查 co_scan_worker 表（微信openid → 员工），无则返回 None"""
+    import pymysql
+    from settings import get_db_config
+    cfg = dict(get_db_config())
+    db = pymysql.connect(**cfg, cursorclass=pymysql.cursors.DictCursor)
+    try:
+        cur = db.cursor()
+        cur.execute(
+            "SELECT id, openid, username, employee_name, display_name, role, created_at "
+            "FROM co_scan_worker WHERE openid=%s AND enabled=1 LIMIT 1",
+            (openid,),
+        )
+        return cur.fetchone()
+    finally:
+        db.close()
+
+
+def _ensure_scan_worker_table():
+    """确保 co_scan_worker 表存在"""
+    import pymysql
+    from settings import get_db_config
+    cfg = dict(get_db_config())
+    db = pymysql.connect(**cfg)
+    try:
+        cur = db.cursor()
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS co_scan_worker ("
+            "  id INT AUTO_INCREMENT PRIMARY KEY,"
+            "  openid VARCHAR(128) NOT NULL DEFAULT '' COMMENT '微信openid',"
+            "  username VARCHAR(64) NOT NULL DEFAULT '' COMMENT '三羊系统账号',"
+            "  employee_name VARCHAR(64) NOT NULL DEFAULT '' COMMENT '员工姓名',"
+            "  display_name VARCHAR(64) NOT NULL DEFAULT '' COMMENT '显示名',"
+            "  role VARCHAR(32) NOT NULL DEFAULT '' COMMENT '角色',"
+            "  enabled TINYINT NOT NULL DEFAULT 1,"
+            "  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,"
+            "  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,"
+            "  UNIQUE KEY uk_openid (openid),"
+            "  KEY idx_username (username)"
+            ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
+@mp_bp.route("/scan/wx/login", methods=["POST"])
+def mp_scan_wx_login():
+    """报工小程序微信一键登录：code → openid → 查绑定 → 登录"""
+    _ensure_scan_worker_table()
+    data = request.get_json(silent=True) or {}
+    code = (data.get("code") or "").strip()
+    if not code:
+        return jsonify({"success": False, "error": "code 必填"}), 400
+    try:
+        sess = _scan_wx_code_to_session(code)
+        openid = sess["openid"]
+        worker = _find_scan_worker_by_openid(openid)
+        if not worker:
+            return jsonify({
+                "success": False,
+                "need_bind": True,
+                "openid": openid,
+                "error": "首次使用请绑定三羊系统账号",
+            }), 401
+        username = worker["username"]
+        tok = _scan_wx_token(openid, username)
+        return jsonify({
+            "success": True,
+            "openid": openid,
+            "token": tok,
+            "username": username,
+            "employee_name": worker.get("employee_name") or "",
+            "display_name": worker.get("display_name") or "",
+            "role": worker.get("role") or "",
+            "auth_mode": "wx",
+        })
+    except (ValueError, RuntimeError) as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
+
+@mp_bp.route("/scan/wx/bind", methods=["POST"])
+def mp_scan_wx_bind():
+    """首次绑定：账号密码 + openid → 绑定为报工员工"""
+    _ensure_scan_worker_table()
+    data = request.get_json(silent=True) or {}
+    openid = (data.get("openid") or "").strip()
+    username = (data.get("username") or "").strip()
+    password = (data.get("password") or "").strip()
+    if not openid or not username or not password:
+        return jsonify({"success": False, "error": "openid、账号、密码必填"}), 400
+
+    import pymysql
+    from settings import get_db_config
+    import hashlib as _hl
+    import permission_resolve as _pr
+
+    # 验证账号密码（与3002 login一致）
+    cfg = dict(get_db_config())
+    db = pymysql.connect(**cfg, cursorclass=pymysql.cursors.DictCursor)
+    try:
+        cur = db.cursor()
+        # 从 users 表查
+        cur.execute(
+            "SELECT username, password, display_name, role, employee_name, enabled "
+            "FROM users WHERE username=%s LIMIT 1",
+            (username,),
+        )
+        user_row = cur.fetchone()
+        if not user_row or not user_row.get("enabled", 1):
+            return jsonify({"success": False, "error": "账号或密码错误"}), 401
+        pwd_hash = _hl.sha256(password.encode()).hexdigest()
+        if user_row["password"] != pwd_hash:
+            return jsonify({"success": False, "error": "账号或密码错误"}), 401
+
+        employee_name = (user_row.get("employee_name") or "").strip()
+        display_name = (user_row.get("display_name") or employee_name or username).strip()
+        role = (user_row.get("role") or "").strip()
+
+        # 检查是否已被其他人绑定
+        cur.execute(
+            "SELECT id FROM co_scan_worker WHERE openid=%s AND enabled=1 LIMIT 1",
+            (openid,),
+        )
+        existing = cur.fetchone()
+        if existing:
+            # openid 已绑定，更新
+            cur.execute(
+                "UPDATE co_scan_worker SET username=%s, employee_name=%s, display_name=%s, role=%s WHERE id=%s",
+                (username, employee_name, display_name, role, existing["id"]),
+            )
+        else:
+            cur.execute(
+                "INSERT INTO co_scan_worker (openid, username, employee_name, display_name, role) VALUES (%s,%s,%s,%s,%s)",
+                (openid, username, employee_name, display_name, role),
+            )
+        db.commit()
+
+        tok = _scan_wx_token(openid, username)
+        return jsonify({
+            "success": True,
+            "token": tok,
+            "username": username,
+            "employee_name": employee_name,
+            "display_name": display_name,
+            "role": role,
+            "auth_mode": "wx",
+        })
+    finally:
+        db.close()
+
+
+@mp_bp.route("/scan/wx/user", methods=["GET"])
+def mp_scan_wx_user():
+    """用 token 查当前登录员工信息（用于自动续期）"""
+    auth = request.headers.get("Authorization", "").replace("Bearer", "").strip()
+    openid = request.headers.get("X-Scan-Openid", "").strip()
+    if not auth or not openid:
+        return jsonify({"success": False, "error": "未登录"}), 401
+    import pymysql
+    from settings import get_db_config
+    cfg = dict(get_db_config())
+    db = pymysql.connect(**cfg, cursorclass=pymysql.cursors.DictCursor)
+    try:
+        cur = db.cursor()
+        cur.execute(
+            "SELECT * FROM co_scan_worker WHERE openid=%s AND enabled=1 LIMIT 1",
+            (openid,),
+        )
+        worker = cur.fetchone()
+        if not worker:
+            return jsonify({"success": False, "error": "未绑定"}), 401
+        expected = _scan_wx_token(openid, worker["username"])
+        if auth != expected:
+            return jsonify({"success": False, "error": "token 无效"}), 401
+        return jsonify({
+            "success": True,
+            "username": worker["username"],
+            "employee_name": worker["employee_name"],
+            "display_name": worker["display_name"],
+            "role": worker["role"],
+        })
+    finally:
+        db.close()
+
+
+# ==================== 微信支付 ====================
+
+
 @mp_bp.route("/pay/notify", methods=["POST"])
 def mp_pay_notify():
     """微信支付结果通知（无需登录）。"""
