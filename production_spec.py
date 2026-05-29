@@ -67,7 +67,7 @@ _NUM2_RE = re.compile(
     re.I,
 )
 _BUNDLE_RE = re.compile(
-    r"""[-/／\-]?\s*【?\s*(\d+)\s*个\s*[/／]?(?:一)?(捆|组|袋|包)\s*】?""",
+    r"""[-/／\-]?\s*【?\s*(\d+)\s*个\s*[/／]?(?:一|1)?(捆|组|袋|包)\s*】?""",
     re.I,
 )
 _QTY_BRACKET_RE = re.compile(r"【\s*数量\s*(\d+)\s*个\s*】", re.I)
