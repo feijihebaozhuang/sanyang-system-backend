@@ -303,6 +303,7 @@
             det.line2 ||
             det.formatted ||
             item.display ||
+            item.spec ||
             '';
         line = String(line).trim();
         if (!line) {
@@ -311,6 +312,7 @@
                 det.line1 ||
                 item.spec ||
                 item.display ||
+                item.name ||
                 '';
             line = String(fallback).trim();
         }

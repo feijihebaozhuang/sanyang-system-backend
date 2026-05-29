@@ -335,7 +335,7 @@ def rebuild_dashboard_cache(
                             "display": ps.get("line2") or ps.get("formatted") or ps.get("line") or "",
                             "platform_attrs": raw_attrs,
                             "platform_spec_raw": ps.get("platform_spec_raw") or raw_attrs,
-                            "production_spec": ps.get("line2") or ps.get("formatted") or "",
+                            "production_spec": ps.get("line2") or ps.get("formatted") or raw_attrs or item.get("name", "") or "",
                             "production_spec_detail": ps,
                             "qty": real_qty,
                             "order_qty": ps.get("order_qty", order_qty),

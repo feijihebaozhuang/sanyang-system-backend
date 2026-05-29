@@ -2399,7 +2399,7 @@
         if (fullItems.length) {
             var itemRows = [];
             fullItems.forEach(function(item, idx) {
-                var specLine = (item.production_spec || (item.production_spec_detail && item.production_spec_detail.line2) || item.display || '').trim();
+                var specLine = (item.production_spec || (item.production_spec_detail && item.production_spec_detail.line2) || item.display || item.spec || item.name || '').trim();
                 var escA = function(s) {
                     return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
                 };
