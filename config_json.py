@@ -387,6 +387,26 @@ def quote_rows_to_production_mapping(rows: list[dict] | None) -> list[dict]:
     return out
 
 
+def match_material_from_mapping(text: str, mapping: list[dict] | None) -> str:
+    """按 data.json 中 production_material_mapping 匹配材质。"""
+    low = (text or "").lower()
+    if not mapping:
+        return ""
+    best = ""
+    best_len = 0
+    for row in mapping:
+        if not isinstance(row, dict):
+            continue
+        label = (row.get("label") or row.get("material_name") or "").strip()
+        kws = (row.get("keywords") or "").strip()
+        for kw in (k.strip() for k in kws.split(",") if k.strip()):
+            kl = kw.lower()
+            if kl and kl in low and len(kw) > best_len:
+                best = label
+                best_len = len(kw)
+    return best
+
+
 def sync_production_mapping_from_quote(
     permission_data: dict,
     quote_rows: list[dict] | None,
