@@ -2849,7 +2849,6 @@ document.addEventListener('DOMContentLoaded', function() {
         const resp = await getAPI('/api/perm/data');
         const data = resp.data || resp;
         _permData = data;
-        window._allPositions = allPositions;
         
         // 自动转换旧格式（字符串列表）到新格式（树形）
         if (Array.isArray(data.processes) && data.processes.length > 0 && typeof data.processes[0] === 'string') {
