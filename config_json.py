@@ -16,6 +16,98 @@ from typing import Any
 
 _ROOT = Path(__file__).resolve().parent
 
+_DB_CONFIG: dict | None = None
+
+def _get_db_config() -> dict:
+    global _DB_CONFIG
+    if _DB_CONFIG is not None:
+        return _DB_CONFIG
+    cfg = {}
+    env_path = _ROOT / ".env"
+    if env_path.is_file():
+        with env_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and "=" in line:
+                    k, v = line.split("=", 1)
+                    cfg[k.strip()] = v.strip()
+    _DB_CONFIG = cfg
+    return cfg
+
+
+def _db_connect():
+    """返回 RDS MySQL 连接（读取 app_config 表）。连接失败返回 None。"""
+    import pymysql
+
+    cfg = _get_db_config()
+    try:
+        conn = pymysql.connect(
+            host=cfg.get("MYSQL_HOST", "rm-7xv9u0s6tr3e24tg6.mysql.rds.aliyuncs.com"),
+            port=int(cfg.get("MYSQL_PORT", "3306")),
+            user=cfg.get("MYSQL_USER", "sanyang_app"),
+            password=cfg.get("MYSQL_PASSWORD", ""),
+            database="sanyang",
+            charset="utf8mb4",
+            connect_timeout=5,
+        )
+        return conn
+    except Exception as e:
+        print(f"[config_json] RDS 连接失败: {e}")
+        return None
+
+
+def _read_permission_from_rds() -> dict[str, Any]:
+    """从 RDS app_config 表读取全部配键。失败返回空 dict。"""
+    conn = _db_connect()
+    if not conn:
+        return {}
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT config_key, config_value FROM app_config")
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        out: dict[str, Any] = {}
+        for r in rows:
+            key = r[0]
+            val = json.loads(r[1]) if isinstance(r[1], str) else r[1]
+            out[key] = val
+        return out
+    except Exception as e:
+        print(f"[config_json] RDS 读取失败: {e}")
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return {}
+
+
+def _write_permission_to_rds(permission_data: dict, *, keys: frozenset[str]) -> bool:
+    """写入 RDS app_config 表。失败不影响主流程（data.json 兜底）。"""
+    conn = _db_connect()
+    if not conn:
+        return False
+    try:
+        cur = conn.cursor()
+        for key in keys:
+            if key in permission_data:
+                val_json = json.dumps(permission_data[key], ensure_ascii=False)
+                cur.execute(
+                    "INSERT INTO app_config (config_key, config_value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE config_value = %s",
+                    (key, val_json, val_json),
+                )
+        conn.commit()
+        cur.close()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"[config_json] RDS 写入失败: {e}")
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return False
+
 # permission_data 中由 data.json 托管的键（admin 页面可改）
 PERMISSION_JSON_KEYS = frozenset(
     {
@@ -28,6 +120,8 @@ PERMISSION_JSON_KEYS = frozenset(
         "process_timeouts",
         "role_permissions",
         "employee_roles",
+        "employee_step_whitelist",
+        "order_routes",
     }
 )
 
@@ -121,10 +215,13 @@ def _read_local_permission_slice(base_dir: str | Path | None = None) -> dict[str
 
 def read_permission_overlay(base_dir: str | Path | None = None) -> dict[str, Any]:
     """
-    读取 permission_data 权威视图（按键合并）：
-    - 本机 stable/data.json 中**非空键优先**（admin 网页保存写这里，Gunicorn 多 worker 读盘即同步）
-    - vault 仅补齐本机缺失/为空的键（156 备份、新机 bootstrap）
+    读取 permission_data 权威视图（按键合并，优先级：RDS > data.json > vault）：
+    - RDS app_config 表优先（多 worker 共享，保存即生效）
+    - data.json 补齐 RDS 缺失的键（离线/兼容兜底）
+    - vault 仅补齐前两者均为空的键（旧 156 备份）
     """
+    # 1. RDS 优先
+    rds_data = _read_permission_from_rds()
     local = _read_local_permission_slice(base_dir)
     remote: dict[str, Any] = {}
     try:
@@ -134,7 +231,7 @@ def read_permission_overlay(base_dir: str | Path | None = None) -> dict[str, Any
             try:
                 remote = pv.fetch_permission_overlay()
             except Exception as e:
-                print(f"[config_json] 保险库拉取失败，仅用本机 data.json: {e}")
+                print(f"[config_json] 保险库拉取失败: {e}")
                 remote = {}
             if not isinstance(remote, dict):
                 remote = {}
@@ -142,12 +239,17 @@ def read_permission_overlay(base_dir: str | Path | None = None) -> dict[str, Any
         pass
     out: dict[str, Any] = {}
     for key in PERMISSION_JSON_KEYS:
-        lv = local.get(key)
-        rv = remote.get(key) if remote else None
+        rv = rds_data.get(key)  # RDS 优先
+        if _overlay_value_usable(rv):
+            out[key] = copy.deepcopy(rv)
+            continue
+        lv = local.get(key)  # data.json 兜底
         if _overlay_value_usable(lv):
             out[key] = copy.deepcopy(lv)
-        elif _overlay_value_usable(rv):
-            out[key] = copy.deepcopy(rv)
+            continue
+        vl = remote.get(key) if remote else None  # vault 最后
+        if _overlay_value_usable(vl):
+            out[key] = copy.deepcopy(vl)
     return out
 
 
@@ -299,13 +401,16 @@ def _write_permission_data_local(
     for key in keys:
         if key in permission_data:
             pd[key] = copy.deepcopy(permission_data[key])
+    local_ok = True
     try:
         with path.open("w", encoding="utf-8") as f:
             json.dump(existing, f, ensure_ascii=False, indent=2)
-        return True
     except OSError as e:
         print(f"[config_json] 写入失败 {path}: {e}")
-        return False
+        local_ok = False
+    # 同步写入 RDS（失败不阻断，data.json 兜底）
+    _write_permission_to_rds(permission_data, keys=keys)
+    return local_ok
 
 
 def write_permission_overlay(
