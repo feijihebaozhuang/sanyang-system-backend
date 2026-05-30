@@ -194,6 +194,20 @@ def _can_edit_employee_info(user: dict | None) -> bool:
 # ==================== 数据持久化 ====================
 DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data.json')
 
+def default_step_positions(step_name: str) -> list[str]:
+    """根据工序名返回默认允许的岗位列表（旧格式升新格式用）。"""
+    if "客服" in step_name:
+        return ["客服", "主管"]
+    if "打印" in step_name or "黄厂" in step_name:
+        return ["主管", "超级管理员"]
+    if "审单" in step_name:
+        return ["主管", "客服"]
+    if "算料" in step_name:
+        return ["主管", "员工", "业务员"]
+    if "发货" in step_name or "打包" in step_name:
+        return ["员工", "主管", "业务员"]
+    return ["员工", "主管"]
+
 def load_data():
     """从JSON文件加载持久化数据"""
     # 生成默认用户密码哈希
@@ -316,12 +330,19 @@ def load_data():
                 for key in default["permission_data"]:
                     if key not in data["permission_data"]:
                         data["permission_data"][key] = default["permission_data"][key]
-                # 自动转换旧格式流程（字符串列表→树形）
+                # 自动转换旧格式流程（字符串列表→树形，带默认岗位）
                 processes = data["permission_data"].get("processes", [])
                 if processes and isinstance(processes[0], str):
                     data["permission_data"]["processes"] = [
-                        {"dept": "美丽湾工厂部", "steps": [{"id": i+1, "name": s} for i, s in enumerate(processes)]}
+                        {"dept": "美丽湾工厂部", "steps": [{"id": i+1, "name": s, "positions": default_step_positions(s)} for i, s in enumerate(processes)]}
                     ]
+                # 树形步骤缺 positions 时补默认
+                for dept in data["permission_data"].get("processes", []):
+                    if not isinstance(dept, dict):
+                        continue
+                    for step in dept.get("steps") or []:
+                        if isinstance(step, dict) and "positions" not in step:
+                            step["positions"] = default_step_positions(step.get("name", ""))
                 return data
         except:
             pass
@@ -804,6 +825,16 @@ def scan_report():
     if not worker:
         user = USERS.get(session.get('username', ''), {})
         worker = user.get('employee_name') or user.get('name') or ''
+
+    # 岗位校验：检查该员工是否有权限报此工序
+    if not _check_step_position_allowed(worker, step):
+        emp_positions = _get_employee_positions(worker)
+        pos_str = "、".join(emp_positions) if emp_positions else "未设置"
+        return jsonify({
+            "success": False,
+            "message": f"「{worker}」的岗位（{pos_str}）无权报工序「{step}」"
+        })
+
     result = ph.apply_scan_report(
         DB_CONFIG,
         _permission_data.get("processes", []),
@@ -1900,7 +1931,32 @@ DEFAULT_PRODUCTION_MATERIAL_MAPPING = [
 ]
 
 _permission_data_init = {
-    "processes": ["客服接单", "黄厂打印", "审单分单", "算料", "分纸", "啤机(自动平压平)", "啤机(机械手)", "手啤", "印刷", "开槽/打角", "清废", "打包发货"],
+    "processes": [
+        {"dept": "美丽湾工厂部", "steps": [
+            {"id": 1,  "name": "客服接单",        "positions": ["客服","主管"]},
+            {"id": 2,  "name": "黄厂打印",        "positions": ["主管","超级管理员"]},
+            {"id": 3,  "name": "审单分单",        "positions": ["主管","客服"]},
+            {"id": 4,  "name": "算料",            "positions": ["主管","员工","业务员"]},
+            {"id": 5,  "name": "分纸",            "positions": ["员工","主管"]},
+            {"id": 6,  "name": "啤机(自动平压平)", "positions": ["员工","主管"]},
+            {"id": 7,  "name": "啤机(机械手)",    "positions": ["员工","主管"]},
+            {"id": 8,  "name": "手啤",            "positions": ["员工","主管"]},
+            {"id": 9,  "name": "印刷",            "positions": ["员工","主管"]},
+            {"id": 10, "name": "清废",            "positions": ["员工","主管"]},
+            {"id": 11, "name": "打包发货",        "positions": ["员工","主管","业务员"]},
+        ]},
+        {"dept": "纸箱部", "steps": [
+            {"id": 1,  "name": "客服接单",        "positions": ["客服","主管"]},
+            {"id": 2,  "name": "黄厂打印",        "positions": ["主管","超级管理员"]},
+            {"id": 3,  "name": "审单分单",        "positions": ["主管","客服"]},
+            {"id": 4,  "name": "算料",            "positions": ["主管","员工","业务员"]},
+            {"id": 5,  "name": "分纸",            "positions": ["员工","主管"]},
+            {"id": 6,  "name": "印刷",            "positions": ["员工","主管"]},
+            {"id": 7,  "name": "开槽/打角",       "positions": ["员工","主管"]},
+            {"id": 8,  "name": "粘胶/打钉",       "positions": ["员工","主管"]},
+            {"id": 9,  "name": "打包发货",        "positions": ["员工","主管","业务员"]},
+        ]},
+    ],
     "production_material_mapping": list(DEFAULT_PRODUCTION_MATERIAL_MAPPING),
     "positions": ["超级管理员", "主管", "客服", "员工", "财务", "业务员"],
     "employees": [
@@ -2062,16 +2118,51 @@ def save_processes():
         "flows_resynced": flows_resynced,
     })
 
-# ==================== 扫码报工-可选操作人（按角色过滤） ====================
+# ==================== 扫码报工-可选操作人（按角色+岗位过滤） ====================
+def _get_employee_positions(emp_name: str) -> list[str]:
+    """获取员工岗位列表（兼容 position 为字符串或数组）。"""
+    for e in _employees_master_list:
+        if e.get("name") == emp_name:
+            pos = e.get("position", "")
+            if isinstance(pos, list):
+                return pos
+            if isinstance(pos, str) and pos.strip():
+                return [pos.strip()]
+            return []
+    return []
+
+def _check_step_position_allowed(emp_name: str, step_name: str) -> bool:
+    """检查员工是否有权限报此工序。"""
+    emp_positions = _get_employee_positions(emp_name)
+    if not emp_positions:
+        return True  # 没设岗位不拦截（兼容旧数据）
+    # 超级管理员可以报所有工序
+    for p in emp_positions:
+        if p == "超级管理员":
+            return True
+    # 遍历工序树找到步骤允许的岗位
+    for dept in _permission_data.get("processes", []):
+        if not isinstance(dept, dict):
+            continue
+        for step in dept.get("steps") or []:
+            if isinstance(step, dict) and step.get("name") == step_name:
+                allowed = step.get("positions")
+                if not allowed:
+                    return True  # 步骤没设岗位限制则不拦截
+                # 员工任意岗位匹配即可
+                return any(p in allowed for p in emp_positions)
+    return True  # 找不到步骤定义则不拦截
+
 @app.route('/api/scan_workers')
 def scan_workers():
-    """根据当前用户角色返回可选择的操作人列表"""
+    """根据当前用户角色和指定步骤返回可选择的操作人列表"""
     if not resolve_login_user():
         return jsonify({"error": "未登录", "code": 401}), 401
     user = USERS.get(session['username'])
     if not user:
         return jsonify({"error": "用户不存在", "code": 401}), 401
     
+    step_name = (request.args.get('step') or '').strip()
     role = user['role']
     current_name = user['employee_name']
     import employee_dept_filter as _edf
@@ -2088,6 +2179,21 @@ def scan_workers():
         workers = [e for e in all_emps if e['name'] == current_name]
     else:
         workers = []
+    
+    # 如果有指定步骤，按岗位过滤
+    if step_name and workers:
+        allowed_positions = None
+        for dept in _permission_data.get("processes", []):
+            if not isinstance(dept, dict):
+                continue
+            for step in dept.get("steps") or []:
+                if isinstance(step, dict) and step.get("name") == step_name:
+                    allowed_positions = step.get("positions")
+                    break
+            if allowed_positions is not None:
+                break
+        if allowed_positions:
+            workers = [w for w in workers if _check_step_position_allowed(w.get("name", ""), step_name)]
     
     return jsonify({"workers": workers})
 
@@ -4158,8 +4264,27 @@ body {{ font-family:-apple-system,sans-serif; background:#f5f6fa; min-height:100
 <a class="back-btn" href="javascript:history.back()">← 返回</a>
 <script>
 const ORDER_ID = "{order_id}";
-const WORKER = prompt("请输入你的姓名：", "");
-if (!WORKER) {{ document.body.innerHTML = '<div style="text-align:center;padding:40px;color:#e94560;">❌ 需要姓名才能报工</div>'; }}
+let WORKER = "";
+
+// 先获取可选操作人列表
+fetch('/api/scan_workers?step=').then(r=>r.json()).then(data => {{
+    const workers = data.workers || [];
+    if (workers.length === 1) {{
+        WORKER = workers[0].name;
+    }} else if (workers.length > 0) {{
+        const names = workers.map(w => w.name);
+        WORKER = prompt("请选择操作人：\\n" + names.join("、"), names[0]) || "";
+    }} else {{
+        WORKER = prompt("请输入你的姓名：", "");
+    }}
+    loadSteps();
+}}).catch(() => {{
+    WORKER = prompt("请输入你的姓名：", "");
+    loadSteps();
+}});
+
+function loadSteps() {{
+if (!WORKER) {{ document.body.innerHTML = '<div style="text-align:center;padding:40px;color:#e94560;">❌ 需要姓名才能报工</div>'; return; }}
 
 // 获取订单工序
 fetch('/api/production_orders').then(r=>r.json()).then(data => {{
