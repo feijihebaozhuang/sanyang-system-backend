@@ -407,8 +407,11 @@ def _sync_order_extra_from_db() -> None:
 
 
 def persist():
-    """持久化当前数据到文件（data.json，不覆盖 admin 未改动的其它键）。"""
-    global _employee_today_status, _employee_leave_counts, _permission_data, USERS, _resigned_employees, _employees_master_list, _perm_save_detail
+    """持久化当前数据到文件（data.json，不覆盖 admin 未改动的其它键）。
+    注意：permission_data / 工序 / 路由等配置只由 3003 管理写入 RDS，
+    3002 只存自己的业务数据（员工状态、请假、订单附加信息）。
+    """
+    global _employee_today_status, _employee_leave_counts, USERS, _resigned_employees, _employees_master_list
     # 把USERS的密码也存到文件（用户改密码后重启不丢）
     users_data = {}
     for uid, u in USERS.items():
@@ -426,15 +429,10 @@ def persist():
         "employee_status": _employee_today_status,
         "employee_leave_counts": _employee_leave_counts,
         "order_extra": _order_extra,
-        "permission_data": _permission_data,
         "resigned_employees": _resigned_employees,
         "employees_master": _employees_master_list,
     }
-    if not save_data(data):
-        _perm_save_detail = {"ok": False, "local_ok": False, "vault_error": "save_data 失败"}
-        return False
-    _perm_save_detail = _cfg_json.write_permission_overlay_detail(_permission_data)
-    return bool(_perm_save_detail.get("local_ok"))
+    save_data(data)
 
 # ==================== 登录API ====================
 
