@@ -2926,10 +2926,24 @@ document.addEventListener('DOMContentLoaded', function() {
     // ===== 渲染树形流程 =====
     function renderPermProcesses(processes) {
         const el = document.getElementById('permProcesses');
-        const positions = window._allPositions || (_permData && _permData.positions) || [];
+        if (!el) { console.warn('permProcesses not found'); return; }
+        
+        const positions = (_permData && _permData.positions && _permData.positions.length > 0)
+            ? _permData.positions
+            : (window._allPositions || []);
+        
+        // 强制从步骤中提取所有岗位作为兜底
+        const fallbackPositions = [...new Set(
+            (processes || []).flatMap(d => 
+                ((d && d.steps) || []).flatMap(s => 
+                    (s && s.positions) || []
+                )
+            )
+        )];
+        const allPositions = positions.length > 0 ? positions : fallbackPositions;
         
         // 检查是树形还是旧列表格式
-        const isTree = Array.isArray(processes) && processes.length > 0 && processes[0].dept;
+        const isTree = Array.isArray(processes) && processes.length > 0 && processes[0] && processes[0].dept;
         
         if (!isTree) {
             el.innerHTML = processes.map((p, i) => `
@@ -2957,7 +2971,7 @@ document.addEventListener('DOMContentLoaded', function() {
             
             (dept.steps || []).forEach((step, si) => {
                 const stepPositions = step.positions || [];
-                const posHtml = positions.map(p =>
+                const posHtml = allPositions.map(p =>
                     `<label style="margin-left:2px;font-size:10px;color:#888;cursor:pointer;white-space:nowrap;">
                         <input type="checkbox" data-di="${di}" data-si="${si}" data-pos="${p}" ${stepPositions.includes(p) ? 'checked' : ''} onchange="toggleStepPosition(this)" style="margin-right:1px;">
                         ${p}
