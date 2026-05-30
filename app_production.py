@@ -2163,7 +2163,23 @@ def save_processes():
 
 # ==================== 扫码报工-可选操作人（按角色+岗位过滤） ====================
 def _get_employee_positions(emp_name: str) -> list[str]:
-    """获取员工岗位列表（兼容 position 为字符串或数组）。"""
+    """获取员工的岗位列表。
+    优先从 _permission_data.employee_roles 获取（功能权限→岗位），
+    兼容旧数据：从 USERS.role 或员工基础信息 position 推断。
+    """
+    # 1. 从 employee_roles 获取（3003 功能权限配置的岗位）
+    er = _permission_data.get("employee_roles") or {}
+    if emp_name in er:
+        role = er[emp_name]
+        if role:
+            return [role]
+    # 2. 从 USERS 的 role 获取
+    for u in USERS.values():
+        if u.get("employee_name") == emp_name:
+            r = u.get("role", "")
+            if r:
+                return [r]
+    # 3. 降级：从员工基础信息 position 获取（兼容旧数据）
     for e in _employees_master_list:
         if e.get("name") == emp_name:
             pos = e.get("position", "")
