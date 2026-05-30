@@ -2183,6 +2183,10 @@ def _check_step_position_allowed(emp_name: str, step_name: str) -> bool:
     for p in emp_positions:
         if p == "超级管理员":
             return True
+    # 检查登录用户的 role 是否为超级管理员
+    for un, u in USERS.items():
+        if u.get("employee_name") == emp_name and u.get("role") == "超级管理员":
+            return True
     # 遍历工序树找到步骤允许的岗位
     for dept in _permission_data.get("processes", []):
         if not isinstance(dept, dict):
