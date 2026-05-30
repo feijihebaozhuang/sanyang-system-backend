@@ -835,6 +835,34 @@ def scan_report():
             "message": f"「{worker}」的岗位（{pos_str}）无权报工序「{step}」"
         })
 
+    # 员工可报工序白名单校验（方案B）
+    emp_step_whitelist = _permission_data.get("employee_step_whitelist") or {}
+    if worker in emp_step_whitelist:
+        allowed_steps = emp_step_whitelist[worker]
+        if isinstance(allowed_steps, list) and allowed_steps:
+            if step not in allowed_steps:
+                return jsonify({
+                    "success": False,
+                    "message": f"「{worker}」只能报工序：{'、'.join(allowed_steps)}"
+                })
+
+    # 订单路由校验
+    order_cache = ph.load_cache_orders(_orders_cache_path())
+    order = None
+    for o in order_cache:
+        if o.get("so_id") == order_id or o.get("id") == order_id:
+            order = o
+            break
+    if order:
+        route_steps = _get_order_flow_steps(order)
+        if route_steps:
+            route_names = {s.get("name") for s in route_steps if isinstance(s, dict)}
+            if step not in route_names:
+                return jsonify({
+                    "success": False,
+                    "message": f"订单「{order_id}」不属于此流水线，可用工序：{'、'.join(sorted(route_names))}"
+                })
+
     result = ph.apply_scan_report(
         DB_CONFIG,
         _permission_data.get("processes", []),
@@ -2058,6 +2086,28 @@ def save_permissions_data():
     }), 403
 
 
+@app.route('/api/perm/route_data')
+def api_perm_route_data():
+    """返回工序路由配置（员工白名单 + 订单路由规则）。"""
+    return jsonify({
+        "success": True,
+        "employee_step_whitelist": _permission_data.get("employee_step_whitelist") or {},
+        "order_routes": _permission_data.get("order_routes") or [],
+    })
+
+
+@app.route('/api/perm/route_save', methods=['POST'])
+def api_perm_route_save():
+    """保存工序路由配置到 _permission_data 并持久化。"""
+    data = request.get_json(silent=True) or {}
+    if "employee_step_whitelist" in data:
+        _permission_data["employee_step_whitelist"] = data["employee_step_whitelist"]
+    if "order_routes" in data:
+        _permission_data["order_routes"] = data["order_routes"]
+    persist()
+    return jsonify({"success": True, "message": "路由配置已保存"})
+
+
 def _production_material_mapping() -> list:
     """生产材质映射：读 data.json（admin 页面维护）。"""
     return list(_permission_data.get("production_material_mapping") or [])
@@ -2258,7 +2308,69 @@ def scan_workers():
         if allowed_positions:
             workers = [w for w in workers if _check_step_position_allowed(w.get("name", ""), step_name)]
     
+    # 员工可报工序白名单过滤
+    emp_step_whitelist = _permission_data.get("employee_step_whitelist") or {}
+    if current_name in emp_step_whitelist:
+        allowed = emp_step_whitelist[current_name]
+        if isinstance(allowed, list) and allowed:
+            workers = [w for w in workers if w.get("name") == current_name]
+    
     return jsonify({"workers": workers})
+
+
+# ==================== 订单路由规则 ====================
+def _match_order_route(order: dict) -> str | list | None:
+    rules = _permission_data.get("order_routes") or []
+    if not rules:
+        return None
+    import re as _re
+    for rule in rules:
+        cond = rule.get("condition") or {}
+        field = (cond.get("field") or "").strip()
+        pattern = (cond.get("pattern") or "").strip()
+        if not field or not pattern:
+            continue
+        val = None
+        if field.startswith("items."):
+            parts = field.split(".")
+            if parts[0] == "items" and len(parts) >= 3:
+                try:
+                    idx = int(parts[1])
+                except ValueError:
+                    continue
+                items = order.get("items") or []
+                if idx < len(items):
+                    val = str(items[idx].get(parts[2]) or "")
+        elif field == "order_type":
+            val = ph.infer_order_type(order)
+        else:
+            val = str(order.get(field) or "")
+        if val and _re.search(pattern, val, _re.IGNORECASE):
+            sf = rule.get("step_filter")
+            if sf:
+                return sf
+            return rule.get("process_dept")
+    return None
+
+
+def _get_order_flow_steps(order: dict) -> list[dict] | None:
+    match = _match_order_route(order)
+    if not match:
+        return None
+    if isinstance(match, list):
+        out = []
+        for dept in (_permission_data.get("processes") or []):
+            if isinstance(dept, dict):
+                for s in (dept.get("steps") or []):
+                    if isinstance(s, dict) and s.get("name") in match:
+                        out.append(s)
+        return out if out else None
+    if isinstance(match, str):
+        for dept in (_permission_data.get("processes") or []):
+            if isinstance(dept, dict) and dept.get("dept") == match:
+                return dept.get("steps") or []
+    return None
+
 
 # ==================== 报价系统 ====================
 QUOTE_DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'quote_data.json')

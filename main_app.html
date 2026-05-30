@@ -695,6 +695,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 <div class="f-title">员工</div>
                 <div class="f-desc">查看员工信息与考勤</div>
             </div>
+            <div class="footer-card" onclick="goRoutePage()">
+                <div class="icon">🗺️</div>
+                <div class="f-title">路由</div>
+                <div class="f-desc">订单类型→流水线</div>
+            </div>
         </div>
     </div>
 
@@ -894,6 +899,40 @@ document.addEventListener('DOMContentLoaded', function() {
     <div id="page-quote" class="page-section">
         <div class="overview-header">
             <h3>💰 智能报价</h3>
+
+    <!-- ===== 路由配置页面 ===== -->
+    <div id="page-route" class="page-section">
+        <div class="overview-header">
+            <h3>🗺️ 工序路由配置</h3>
+            <div style="font-size:13px;color:#888;">
+                设置订单类型走哪条流水线。员工→白名单在「权限-员工可报工序」中配置。
+            </div>
+        </div>
+        <div id="routeContent" style="padding:16px;">
+            <div id="routeLoading" style="padding:20px;text-align:center;color:#999;">加载中...</div>
+            <div id="routeMain" style="display:none;">
+                <div id="routeEmployeeWhitelist" style="margin-bottom:24px;">
+                    <h4 style="margin-bottom:8px;">👤 员工可报工序白名单</h4>
+                    <p style="font-size:12px;color:#999;margin-bottom:8px;">
+                        在此配置的员工只能报指定的工序（空表示不限）。
+                    </p>
+                    <div id="empStepList"></div>
+                    <button onclick="addEmpStepRule()" style="padding:6px 14px;background:#52c41a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;margin-top:6px;">+ 添加员工规则</button>
+                </div>
+                <hr style="margin:20px 0;border:none;border-top:1px solid #eee;">
+                <div id="routeOrderRules" style="margin-bottom:24px;">
+                    <h4 style="margin-bottom:8px;">📦 订单路由规则</h4>
+                    <p style="font-size:12px;color:#999;margin-bottom:8px;">
+                        按订单属性（产品类型、订单类型等）自动匹配流水线。
+                    </p>
+                    <div id="orderRuleList"></div>
+                    <button onclick="addOrderRule()" style="padding:6px 14px;background:#1890ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;margin-top:6px;">+ 添加路由规则</button>
+                </div>
+                <button onclick="saveRouteConfig()" style="padding:10px 28px;background:#faad14;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:bold;">💾 保存路由配置</button>
+                <div id="routeSaveMsg" style="margin-top:8px;font-size:13px;"></div>
+            </div>
+        </div>
+    </div>
             <span style="font-size:12px;color:#888;font-weight:400;">输入尺寸，快速算价</span>
         </div>
         <div id="quoteContent" style="padding:12px 0;">
@@ -1484,6 +1523,9 @@ document.addEventListener('DOMContentLoaded', function() {
         } else if (name === 'quote') {
             document.getElementById('page-main').classList.remove('active');
             document.getElementById('page-quote').classList.add('active');
+        } else if (name === 'route') {
+            document.getElementById('page-main').classList.remove('active');
+            document.getElementById('page-route').classList.add('active');
         } else {
             document.body.classList.remove('dark-bg');
             document.querySelector('.content').classList.remove('databoard-mode');
@@ -1500,7 +1542,10 @@ document.addEventListener('DOMContentLoaded', function() {
     function goPermissionPage() {
         switchSubPage('permission', null);
     }
-    // ===== API 调用 =====
+    function goRoutePage() {
+        switchSubPage('route', null);
+        renderRoutePage();
+    }
     async function getAPI(url) {
         const res = await fetch(url);
         return res.json();
@@ -3131,6 +3176,186 @@ document.addEventListener('DOMContentLoaded', function() {
             alert('✅ ' + data.message);
         } else {
             alert('❌ 保存失败');
+        }
+    }
+
+    // ===== 路由配置页面 =====
+    let _routeData = { employee_step_whitelist: {}, order_routes: [] };
+
+    async function renderRoutePage() {
+        document.getElementById('routeLoading').style.display = '';
+        document.getElementById('routeMain').style.display = 'none';
+        try {
+            const res = await fetch('/api/perm/route_data');
+            const data = await res.json();
+            _routeData.employee_step_whitelist = data.employee_step_whitelist || {};
+            _routeData.order_routes = data.order_routes || [];
+            renderEmpStepWhitelist();
+            renderOrderRules();
+            document.getElementById('routeLoading').style.display = 'none';
+            document.getElementById('routeMain').style.display = '';
+        } catch(e) {
+            document.getElementById('routeLoading').textContent = '❌ 加载失败：' + e.message;
+        }
+    }
+
+    function renderEmpStepWhitelist() {
+        const el = document.getElementById('empStepList');
+        const map = _routeData.employee_step_whitelist;
+        const keys = Object.keys(map);
+        if (keys.length === 0) {
+            el.innerHTML = '<div style="padding:12px;color:#999;font-size:13px;">暂无配置，即所有员工不受白名单限制。</div>';
+            return;
+        }
+        let html = '';
+        keys.forEach(name => {
+            const steps = (map[name] || []).join('、');
+            html += `<div style="display:flex;align-items:center;gap:8px;padding:8px 6px;border-bottom:1px solid #f0f0f0;">
+                <span style="min-width:80px;font-weight:bold;font-size:13px;">${name}</span>
+                <span style="font-size:13px;">可报：</span>
+                <input id="empStepInput_${name}" value="${steps}" style="flex:1;padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px;" placeholder="工序名用、隔开，留空则不限制">
+                <span style="font-size:11px;color:#999;">用中文顿号、隔开</span>
+                <button onclick="deleteEmpStepRule('${name}')" style="padding:2px 8px;background:#ff4d4f;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">删除</button>
+            </div>`;
+        });
+        el.innerHTML = html;
+    }
+
+    function addEmpStepRule() {
+        const name = prompt('输入员工姓名：');
+        if (!name || !name.trim()) return;
+        const map = _routeData.employee_step_whitelist;
+        if (map[name.trim()]) {
+            alert('该员工已有白名单配置，请直接编辑。');
+            return;
+        }
+        map[name.trim()] = [];
+        renderEmpStepWhitelist();
+    }
+
+    function deleteEmpStepRule(name) {
+        if (!confirm(`确认删除「${name}」的白名单？`)) return;
+        delete _routeData.employee_step_whitelist[name];
+        renderEmpStepWhitelist();
+    }
+
+    function renderOrderRules() {
+        const el = document.getElementById('orderRuleList');
+        const rules = _routeData.order_routes;
+        if (!rules || rules.length === 0) {
+            el.innerHTML = '<div style="padding:12px;color:#999;font-size:13px;">暂无路由规则，所有订单走默认流程。</div>';
+            return;
+        }
+        let html = '';
+        rules.forEach((rule, idx) => {
+            const cond = rule.condition || {};
+            html += `<div style="padding:10px;border:1px solid #e8e8e8;border-radius:6px;margin-bottom:8px;background:#fafafa;">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                    <span style="font-weight:bold;font-size:13px;min-width:40px;">#${idx+1}</span>
+                    <input id="ruleName_${idx}" value="${rule.name || ''}" style="flex:1;padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px;" placeholder="规则名称（如：纸箱走纸箱部）">
+                    <button onclick="deleteOrderRule(${idx})" style="padding:2px 8px;background:#ff4d4f;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">删除</button>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
+                    <span style="font-size:12px;color:#666;">条件：</span>
+                    <select id="ruleField_${idx}" style="padding:4px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;">
+                        <option value="order_type" ${cond.field==='order_type'?'selected':''}>订单类型（自动推断）</option>
+                        <option value="items.0.product_type" ${cond.field==='items.0.product_type'?'selected':''}>子单产品类型</option>
+                        <option value="product_type" ${cond.field==='product_type'?'selected':''}>订单产品类型</option>
+                        <option value="shop_name" ${cond.field==='shop_name'?'selected':''}>店铺名</option>
+                        <option value="so_id" ${cond.field==='so_id'?'selected':''}>单号</option>
+                    </select>
+                    <span style="font-size:12px;color:#666;">匹配：</span>
+                    <input id="rulePattern_${idx}" value="${cond.pattern || ''}" style="width:140px;padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;" placeholder="关键词/正则">
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                    <span style="font-size:12px;color:#666;">路由到部门：</span>
+                    <input id="ruleDept_${idx}" value="${rule.process_dept || ''}" style="flex:1;padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;" placeholder="部门名">
+                    <span style="font-size:11px;color:#999;">或步骤过滤：</span>
+                    <input id="ruleStepFilter_${idx}" value="${(rule.step_filter||[]).join('、')}" style="flex:1;padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;" placeholder="工序名用、隔开">
+                    <span style="font-size:11px;color:#999;">留空则按部门</span>
+                </div>
+            </div>`;
+        });
+        el.innerHTML = html;
+    }
+
+    function addOrderRule() {
+        _routeData.order_routes.push({
+            name: '',
+            condition: { field: 'order_type', pattern: '' },
+            process_dept: ''
+        });
+        renderOrderRules();
+    }
+
+    function deleteOrderRule(idx) {
+        if (!confirm('确认删除此规则？')) return;
+        _routeData.order_routes.splice(idx, 1);
+        renderOrderRules();
+    }
+
+    async function saveRouteConfig() {
+        const msgEl = document.getElementById('routeSaveMsg');
+        msgEl.innerHTML = '⏳ 保存中...';
+
+        // 收集员工白名单
+        const map = {};
+        const inputs = document.querySelectorAll('[id^="empStepInput_"]');
+        inputs.forEach(inp => {
+            const name = inp.id.replace('empStepInput_', '');
+            const val = inp.value.trim();
+            if (val) {
+                map[name] = val.split(/[、,，]+/).map(s => s.trim()).filter(Boolean);
+            } else {
+                map[name] = [];
+            }
+        });
+        _routeData.employee_step_whitelist = map;
+
+        // 收集路由规则
+        const rules = [];
+        _routeData.order_routes.forEach((_, idx) => {
+            const nameEl = document.getElementById('ruleName_' + idx);
+            const fieldEl = document.getElementById('ruleField_' + idx);
+            const patternEl = document.getElementById('rulePattern_' + idx);
+            const deptEl = document.getElementById('ruleDept_' + idx);
+            const stepFilterEl = document.getElementById('ruleStepFilter_' + idx);
+            if (!nameEl) return;
+            const name = nameEl.value.trim();
+            const field = fieldEl.value;
+            const pattern = patternEl.value.trim();
+            if (!name || !pattern) return;
+            const stepFilterVal = stepFilterEl.value.trim();
+            const stepFilter = stepFilterVal ? stepFilterVal.split(/[、,，]+/).map(s => s.trim()).filter(Boolean) : undefined;
+            const rule = {
+                name,
+                condition: { field, pattern },
+                process_dept: deptEl.value.trim()
+            };
+            if (stepFilter && stepFilter.length > 0) {
+                rule.step_filter = stepFilter;
+            }
+            rules.push(rule);
+        });
+        _routeData.order_routes = rules;
+
+        try {
+            const res = await fetch('/api/perm/route_save', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    employee_step_whitelist: _routeData.employee_step_whitelist,
+                    order_routes: _routeData.order_routes
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                msgEl.innerHTML = '✅ ' + (data.message || '保存成功');
+            } else {
+                msgEl.innerHTML = '❌ 保存失败';
+            }
+        } catch(e) {
+            msgEl.innerHTML = '❌ 保存异常：' + e.message;
         }
     }
 
