@@ -2861,7 +2861,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const empData = await getAPI('/api/employees');
         const allEmpNames = empData.employees.map(e => e.name);
         
-        const features = ['首页', '订单生产进度', '扫码报工', '日报表', '数据看板', '刀模', '刀模库', '库存', '聚水潭', '员工', '权限管理', '报价'];
+        const features = ['首页', '订单生产进度', '扫码报工', '日报表', '数据看板', '刀模', '刀模库', '库存', '聚水潭', '员工', '权限管理', '报价', '工价管理'];
         // 用_allPerms（来自/api/my_permissions），服务端保证完整
         const perms = window._allPerms || data.permissions || {};
         

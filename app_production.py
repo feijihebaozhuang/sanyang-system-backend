@@ -1719,7 +1719,7 @@ def export_report():
 # ==================== 权限管理API ====================
 
 # 功能列表（保持不变）
-PERM_FEATURES = ["首页","订单生产进度","扫码报工","日报表","数据看板","刀模","库存","原材料","快麦ERP","员工","权限管理","报价","实时订单"]
+PERM_FEATURES = ["首页","订单生产进度","扫码报工","日报表","数据看板","刀模","库存","原材料","快麦ERP","员工","权限管理","报价","实时订单","工价管理"]
 _PERM_LEGACY_KEY = "聚水潭"
 _PERM_CURRENT_KEY = "快麦ERP"
 
@@ -2014,9 +2014,9 @@ def process_timeout_api():
             }
         )
     un = resolve_login_user()
-    role = USERS.get(un or "", {}).get("role", "")
-    if role not in ("超级管理员", "管理", "主管"):
-        return jsonify({"success": False, "error": "无权限"}), 403
+    user = USERS.get(un or "", {}) if un else None
+    if not _user_can_manage_prices(user):
+        return jsonify({"success": False, "error": "无权限：仅工价管理员可修改"}), 403
     body = request.get_json() or {}
     timeouts = body.get("timeouts")
     if not isinstance(timeouts, dict):
@@ -2113,9 +2113,40 @@ def get_my_permissions():
     )
 
 
+@app.route('/api/perm/can_manage_prices')
+def can_manage_prices():
+    """检查当前用户是否有工价管理权限（不走 perm_cs_prod）"""
+    un = resolve_login_user()
+    if not un:
+        return jsonify({"success": False, "can_manage": False}), 401
+    user = USERS.get(un)
+    if not user:
+        return jsonify({"success": False, "can_manage": False}), 401
+    return jsonify({
+        "success": True,
+        "can_manage": _user_can_manage_prices(user),
+    })
+
+
+def _user_can_manage_prices(user: dict | None) -> bool:
+    """检查用户是否有工价管理权限（工序/工时/工价保存）"""
+    if not user:
+        return False
+    role = (user.get("role") or "").strip()
+    if role in ("超级管理员",):
+        return True
+    en = user.get("employee_name") or ""
+    perms = _get_effective_permissions(en, user)
+    return perms.get("工价管理", False)
+
+
 @app.route('/api/processes/save', methods=['POST'])
 def save_processes():
     global _permission_data
+    un = resolve_login_user()
+    user = USERS.get(un or "", {}) if un else None
+    if not _user_can_manage_prices(user):
+        return jsonify({"success": False, "message": "无权限：仅工价管理员可修改"}), 403
     data = request.get_json()
     flows_resynced = 0
     if data and 'processes' in data:
