@@ -1652,7 +1652,16 @@ function renderPermProcessTree(processes) {
       '<button class="btn-xs blue" onclick="editProcessDeptName(' + di + ')">✏️</button> ' +
       '<button class="btn-xs red" onclick="deleteProcessDept(' + di + ')">🗑️</button></span></div>';
     (dept.steps || []).forEach(function(step, si) {
-      html += '<div class="process-step"><span>' + esc(step.id) + '. ' + esc(step.name) + '</span>' +
+      var stepPos = step.positions || [];
+      var posHtml = (window._permBundle.positions || []).map(function(p) {
+        var checked = stepPos.indexOf(p) !== -1 ? 'checked' : '';
+        return '<label style="margin:0 2px;font-size:10px;color:#888;cursor:pointer;white-space:nowrap;">' +
+          '<input type="checkbox" data-di="' + di + '" data-si="' + si + '" data-pos="' + p + '" ' + checked +
+          ' onchange="toggleStepPosition(this)" style="margin-right:1px;">' + p + '</label>';
+      }).join('');
+      html += '<div class="process-step"><div><span>' + esc(step.id) + '. ' + esc(step.name) + '</span>' +
+        '<span style="margin-left:6px;font-size:10px;color:#999;">岗位：</span>' +
+        '<span style="display:inline-flex;flex-wrap:wrap;gap:2px;">' + posHtml + '</span></div>' +
         '<span><button class="btn-xs blue" onclick="editProcessStep(' + di + ',' + si + ')">✏️</button> ' +
         '<button class="btn-xs red" onclick="deleteProcessStep(' + di + ',' + si + ')">✕</button></span></div>';
     });
@@ -1691,7 +1700,8 @@ function addProcessStep(di) {
   if (!name || !name.trim()) return;
   var steps = window._permBundle.processes[di].steps || [];
   var newId = steps.length ? Math.max.apply(null, steps.map(function(s) { return s.id; })) + 1 : 1;
-  steps.push({ id: newId, name: name.trim() });
+  var allPos = window._permBundle.positions || [];
+  steps.push({ id: newId, name: name.trim(), positions: allPos.slice() });
   renderPermProcessTree(window._permBundle.processes);
 }
 
@@ -1709,6 +1719,19 @@ function deleteProcessStep(di, si) {
   if (!step || !confirm('确认删除工序「' + step.name + '」？')) return;
   window._permBundle.processes[di].steps.splice(si, 1);
   renderPermProcessTree(window._permBundle.processes);
+}
+
+function toggleStepPosition(el) {
+  if (!window._permBundle) return;
+  var di = parseInt(el.getAttribute('data-di'));
+  var si = parseInt(el.getAttribute('data-si'));
+  var pos = el.getAttribute('data-pos');
+  var steps = window._permBundle.processes[di].steps;
+  if (!steps || !steps[si]) return;
+  if (!steps[si].positions) steps[si].positions = [];
+  var idx = steps[si].positions.indexOf(pos);
+  if (idx === -1) steps[si].positions.push(pos);
+  else steps[si].positions.splice(idx, 1);
 }
 
 function deletePermLegacyProcess(idx) {
