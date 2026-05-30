@@ -2949,21 +2949,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 <div style="padding-left:12px;">`;
             
             (dept.steps || []).forEach((step, si) => {
-                const stepPositions = step.positions || [];
-                const posHtml = (_permData.positions || []).map(p =>
-                    `<label style="margin-left:2px;font-size:10px;color:#888;cursor:pointer;white-space:nowrap;">
-                        <input type="checkbox" data-di="${di}" data-si="${si}" data-pos="${p}" ${stepPositions.includes(p) ? 'checked' : ''} onchange="toggleStepPosition(this)" style="margin-right:1px;">
-                        ${p}
-                    </label>`
-                ).join('');
-                                
                 html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 6px;border-bottom:1px solid #f5f5f5;">
-                    <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
-                        <span style="font-size:12px;color:#555;min-width:80px;">${step.id}. ${step.name}</span>
-                        <span style="font-size:10px;color:#999;">岗位：</span>
-                        ${posHtml}
-                    </div>
-                    <div style="display:flex;gap:4px;flex-shrink:0;">
+                    <span style="font-size:12px;color:#555;">${step.id}. ${step.name}</span>
+                    <div style="display:flex;gap:4px;">
                         <button onclick="editProcessStep(${di}, ${si}, '${step.name}')" style="padding:1px 6px;background:#1677ff;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:9px;">✏️</button>
                         <button onclick="deleteProcessStep(${di}, ${si}, '${step.name}')" style="padding:1px 6px;background:#ff4d4f;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:9px;">✕</button>
                     </div>
@@ -3006,24 +2994,8 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!_permData) return;
         const steps = _permData.processes[di].steps || [];
         const newId = steps.length > 0 ? Math.max(...steps.map(s => s.id)) + 1 : 1;
-        // 新步骤默认允许所有岗位
-        const allPos = _permData.positions || [];
-        steps.push({id: newId, name: name.trim(), positions: [...allPos]});
+        steps.push({id: newId, name: name.trim()});
         renderPermProcesses(_permData.processes);
-    }
-
-    function toggleStepPosition(el) {
-        if (!_permData) return;
-        const di = parseInt(el.getAttribute('data-di'));
-        const si = parseInt(el.getAttribute('data-si'));
-        const pos = el.getAttribute('data-pos');
-        const step = _permData.processes[di].steps[si];
-        if (!step.positions) step.positions = [];
-        if (el.checked) {
-            if (!step.positions.includes(pos)) step.positions.push(pos);
-        } else {
-            step.positions = step.positions.filter(p => p !== pos);
-        }
     }
 
     function editProcessStep(di, si, oldName) {
