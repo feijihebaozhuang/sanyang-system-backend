@@ -2,9 +2,10 @@
   "users": {
     "admin": {
       "password": "aaffebecec560fec66e75f24062224ffa4e07696d2ae9a1fee3707c3f8fd9373",
-      "name": "admin",
+      "name": "戴雅利",
       "role": "超级管理员",
-      "employee_name": ""
+      "employee_name": "",
+      "is_system": true
     },
     "manager": {
       "password": "ed031f9ec196299fada4fa596a61f2139ae41a1b26e5f1fa3a7a61f854f8411b",
@@ -419,10 +420,66 @@
       "name": "覃海霞",
       "role": "管理",
       "employee_name": "覃海霞"
+    },
+    "jiangkeke": {
+      "password": "a7ff032dd14fe36b839117cd10b7b23343335824efde0550da64a8fc889adb16",
+      "name": "蒋珂珂",
+      "role": "超级管理员",
+      "employee_name": "蒋珂珂"
+    },
+    "jiangxiangxiang": {
+      "password": "dbca14d511a40d2da949ba318e8ade59d90d7f195b706a270e8a22318c295ecb",
+      "name": "蒋响响",
+      "role": "员工",
+      "employee_name": "蒋响响"
+    },
+    "Huangheng": {
+      "password": "47c0216fd936da072503df48f3fcd3ae3cde046b913fdc479a7a682e69de52f7",
+      "name": "黄恒",
+      "role": "员工",
+      "employee_name": "黄恒"
     }
   },
-  "employee_status": {},
+  "employee_status": {
+    "2026-05-25": {},
+    "2026-05-26": {},
+    "2026-05-27": {
+      "沈齐豪": "出勤",
+      "admin": "出勤"
+    },
+    "2026-05-29": {
+      "沈齐豪": "出勤"
+    },
+    "2026-05-30": {
+      "邓涛": "请假",
+      "李方国": "出勤",
+      "李荣晖": "出勤",
+      "戴雅利": "出勤",
+      "蒋响响": "请假"
+    }
+  },
+  "employee_leave_counts": {
+    "2026-05-25": {},
+    "2026-05-26": {},
+    "2026-05-27": {
+      "沈齐豪": 1
+    },
+    "2026-05-29": {},
+    "2026-05-30": {
+      "李荣晖": 1,
+      "蒋响响": 1
+    }
+  },
   "order_extra": {
+    "3299382661720480082": {
+      "urgent": false
+    },
+    "3300772587403532160": {
+      "urgent": false
+    },
+    "53109": {
+      "urgent": true
+    },
     "SC-20260426-001": {
       "urgent": true
     },
@@ -432,58 +489,112 @@
     "SC-20260427-002": {
       "urgent": true
     },
-    "3299382661720480082": {
+    "56430": {
       "urgent": false
     }
   },
   "permission_data": {
+    "positions": [
+      "超级管理员",
+      "主管",
+      "客服",
+      "员工",
+      "财务",
+      "业务员"
+    ],
     "processes": [
       {
         "dept": "美丽湾工厂部",
         "steps": [
           {
             "id": 1,
-            "name": "客服接单"
+            "name": "客服接单",
+            "positions": [
+              "客服",
+              "主管"
+            ]
           },
           {
             "id": 2,
-            "name": "黄厂打印"
+            "name": "黄厂打印",
+            "positions": [
+              "主管",
+              "超级管理员"
+            ]
           },
           {
             "id": 3,
-            "name": "审单分单"
+            "name": "审单分单",
+            "positions": [
+              "主管",
+              "客服"
+            ]
           },
           {
             "id": 4,
-            "name": "算料"
+            "name": "算料",
+            "positions": [
+              "主管",
+              "员工",
+              "业务员"
+            ]
           },
           {
             "id": 5,
-            "name": "分纸"
+            "name": "分纸",
+            "positions": [
+              "员工",
+              "主管"
+            ]
           },
           {
             "id": 6,
-            "name": "啤机(自动平压平)"
+            "name": "啤机(自动平压平)",
+            "positions": [
+              "员工",
+              "主管"
+            ]
           },
           {
             "id": 7,
-            "name": "啤机(机械手)"
+            "name": "啤机(机械手)",
+            "positions": [
+              "员工",
+              "主管"
+            ]
           },
           {
             "id": 8,
-            "name": "手啤"
+            "name": "手啤",
+            "positions": [
+              "员工",
+              "主管"
+            ]
           },
           {
             "id": 9,
-            "name": "印刷"
+            "name": "印刷",
+            "positions": [
+              "员工",
+              "主管"
+            ]
           },
           {
             "id": 10,
-            "name": "清废"
+            "name": "清废",
+            "positions": [
+              "员工",
+              "主管"
+            ]
           },
           {
             "id": 11,
-            "name": "打包发货"
+            "name": "打包发货",
+            "positions": [
+              "员工",
+              "主管",
+              "业务员"
+            ]
           }
         ]
       },
@@ -492,44 +603,81 @@
         "steps": [
           {
             "id": 1,
-            "name": "客服接单"
+            "name": "客服接单",
+            "positions": [
+              "客服",
+              "主管"
+            ]
           },
           {
             "id": 2,
-            "name": "黄厂打印"
+            "name": "黄厂打印",
+            "positions": [
+              "主管",
+              "超级管理员"
+            ]
           },
           {
             "id": 3,
-            "name": "审单分单"
+            "name": "审单分单",
+            "positions": [
+              "主管",
+              "客服"
+            ]
           },
           {
             "id": 4,
-            "name": "算料"
+            "name": "算料",
+            "positions": [
+              "主管",
+              "员工",
+              "业务员"
+            ]
           },
           {
             "id": 5,
-            "name": "分纸"
+            "name": "分纸",
+            "positions": [
+              "员工",
+              "主管"
+            ]
           },
           {
             "id": 6,
-            "name": "印刷"
+            "name": "印刷",
+            "positions": [
+              "员工",
+              "主管"
+            ]
           },
           {
             "id": 7,
-            "name": "开槽/打角"
+            "name": "开槽/打角",
+            "positions": [
+              "员工",
+              "主管"
+            ]
           },
           {
             "id": 8,
-            "name": "粘胶/打钉"
+            "name": "粘胶/打钉",
+            "positions": [
+              "员工",
+              "主管"
+            ]
           },
           {
             "id": 9,
-            "name": "打包发货"
+            "name": "打包发货",
+            "positions": [
+              "员工",
+              "主管",
+              "业务员"
+            ]
           }
         ]
       }
     ],
-    "positions": [],
     "employees": [
       {
         "name": "戴雅利",
@@ -614,1060 +762,319 @@
     ],
     "permissions": {
       "戴雅利": {
-        "刀模": true,
-        "员工": true,
-        "库存": true,
-        "扫码报工": true,
-        "报价": true,
-        "数据看板": true,
-        "日报表": true,
-        "权限管理": true,
-        "聚水潭": true,
-        "订单生产进度": true,
-        "首页": true,
-        "刀模库": true,
-        "原材料": true,
-        "实时订单": true
+        "刀模库": true
       },
       "邓涛": {
-        "刀模": true,
-        "员工": true,
-        "库存": true,
-        "扫码报工": true,
-        "数据看板": true,
-        "日报表": true,
-        "订单生产进度": true,
-        "首页": true,
         "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
         "刀模库": true,
         "原材料": false,
-        "实时订单": false
+        "实时订单": false,
+        "快麦ERP": false
       },
       "李周海": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "苏世婷": {
-        "首页": true,
-        "订单生产进度": true,
-        "扫码报工": false,
-        "日报表": false,
         "数据看板": true,
-        "刀模": true,
-        "库存": true,
-        "聚水潭": true,
-        "员工": true,
-        "权限管理": false,
-        "报价": true,
         "刀模库": true,
         "原材料": false,
         "实时订单": false
       },
       "廖思美": {
-        "首页": true,
-        "订单生产进度": true,
-        "扫码报工": false,
-        "日报表": false,
         "数据看板": true,
-        "刀模": true,
-        "库存": true,
-        "聚水潭": true,
-        "员工": true,
-        "权限管理": false,
-        "报价": true,
         "刀模库": true,
         "原材料": false,
         "实时订单": false
       },
       "何水单": {
-        "首页": true,
-        "订单生产进度": true,
-        "扫码报工": false,
-        "日报表": false,
         "数据看板": true,
-        "刀模": true,
-        "库存": true,
-        "聚水潭": true,
-        "员工": true,
-        "权限管理": false,
-        "报价": true,
         "刀模库": true,
         "原材料": false,
         "实时订单": false
       },
       "李四军": {
-        "首页": true,
-        "订单生产进度": true,
-        "扫码报工": false,
-        "日报表": false,
-        "数据看板": false,
         "刀模": false,
         "库存": false,
-        "聚水潭": false,
-        "员工": true,
-        "权限管理": false,
-        "报价": true,
         "刀模库": false,
         "原材料": false,
-        "实时订单": false
+        "实时订单": false,
+        "快麦ERP": false,
+        "员工": false
       },
       "陈贤聪": {
-        "首页": true,
-        "订单生产进度": true,
-        "扫码报工": false,
-        "日报表": false,
         "数据看板": true,
-        "刀模": true,
-        "库存": true,
-        "聚水潭": true,
-        "员工": true,
-        "权限管理": false,
-        "报价": true,
         "刀模库": true,
         "原材料": false,
         "实时订单": false
       },
       "张慧平": {
-        "首页": true,
-        "订单生产进度": true,
-        "扫码报工": false,
-        "日报表": false,
         "数据看板": true,
-        "刀模": true,
-        "库存": true,
-        "聚水潭": true,
-        "员工": true,
-        "权限管理": false,
-        "报价": true,
         "刀模库": true,
         "原材料": false,
         "实时订单": false
       },
       "陈贝贝": {
-        "首页": true,
-        "订单生产进度": true,
-        "扫码报工": false,
-        "日报表": false,
         "数据看板": true,
-        "刀模": true,
-        "库存": true,
-        "聚水潭": true,
-        "员工": true,
-        "权限管理": false,
-        "报价": true,
         "刀模库": true,
         "原材料": false,
         "实时订单": false
       },
       "罗怡": {
-        "首页": true,
-        "订单生产进度": true,
-        "扫码报工": false,
-        "日报表": false,
         "数据看板": true,
-        "刀模": true,
-        "库存": true,
-        "聚水潭": true,
-        "员工": true,
-        "权限管理": false,
-        "报价": true,
         "刀模库": true,
         "原材料": false,
         "实时订单": false
       },
       "周井梅": {
-        "首页": true,
-        "订单生产进度": true,
-        "扫码报工": false,
-        "日报表": false,
         "数据看板": true,
-        "刀模": true,
-        "库存": true,
-        "聚水潭": true,
-        "员工": true,
-        "权限管理": false,
-        "报价": true,
         "刀模库": true,
         "原材料": false,
         "实时订单": false
       },
       "戴志美": {
-        "首页": true,
-        "订单生产进度": true,
-        "扫码报工": false,
-        "日报表": false,
         "数据看板": true,
-        "刀模": true,
-        "库存": true,
-        "聚水潭": true,
-        "员工": true,
-        "权限管理": false,
-        "报价": true,
         "刀模库": true,
         "原材料": false,
         "实时订单": false
       },
       "石梅清": {
-        "首页": true,
-        "订单生产进度": true,
-        "扫码报工": false,
-        "日报表": false,
         "数据看板": true,
-        "刀模": true,
-        "库存": true,
-        "聚水潭": true,
-        "员工": true,
-        "权限管理": false,
-        "报价": true,
         "刀模库": true,
         "原材料": false,
         "实时订单": false
       },
       "张文杰": {
-        "首页": true,
-        "订单生产进度": true,
-        "扫码报工": false,
-        "日报表": false,
         "数据看板": true,
-        "刀模": true,
-        "库存": true,
-        "聚水潭": true,
-        "员工": true,
-        "权限管理": false,
-        "报价": true,
         "刀模库": true,
         "原材料": false,
         "实时订单": false
       },
       "姚斌": {
-        "刀模": true,
         "刀模库": true,
-        "员工": true,
-        "库存": true,
-        "扫码报工": true,
-        "数据看板": true,
-        "日报表": true,
-        "订单生产进度": true,
-        "首页": true,
-        "报价": true,
         "权限管理": true,
-        "聚水潭": true,
         "原材料": false,
         "实时订单": false
       },
       "黄兴": {
-        "刀模": true,
-        "员工": true,
         "库存": false,
-        "扫码报工": true,
-        "数据看板": true,
-        "日报表": true,
-        "订单生产进度": true,
-        "首页": true,
         "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
         "刀模库": false,
         "原材料": false,
-        "实时订单": false
+        "实时订单": false,
+        "快麦ERP": false
       },
       "隆浪": {
-        "刀模": true,
-        "员工": true,
         "库存": false,
-        "扫码报工": true,
-        "数据看板": true,
-        "日报表": true,
-        "订单生产进度": true,
-        "首页": true,
         "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
         "刀模库": false,
         "原材料": false,
-        "实时订单": false
+        "实时订单": false,
+        "快麦ERP": false
       },
       "蒋义红": {
-        "刀模": true,
-        "员工": true,
         "库存": false,
-        "扫码报工": true,
-        "数据看板": true,
-        "日报表": true,
-        "订单生产进度": true,
-        "首页": true,
         "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
         "刀模库": false,
         "原材料": false,
-        "实时订单": false
+        "实时订单": false,
+        "快麦ERP": false
       },
       "沈齐豪": {
-        "刀模": true,
-        "员工": true,
         "库存": false,
-        "扫码报工": true,
-        "数据看板": true,
-        "日报表": true,
-        "订单生产进度": true,
-        "首页": true,
         "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
         "刀模库": false,
         "原材料": false,
-        "实时订单": false
+        "实时订单": false,
+        "快麦ERP": false
       },
       "覃海霞": {
-        "刀模": true,
-        "员工": true,
-        "库存": true,
-        "扫码报工": true,
-        "数据看板": true,
-        "日报表": true,
-        "订单生产进度": true,
-        "首页": true,
         "报价": false,
-        "权限管理": false,
-        "聚水潭": true,
         "刀模库": true,
         "原材料": false,
         "实时订单": false
       },
       "李方国": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "唐美章": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "蒋保平": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "陈章远": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "黄振辉": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "汪成桃": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "易新明": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "雷善炎": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "陈海斌": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "陈奕升": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "江旭松": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "廖金玲": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "陈勇": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "张吉杰": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "唐孝定": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "黄恒": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "李荣晖": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
-      },
-      "蒋森响": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
-        "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "周业福": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "陈桂英": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "毛良芬": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "陈辉文": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "文小梅": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "帅行朝": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "黄张华": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "宋小国": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "唐忠群": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "蒋仁叶": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "罗照权": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "黄爱小": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "龙雪兰": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "李双": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "蒋军林": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
-      },
-      "宁哈姝": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
-        "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "黄华": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "陈伟": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "陈陶": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "周石国": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "杨家忠": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "沈奇严": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "姚建桥": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
-      },
-      "戴西华": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
-        "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
-      },
-      "魏小王": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
-        "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "黄芳": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
       },
       "于天发": {
-        "刀模": false,
-        "库存": false,
-        "数据看板": false,
-        "报价": false,
-        "权限管理": false,
-        "聚水潭": false,
-        "首页": true,
         "订单生产进度": true,
-        "扫码报工": true,
-        "日报表": true,
-        "员工": true,
-        "刀模库": false,
-        "原材料": false,
-        "实时订单": false
+        "刀模库": false
+      },
+      "宁哈妹": {
+        "刀模库": false
+      },
+      "戴四华": {
+        "刀模库": false
+      },
+      "蒋亚运": {
+        "刀模库": false
+      },
+      "蒋响响": {
+        "刀模库": false
+      },
+      "蒋珂珂": {
+        "刀模库": true
+      },
+      "魏小玉": {
+        "刀模库": false
       }
     },
     "employee_enabled": {
@@ -1736,7 +1143,665 @@
       "黄爱小": false,
       "黄芳": false,
       "龙雪兰": false
-    }
+    },
+    "employee_roles": {
+      "戴雅利": "超级管理员",
+      "于天发": "员工",
+      "何水单": "客服",
+      "周业福": "员工",
+      "周井梅": "客服",
+      "周石国": "员工",
+      "唐孝定": "员工",
+      "唐忠群": "员工",
+      "唐美章": "员工",
+      "姚建桥": "员工",
+      "姚斌": "管理",
+      "宁哈妹": "员工",
+      "宋小国": "员工",
+      "帅行朝": "员工",
+      "廖思美": "客服",
+      "廖金玲": "员工",
+      "张吉杰": "员工",
+      "张慧平": "客服",
+      "张文杰": "客服",
+      "戴四华": "员工",
+      "戴志美": "客服",
+      "文小梅": "员工",
+      "易新明": "员工",
+      "李双": "员工",
+      "李周海": "员工",
+      "李四军": "客服",
+      "李方国": "员工",
+      "李荣晖": "员工",
+      "杨家忠": "员工",
+      "毛良芬": "员工",
+      "江旭松": "员工",
+      "汪成桃": "员工",
+      "沈奇严": "员工",
+      "沈齐豪": "管理",
+      "石梅清": "客服",
+      "罗怡": "客服",
+      "罗照权": "员工",
+      "苏世婷": "客服",
+      "蒋义红": "管理",
+      "蒋亚运": "员工",
+      "蒋仁叶": "员工",
+      "蒋保平": "员工",
+      "蒋军林": "员工",
+      "蒋响响": "员工",
+      "蒋珂珂": "超级管理员",
+      "覃海霞": "管理",
+      "邓涛": "管理",
+      "陈伟": "员工",
+      "陈勇": "员工",
+      "陈奕升": "员工",
+      "陈桂英": "员工",
+      "陈海斌": "员工",
+      "陈章远": "员工",
+      "陈贝贝": "客服",
+      "陈贤聪": "客服",
+      "陈辉文": "员工",
+      "陈陶": "员工",
+      "隆浪": "管理",
+      "雷善炎": "员工",
+      "魏小玉": "员工",
+      "黄兴": "管理",
+      "黄华": "员工",
+      "黄张华": "员工",
+      "黄恒": "员工",
+      "黄振辉": "员工",
+      "黄爱小": "员工",
+      "黄芳": "员工",
+      "龙雪兰": "员工"
+    },
+    "role_permissions": {
+      "超级管理员": {
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "数据看板": true,
+        "刀模": true,
+        "库存": true,
+        "原材料": true,
+        "快麦ERP": true,
+        "员工": true,
+        "权限管理": true,
+        "报价": true,
+        "实时订单": true
+      },
+      "主管": {
+        "首页": true,
+        "订单生产进度": true,
+        "扫码报工": true,
+        "日报表": true,
+        "数据看板": true,
+        "刀模": true,
+        "刀模库": true,
+        "库存": true,
+        "原材料": true,
+        "快麦ERP": true,
+        "员工": true,
+        "报价": true,
+        "实时订单": true,
+        "权限管理": false
+      },
+      "客服": {
+        "首页": true,
+        "订单生产进度": true,
+        "快麦ERP": true,
+        "刀模": true,
+        "刀模库": true,
+        "库存": true,
+        "原材料": true,
+        "员工": true,
+        "报价": true,
+        "实时订单": true
+      },
+      "员工": {
+        "首页": true,
+        "扫码报工": true,
+        "日报表": true,
+        "员工": true
+      },
+      "财务": {
+        "首页": true,
+        "数据看板": true,
+        "快麦ERP": true,
+        "员工": true
+      },
+      "业务员": {
+        "首页": true,
+        "快麦ERP": true,
+        "刀模": true,
+        "报价": true,
+        "员工": true
+      }
+    },
+    "production_material_mapping": [
+      {
+        "keywords": "特硬,外径特硬,内径特硬,D6D,国产,加硬",
+        "label": "特硬"
+      },
+      {
+        "keywords": "优质,Q7Q,特价",
+        "label": "优质"
+      },
+      {
+        "keywords": "台湾,进口,超硬",
+        "label": "台湾"
+      },
+      {
+        "keywords": "白色,W7W,双白",
+        "label": "白色"
+      },
+      {
+        "keywords": "黑色,黑卡",
+        "label": "黑色"
+      },
+      {
+        "keywords": "红色",
+        "label": "红色"
+      },
+      {
+        "keywords": "P6D",
+        "label": "P6D"
+      },
+      {
+        "keywords": "B坑,K7K,三层",
+        "label": "B坑"
+      },
+      {
+        "keywords": "EB坑,K636K,五层EB",
+        "label": "EB坑"
+      },
+      {
+        "keywords": "BC坑,K737K,五层BC",
+        "label": "BC坑"
+      },
+      {
+        "keywords": "E瓦,瓦楞",
+        "label": "E瓦"
+      }
+    ]
   },
-  "resigned_employees": []
+  "resigned_employees": [],
+  "employees_master": [
+    {
+      "name": "于天发",
+      "position": "纸箱-粘胶/打角",
+      "group": "纸箱粘胶组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138066"
+    },
+    {
+      "name": "何水单",
+      "position": "业务员",
+      "group": "业务组",
+      "dept": "洋坑塘运营部",
+      "phone": "13800138004"
+    },
+    {
+      "name": "周业福",
+      "position": "平压平啤工",
+      "group": "平压平组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138040"
+    },
+    {
+      "name": "周井梅",
+      "position": "正方形/大鱼运营",
+      "group": "客服组",
+      "dept": "洋坑塘运营部",
+      "phone": "13800138010"
+    },
+    {
+      "name": "周石国",
+      "position": "纸箱-分纸",
+      "group": "纸箱分纸组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138059"
+    },
+    {
+      "name": "唐孝定",
+      "position": "放刀模",
+      "group": "刀模组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138036"
+    },
+    {
+      "name": "唐忠群",
+      "position": "仓库-找货",
+      "group": "仓库组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138048"
+    },
+    {
+      "name": "唐美章",
+      "position": "手啤机-啤工",
+      "group": "手啤机组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138023"
+    },
+    {
+      "name": "姚建桥",
+      "position": "纸箱-开槽",
+      "group": "纸箱开槽组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138062"
+    },
+    {
+      "name": "姚斌",
+      "position": "采购/跟单/机动",
+      "group": "综合组",
+      "dept": "洋坑塘运营部",
+      "phone": "13800138014"
+    },
+    {
+      "name": "宁哈妹",
+      "position": "扣底盒",
+      "group": "扣底盒组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138055"
+    },
+    {
+      "name": "宋小国",
+      "position": "仓库-找货",
+      "group": "仓库组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138047"
+    },
+    {
+      "name": "帅行朝",
+      "position": "车间打包",
+      "group": "车间打包组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138045"
+    },
+    {
+      "name": "廖思美",
+      "position": "淘天客服主管",
+      "group": "客服组",
+      "dept": "洋坑塘运营部",
+      "phone": "13800138003"
+    },
+    {
+      "name": "廖金玲",
+      "position": "刀模-找刀模",
+      "group": "刀模组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138033"
+    },
+    {
+      "name": "张吉杰",
+      "position": "刀模-拆刀模",
+      "group": "刀模组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138035"
+    },
+    {
+      "name": "张慧平",
+      "position": "友尚旗舰店运营",
+      "group": "客服组",
+      "dept": "洋坑塘运营部",
+      "phone": "13800138007"
+    },
+    {
+      "name": "张文杰",
+      "position": "小批量/品牌店运营",
+      "group": "客服组",
+      "dept": "洋坑塘运营部",
+      "phone": "13800138013"
+    },
+    {
+      "name": "戴四华",
+      "position": "纸箱-粘胶",
+      "group": "纸箱粘胶组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138063"
+    },
+    {
+      "name": "戴志美",
+      "position": "友尚/新鑫星运营",
+      "group": "客服组",
+      "dept": "洋坑塘运营部",
+      "phone": "13800138011"
+    },
+    {
+      "name": "戴雅利",
+      "position": "总负责人",
+      "group": "管理层",
+      "dept": "洋坑塘运营部",
+      "phone": "13800138001"
+    },
+    {
+      "name": "文小梅",
+      "position": "车间打包",
+      "group": "车间打包组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138044"
+    },
+    {
+      "name": "易新明",
+      "position": "啤机分纸",
+      "group": "啤机分纸组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138028"
+    },
+    {
+      "name": "李双",
+      "position": "印刷",
+      "group": "印刷组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138053"
+    },
+    {
+      "name": "李周海",
+      "position": "手啤机-啤工",
+      "group": "手啤机组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138022"
+    },
+    {
+      "name": "李四军",
+      "position": "美工",
+      "group": "业务组",
+      "dept": "洋坑塘运营部",
+      "phone": "13800138005"
+    },
+    {
+      "name": "李方国",
+      "position": "手啤机-啤工",
+      "group": "手啤机组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138021"
+    },
+    {
+      "name": "李荣晖",
+      "position": "机械手啤工",
+      "group": "机械手组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138038"
+    },
+    {
+      "name": "杨家忠",
+      "position": "纸箱-开槽",
+      "group": "纸箱开槽组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138060"
+    },
+    {
+      "name": "毛良芬",
+      "position": "车间打包",
+      "group": "车间打包组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138042"
+    },
+    {
+      "name": "江旭松",
+      "position": "啤机分纸",
+      "group": "啤机分纸组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138032"
+    },
+    {
+      "name": "汪成桃",
+      "position": "手啤机-啤工",
+      "group": "手啤机组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138027"
+    },
+    {
+      "name": "沈奇严",
+      "position": "纸箱-开槽",
+      "group": "纸箱开槽组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138061"
+    },
+    {
+      "name": "沈齐豪",
+      "position": "纸箱主管",
+      "group": "管理层",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138019"
+    },
+    {
+      "name": "石梅清",
+      "position": "止合/扣底盒运营",
+      "group": "客服组",
+      "dept": "洋坑塘运营部",
+      "phone": "13800138012"
+    },
+    {
+      "name": "罗怡",
+      "position": "三羊现货运营",
+      "group": "客服组",
+      "dept": "洋坑塘运营部",
+      "phone": "13800138009"
+    },
+    {
+      "name": "罗照权",
+      "position": "仓库-打包",
+      "group": "仓库组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138050"
+    },
+    {
+      "name": "苏世婷",
+      "position": "阿里客服主管",
+      "group": "客服组",
+      "dept": "洋坑塘运营部",
+      "phone": "13800138002"
+    },
+    {
+      "name": "蒋义红",
+      "position": "飞机盒主管",
+      "group": "管理层",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138018"
+    },
+    {
+      "name": "蒋亚运",
+      "position": "平压平啤工",
+      "group": "平压平组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138039"
+    },
+    {
+      "name": "蒋仁叶",
+      "position": "仓库-打包",
+      "group": "仓库组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138049"
+    },
+    {
+      "name": "蒋保平",
+      "position": "手啤机-啤工",
+      "group": "手啤机组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138024"
+    },
+    {
+      "name": "蒋军林",
+      "position": "扣底盒",
+      "group": "扣底盒组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138054"
+    },
+    {
+      "name": "蒋响响",
+      "position": "员工",
+      "group": "机动",
+      "phone": "",
+      "dept": "美丽湾工厂部"
+    },
+    {
+      "name": "蒋珂珂",
+      "position": "总经理",
+      "group": "管理",
+      "phone": "18148575079",
+      "dept": "美丽湾工厂部"
+    },
+    {
+      "name": "覃海霞",
+      "position": "综合主管",
+      "group": "管理层",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138020"
+    },
+    {
+      "name": "邓涛",
+      "position": "生产总监",
+      "group": "管理层",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138015"
+    },
+    {
+      "name": "陈伟",
+      "position": "纸箱-分纸",
+      "group": "纸箱分纸组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138057"
+    },
+    {
+      "name": "陈勇",
+      "position": "刀模-组刀模",
+      "group": "刀模组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138034"
+    },
+    {
+      "name": "陈奕升",
+      "position": "啤机分纸",
+      "group": "啤机分纸组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138031"
+    },
+    {
+      "name": "陈桂英",
+      "position": "车间打包",
+      "group": "车间打包组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138041"
+    },
+    {
+      "name": "陈海斌",
+      "position": "啤机分纸",
+      "group": "啤机分纸组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138030"
+    },
+    {
+      "name": "陈章远",
+      "position": "手啤机-啤工",
+      "group": "手啤机组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138025"
+    },
+    {
+      "name": "陈贝贝",
+      "position": "亚润跨境运营",
+      "group": "客服组",
+      "dept": "洋坑塘运营部",
+      "phone": "13800138008"
+    },
+    {
+      "name": "陈贤聪",
+      "position": "抖音/微信/珍珠棉业务",
+      "group": "业务组",
+      "dept": "洋坑塘运营部",
+      "phone": "13800138006"
+    },
+    {
+      "name": "陈辉文",
+      "position": "车间打包",
+      "group": "车间打包组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138043"
+    },
+    {
+      "name": "陈陶",
+      "position": "纸箱-分纸",
+      "group": "纸箱分纸组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138058"
+    },
+    {
+      "name": "隆浪",
+      "position": "财务总监",
+      "group": "管理层",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138017"
+    },
+    {
+      "name": "雷善炎",
+      "position": "啤机分纸",
+      "group": "啤机分纸组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138029"
+    },
+    {
+      "name": "魏小玉",
+      "position": "纸箱-粘胶",
+      "group": "纸箱粘胶组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138064"
+    },
+    {
+      "name": "黄兴",
+      "position": "行政总监",
+      "group": "管理层",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138016"
+    },
+    {
+      "name": "黄华",
+      "position": "扣底盒-打包",
+      "group": "扣底盒组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138056"
+    },
+    {
+      "name": "黄张华",
+      "position": "车间打包",
+      "group": "车间打包组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138046"
+    },
+    {
+      "name": "黄恒",
+      "position": "机械手啤工",
+      "group": "机械手组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138037"
+    },
+    {
+      "name": "黄振辉",
+      "position": "手啤机-啤工",
+      "group": "手啤机组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138026"
+    },
+    {
+      "name": "黄爱小",
+      "position": "仓库-放货",
+      "group": "仓库组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138051"
+    },
+    {
+      "name": "黄芳",
+      "position": "纸箱-粘胶",
+      "group": "纸箱粘胶组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138065"
+    },
+    {
+      "name": "龙雪兰",
+      "position": "仓库-打样兼配货",
+      "group": "仓库组",
+      "dept": "美丽湾工厂部",
+      "phone": "13800138052"
+    }
+  ]
 }
