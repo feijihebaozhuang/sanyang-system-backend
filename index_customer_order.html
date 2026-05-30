@@ -278,6 +278,7 @@ tr:hover td { background: #fafcff; }
     <button data-page="permissions" id="navPermissions" onclick="switchPage('permissions')">权限管理</button>
     <button data-page="embed_cs" onclick="switchPage('embed_cs')">客服端</button>
     <button data-page="embed_prod" onclick="switchPage('embed_prod')">生产端</button>
+    <button data-page="route" id="navRoute" onclick="switchPage('route')" style="display:none;">路由</button>
     <span class="nav-divider"></span>
     <a class="nav-ext" href="https://erp.superboss.cc/index.html#/index/" target="_blank" rel="noopener noreferrer">快麦ERP ↗</a>
   </div>
@@ -370,6 +371,7 @@ function showApp() {
   document.getElementById('userLabel').textContent =
     (currentUser.display_name || currentUser.username) + ' · ' + (currentUser.role === 'admin' ? '管理员' : '只读');
   document.getElementById('navPermissions').classList.toggle('hidden', currentUser.role !== 'admin');
+  document.getElementById('navRoute').style.display = currentUser.role === 'admin' ? '' : 'none';
 }
 
 function doLogin() {
@@ -430,7 +432,8 @@ function switchPage(page) {
     cs_staff: loadCsStaff,
     permissions: loadPermissions,
     embed_cs: loadEmbedCs,
-    embed_prod: loadEmbedProd
+    embed_prod: loadEmbedProd,
+    route: loadRoute
   };
   (loaders[page] || loadDashboard)();
 }
@@ -464,6 +467,147 @@ function loadEmbedFrame(page, title) {
 
 function loadEmbedCs() { loadEmbedFrame('embed_cs', '客服端'); }
 function loadEmbedProd() { loadEmbedFrame('embed_prod', '生产端'); }
+
+// ===== 路由配置页面 =====
+let _routeData = { employee_step_whitelist: {}, order_routes: [] };
+
+function loadRoute() {
+  var html = '<div style="padding:20px;">' +
+    '<h3 style="font-size:16px;margin-bottom:16px;">🗺️ 工序路由配置</h3>' +
+    '<div id="routeLoading" style="padding:20px;text-align:center;color:#999;">加载中...</div>' +
+    '<div id="routeMain" style="display:none;">' +
+      '<div id="routeEmployeeWhitelist" style="margin-bottom:24px;">' +
+        '<h4 style="margin-bottom:8px;">👤 员工可报工序白名单</h4>' +
+        '<p style="font-size:12px;color:#888;margin-bottom:8px;">指定员工只能报特定工序，留空=不限制</p>' +
+        '<div id="empStepList"></div>' +
+        '<button onclick="addEmpStepRule()" style="padding:6px 14px;background:#1890ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;margin-top:6px;">+ 添加员工规则</button>' +
+      '</div>' +
+      '<div id="routeOrderRules" style="margin-bottom:24px;">' +
+        '<h4 style="margin-bottom:8px;">📦 订单路由规则</h4>' +
+        '<div id="orderRuleList"></div>' +
+        '<button onclick="addOrderRule()" style="padding:6px 14px;background:#1890ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;margin-top:6px;">+ 添加路由规则</button>' +
+      '</div>' +
+      '<button onclick="saveRouteConfig()" style="padding:10px 28px;background:#faad14;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:bold;">💾 保存路由配置</button>' +
+      '<div id="routeSaveMsg" style="margin-top:8px;font-size:13px;"></div>' +
+    '</div></div>';
+  document.getElementById('mainContent').innerHTML = html;
+  fetchRouteData();
+}
+
+function fetchRouteData() {
+  document.getElementById('routeLoading').style.display = '';
+  document.getElementById('routeMain').style.display = 'none';
+  apiFetch('/api/perm/route_data').then(function(data) {
+    if (data.success) {
+      _routeData.employee_step_whitelist = data.employee_step_whitelist || {};
+      _routeData.order_routes = data.order_routes || [];
+      document.getElementById('routeLoading').style.display = 'none';
+      document.getElementById('routeMain').style.display = '';
+      renderEmpStepList();
+      renderOrderRuleList();
+    }
+  }).catch(function(e) {
+    document.getElementById('routeLoading').textContent = '❌ 加载失败：' + e.message;
+  });
+}
+
+function renderEmpStepList() {
+  var map = _routeData.employee_step_whitelist;
+  var names = Object.keys(map);
+  var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:#f5f5f5;"><th style="padding:8px;border:1px solid #e0e0e0;text-align:left;">员工</th><th style="padding:8px;border:1px solid #e0e0e0;text-align:left;">可报工序（逗号分隔）</th><th style="padding:8px;border:1px solid #e0e0e0;width:60px;">操作</th></tr></thead><tbody>';
+  names.forEach(function(name) {
+    var steps = (map[name] || []).join('，');
+    html += '<tr><td style="padding:8px;border:1px solid #e0e0e0;">' + esc(name) + '</td>' +
+      '<td style="padding:8px;border:1px solid #e0e0e0;"><input class="route-emp-input" data-name="' + escAttr(name) + '" value="' + esc(steps) + '" style="width:90%;padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;" placeholder="工序名，用逗号分隔"></td>' +
+      '<td style="padding:8px;border:1px solid #e0e0e0;"><button onclick="removeEmpStepRule(\'' + escAttr(name) + '\')" style="padding:3px 10px;background:#ff4d4f;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">删</button></td></tr>';
+  });
+  html += '</tbody></table>';
+  document.getElementById('empStepList').innerHTML = html;
+}
+
+function addEmpStepRule() {
+  var name = prompt('输入员工姓名：');
+  if (!name || !name.trim()) return;
+  _routeData.employee_step_whitelist[name.trim()] = [];
+  renderEmpStepList();
+}
+
+function removeEmpStepRule(name) {
+  delete _routeData.employee_step_whitelist[name];
+  renderEmpStepList();
+}
+
+function renderOrderRuleList() {
+  var rules = _routeData.order_routes;
+  var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:#f5f5f5;"><th style="padding:8px;border:1px solid #e0e0e0;text-align:left;">规则名</th><th style="padding:8px;border:1px solid #e0e0e0;text-align:left;">条件字段</th><th style="padding:8px;border:1px solid #e0e0e0;text-align:left;">匹配模式</th><th style="padding:8px;border:1px solid #e0e0e0;text-align:left;">路由到部门/步骤</th><th style="padding:8px;border:1px solid #e0e0e0;width:60px;">操作</th></tr></thead><tbody>';
+  rules.forEach(function(r, i) {
+    var cond = r.condition || {};
+    html += '<tr><td style="padding:8px;border:1px solid #e0e0e0;"><input class="route-rule-name" data-idx="' + i + '" value="' + esc(r.name || '') + '" style="width:100px;padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;"></td>' +
+      '<td style="padding:8px;border:1px solid #e0e0e0;"><select class="route-rule-field" data-idx="' + i + '" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;">' +
+        '<option value="order_type"' + (cond.field === 'order_type' ? ' selected' : '') + '>订单类型</option>' +
+        '<option value="shop"' + (cond.field === 'shop' ? ' selected' : '') + '>店铺名</option>' +
+        '<option value="so_id"' + (cond.field === 'so_id' ? ' selected' : '') + '>销售单号</option>' +
+      '</select></td>' +
+      '<td style="padding:8px;border:1px solid #e0e0e0;"><input class="route-rule-pattern" data-idx="' + i + '" value="' + esc(cond.pattern || '') + '" style="width:120px;padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;" placeholder="正则/关键词"></td>' +
+      '<td style="padding:8px;border:1px solid #e0e0e0;"><input class="route-rule-dept" data-idx="' + i + '" value="' + esc(r.process_dept || '') + '" style="width:120px;padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;" placeholder="部门名"></td>' +
+      '<td style="padding:8px;border:1px solid #e0e0e0;"><button onclick="removeOrderRule(' + i + ')" style="padding:3px 10px;background:#ff4d4f;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">删</button></td></tr>';
+  });
+  html += '</tbody></table>';
+  document.getElementById('orderRuleList').innerHTML = html;
+}
+
+function addOrderRule() {
+  _routeData.order_routes.push({ name: '新规则', condition: { field: 'order_type', pattern: '' }, process_dept: '' });
+  renderOrderRuleList();
+}
+
+function removeOrderRule(idx) {
+  _routeData.order_routes.splice(idx, 1);
+  renderOrderRuleList();
+}
+
+function saveRouteConfig() {
+  // Collect employee whitelist from inputs
+  document.querySelectorAll('.route-emp-input').forEach(function(inp) {
+    var name = inp.getAttribute('data-name');
+    var val = inp.value.trim();
+    _routeData.employee_step_whitelist[name] = val ? val.split(/[，,、\s]+/).filter(Boolean) : [];
+  });
+  // Collect order rules from inputs
+  document.querySelectorAll('.route-rule-name').forEach(function(inp) {
+    var idx = parseInt(inp.getAttribute('data-idx'));
+    var r = _routeData.order_routes[idx];
+    if (r) {
+      r.name = inp.value.trim();
+      r.condition = r.condition || {};
+      var fieldEl = document.querySelector('.route-rule-field[data-idx="' + idx + '"]');
+      var patternEl = document.querySelector('.route-rule-pattern[data-idx="' + idx + '"]');
+      var deptEl = document.querySelector('.route-rule-dept[data-idx="' + idx + '"]');
+      if (fieldEl) r.condition.field = fieldEl.value;
+      if (patternEl) r.condition.pattern = patternEl.value.trim();
+      if (deptEl) r.process_dept = deptEl.value.trim();
+    }
+  });
+  apiFetch('/api/perm/route_save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(_routeData)
+  }).then(function(data) {
+    var msgEl = document.getElementById('routeSaveMsg');
+    if (data.success) {
+      msgEl.style.color = '#52c41a';
+      msgEl.textContent = '✅ ' + (data.message || '保存成功');
+    } else {
+      msgEl.style.color = '#ff4d4f';
+      msgEl.textContent = '❌ ' + (data.message || '保存失败');
+    }
+  }).catch(function(e) {
+    document.getElementById('routeSaveMsg').style.color = '#ff4d4f';
+    document.getElementById('routeSaveMsg').textContent = '❌ 保存失败：' + e.message;
+  });
+}
+
+function escAttr(s) { return (s || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
 
 function statusTag(s) {
   var cls = s === 'approved' || s === 'completed' ? 'tag-green' :
