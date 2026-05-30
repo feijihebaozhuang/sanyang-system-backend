@@ -3097,7 +3097,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     async function savePermissions() {
-        const res = await fetch('/api/permissions/save', {
+        const res = await fetch('/api/perm/save', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
