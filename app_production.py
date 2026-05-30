@@ -1463,10 +1463,22 @@ def get_employee_status():
         for k, v in _employee_leave_counts[today].items()
         if k in site_names
     }
+    # 附带员工详细信息（含 phone），方便小程序显示电话
+    employees_info = []
+    for e in site_emps:
+        name = e.get("name", "")
+        employees_info.append({
+            "name": name,
+            "position": e.get("position", ""),
+            "group": e.get("group", ""),
+            "phone": e.get("phone", ""),
+            "dept": e.get("dept", ""),
+        })
     return jsonify({
         "date": today,
         "statuses": statuses,
         "leave_counts": leave_counts,
+        "employees": employees_info,
     })
 
 @app.route('/api/employee/status', methods=['POST'])
