@@ -1785,7 +1785,6 @@ def _builtin_role_permissions() -> dict[str, dict[str, bool]]:
         "实时订单": True,
     }
     worker = {
-        "首页": True,
         "扫码报工": True,
         "日报表": True,
         "员工": True,
