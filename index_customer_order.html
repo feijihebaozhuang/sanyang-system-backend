@@ -544,9 +544,14 @@ function renderOrderRuleList() {
     var cond = r.condition || {};
     html += '<tr><td style="padding:8px;border:1px solid #e0e0e0;"><input class="route-rule-name" data-idx="' + i + '" value="' + esc(r.name || '') + '" style="width:100px;padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;"></td>' +
       '<td style="padding:8px;border:1px solid #e0e0e0;"><select class="route-rule-field" data-idx="' + i + '" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;">' +
-        '<option value="order_type"' + (cond.field === 'order_type' ? ' selected' : '') + '>订单类型</option>' +
-        '<option value="shop"' + (cond.field === 'shop' ? ' selected' : '') + '>店铺名</option>' +
-        '<option value="so_id"' + (cond.field === 'so_id' ? ' selected' : '') + '>销售单号</option>' +
+        '<option value="order_type"' + (cond.field === 'order_type' ? ' selected' : '') + '>订单类型(自动推断)</option>' +
+        '<option value="items.0.name"' + (cond.field === 'items.0.name' ? ' selected' : '') + '>商品名称</option>' +
+        '<option value="items.0.spec"' + (cond.field === 'items.0.spec' ? ' selected' : '') + '>规格</option>' +
+        '<option value="items.0.material"' + (cond.field === 'items.0.material' ? ' selected' : '') + '>材质</option>' +
+        '<option value="items.0.product_type"' + (cond.field === 'items.0.product_type' ? ' selected' : '') + '>产品类型</option>' +
+        '<option value="items.0.产品分类"' + (cond.field === 'items.0.产品分类' ? ' selected' : '') + '>产品分类</option>' +
+        '<option value="items.0.开数"' + (cond.field === 'items.0.开数' ? ' selected' : '') + '>开数</option>' +
+        '<option value="items.0.刀模"' + (cond.field === 'items.0.刀模' ? ' selected' : '') + '>刀模</option>' +
       '</select></td>' +
       '<td style="padding:8px;border:1px solid #e0e0e0;"><input class="route-rule-pattern" data-idx="' + i + '" value="' + esc(cond.pattern || '') + '" style="width:120px;padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;" placeholder="正则/关键词"></td>' +
       '<td style="padding:8px;border:1px solid #e0e0e0;"><input class="route-rule-dept" data-idx="' + i + '" value="' + esc(r.process_dept || '') + '" style="width:120px;padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;" placeholder="部门名"></td>' +

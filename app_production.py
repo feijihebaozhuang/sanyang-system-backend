@@ -2340,7 +2340,18 @@ def _match_order_route(order: dict) -> str | list | None:
                     continue
                 items = order.get("items") or []
                 if idx < len(items):
-                    val = str(items[idx].get(parts[2]) or "")
+                    item = items[idx]
+                    key = parts[2]
+                    # 先取顶层
+                    val = str(item.get(key) or "")
+                    # 再试试 km_product_dims
+                    if not val:
+                        kmd = item.get("km_product_dims") or {}
+                        val = str(kmd.get(key) or "")
+                    # 再试试 platform_attrs
+                    if not val:
+                        pa = item.get("platform_attrs") or {}
+                        val = str(pa.get(key) or "")
         elif field == "order_type":
             val = ph.infer_order_type(order)
         else:
