@@ -414,10 +414,11 @@ _perm_save_detail: dict = {}
 def _sync_order_extra_from_db() -> None:
     _order_extra_store.merge_urgent_into(_order_extra, get_db)
 
-
 def persist():
-    """持久化当前数据到 MySQL；permission_data 写入 156 vault 并镜像 data.json。"""
-    global _employee_today_status, _permission_data, USERS, _resigned_employees, _perm_save_detail
+    """持久化当前数据到 data.json（仅业务数据，不碰权限/工序/路由）。
+    注意：permission_data 由 3003 管理写入 RDS，3001 只存自己的业务数据。"""
+    global _employee_today_status, USERS, _resigned_employees
+    # 把USERS的密码也存到文件（用户改密码后重启不丢）
     users_data = {}
     for uid, u in USERS.items():
         entry = {
@@ -433,29 +434,10 @@ def persist():
         "users": users_data,
         "employee_status": _employee_today_status,
         "order_extra": _order_extra,
-        "permission_data": _permission_data,
         "resigned_employees": _resigned_employees
     }
-    if not save_data(data):
-        _perm_save_detail = {"ok": False, "local_ok": False, "vault_error": "save_data 失败"}
-        return False
     _order_extra_store.mirror_order_extra_to_data_json(_order_extra)
-    _perm_save_detail = _cfg_json_cs.write_permission_overlay_detail(_permission_data)
-    # 调试强制注入
-    import os as _os
-    # 清除 PERMISSION_VAULT_OFF 如果存在（旧环境残留）
-    _os.environ.pop("PERMISSION_VAULT_OFF", None)
-    if not _perm_save_detail.get("vault_ok"):
-        with open("/tmp/vault_debug_cs.log", "a") as _f:
-            _f.write(f"vault_ok is None. URL={_os.environ.get('PERMISSION_VAULT_URL','NONE')} OFF={_os.environ.get('PERMISSION_VAULT_OFF','NONE')}\n")
-            import permission_vault as _pv
-            _f.write(f"vault_enabled={_pv.vault_enabled()}\n")
-            _f.flush()
-        _os.environ.setdefault("PERMISSION_VAULT_URL", "http://8.163.107.156:9443/api/permission_data")
-        _os.environ.setdefault("PERMISSION_VAULT_WRITE_URL", "http://8.163.107.156:9443/api/permission_data")
-        _os.environ.setdefault("PERMISSION_VAULT_TOKEN", "7854f273a06f21ce9b93dbdde816e131146afe6b11c39b9576b8cb5c7009d622")
-        _perm_save_detail = _cfg_json_cs.write_permission_overlay_detail(_permission_data)
-    return bool(_perm_save_detail.get("local_ok"))
+    save_data(data)
 
 # ==================== 登录API ====================
 @app.route('/api/login', methods=['POST'])

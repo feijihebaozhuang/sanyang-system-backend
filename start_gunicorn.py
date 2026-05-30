@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-import subprocess, os, time, sys
+"""
+旧版启动脚本（已停用 – 原指向 213 服务器）。
+213 已下线，实际 service 使用 systemd 直接启动 gunicorn。
+此文件保留仅作历史参考。
+"""
+import subprocess, os, time, sys, urllib.request
 
-os.chdir('/www/wwwroot/feijihe')
-
-# 清理
-subprocess.run(['pkill', '-9', '-f', 'gunicorn'], capture_output=True)
-subprocess.run(['pkill', '-9', '-f', 'app.py'], capture_output=True)
-time.sleep(1)
+os.chdir('/www/feijihe/stable')
 
 # 直接启动
-gunicorn_path = '/www/wwwroot/feijihe/venv/bin/gunicorn'
+gunicorn_path = '/www/feijihe/stable/venv/bin/gunicorn'
 args = [
     gunicorn_path,
     '-w', '2',
@@ -25,12 +25,5 @@ time.sleep(3)
 # 检查
 rc = p.poll()
 print(f"PID: {p.pid}, returncode: {rc}, alive: {rc is None}")
-
-import urllib.request
-try:
-    resp = urllib.request.urlopen('http://8.138.10.213:3001/', timeout=5)
-    print(f"HTTP: {resp.status}")
-except Exception as e:
-    print(f"Error: {e}")
 
 print("DONE")

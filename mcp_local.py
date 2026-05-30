@@ -1,7 +1,13 @@
+# -*- coding: utf-8 -*-
+"""
+MCP 客户端桥接层（已停用 – 原指向 156 服务器）。
+156 已下线，此文件保留仅作历史参考，未被任何 service 引用。
+如需重新启用，请修改 URL 指向新的 MCP 服务器地址。
+"""
 import sys, json, ssl, urllib.request
 
-URL = "https://8.163.107.156:18789/mcp"
-AUTH = "Bearer sanyang-mcp-token-a3fc681da4c543754663e78eb960eceb"
+URL = ""  # 已停用
+AUTH = ""
 CTX = ssl._create_unverified_context()
 
 for line in sys.stdin:
@@ -24,6 +30,10 @@ for line in sys.stdin:
 
         if method == "notifications/initialized":
             print(json.dumps({"jsonrpc":"2.0","result":None,"id":rid}), flush=True)
+            continue
+
+        if not URL:
+            print(json.dumps({"jsonrpc":"2.0","error":{"code":-32000,"message":"MCP 已停用（原指向 156 服务器，已下线）"},"id":rid}), flush=True)
             continue
 
         data = json.dumps(req).encode()
