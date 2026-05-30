@@ -2849,6 +2849,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const resp = await getAPI('/api/perm/data');
         const data = resp.data || resp;
         _permData = data;
+        window._allPositions = allPositions;
         
         // 自动转换旧格式（字符串列表）到新格式（树形）
         if (Array.isArray(data.processes) && data.processes.length > 0 && typeof data.processes[0] === 'string') {
@@ -2861,9 +2862,14 @@ document.addEventListener('DOMContentLoaded', function() {
         const empData = await getAPI('/api/employees');
         const allEmpNames = empData.employees.map(e => e.name);
         
+        const allPositions = (_permData.positions || []).length > 0
+            ? (_permData.positions || [])
+            : [...new Set((data.processes || []).flatMap(d => (d.steps || []).flatMap(s => s.positions || [])))];
+
         const features = ['首页', '订单生产进度', '扫码报工', '日报表', '数据看板', '刀模', '刀模库', '库存', '原材料', '快麦ERP', '员工', '权限管理', '报价', '实时订单', '工价管理'];
-        // 用_allPerms（来自/api/my_permissions），服务端保证完整
         const perms = window._allPerms || data.permissions || {};
+        _permData = data;
+        window._allPositions = allPositions;
         
         // 检查流程是否为树形结构（新版）
         const isTree = Array.isArray(data.processes) && data.processes.length > 0 && data.processes[0].dept;
@@ -2921,6 +2927,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // ===== 渲染树形流程 =====
     function renderPermProcesses(processes) {
         const el = document.getElementById('permProcesses');
+        const positions = window._allPositions || (_permData && _permData.positions) || [];
         
         // 检查是树形还是旧列表格式
         const isTree = Array.isArray(processes) && processes.length > 0 && processes[0].dept;
@@ -2951,7 +2958,7 @@ document.addEventListener('DOMContentLoaded', function() {
             
             (dept.steps || []).forEach((step, si) => {
                 const stepPositions = step.positions || [];
-                const posHtml = (_permData.positions || []).map(p =>
+                const posHtml = positions.map(p =>
                     `<label style="margin-left:2px;font-size:10px;color:#888;cursor:pointer;white-space:nowrap;">
                         <input type="checkbox" data-di="${di}" data-si="${si}" data-pos="${p}" ${stepPositions.includes(p) ? 'checked' : ''} onchange="toggleStepPosition(this)" style="margin-right:1px;">
                         ${p}
