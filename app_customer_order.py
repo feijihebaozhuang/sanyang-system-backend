@@ -14,6 +14,7 @@ from flask import Flask, jsonify, make_response, request, send_from_directory, s
 from flask_cors import CORS
 
 from settings import FLASK_SECRET_KEY
+import production_helpers as ph
 
 app = Flask(__name__, static_folder=".")
 app.secret_key = FLASK_SECRET_KEY
@@ -798,6 +799,572 @@ def api_shop_config_delete(config_id):
         return err
     admin_store.delete_shop_item(config_id)
     return jsonify({"success": True, "message": "已删除"})
+
+
+@app.route("/api/perm/route_data")
+def api_co_perm_route_data():
+    err = require_admin()
+    if err:
+        return err
+    bundle = emp_store.load_permission_bundle()
+    return jsonify({
+        "success": True,
+        "employee_step_whitelist": bundle.get("employee_step_whitelist") or {},
+        "order_routes": bundle.get("order_routes") or [],
+    })
+
+
+@app.route("/api/platform_products")
+def api_platform_products():
+    """按店铺/商品ID/规格名/规格ID搜索平台商品"""
+    err = require_admin()
+    if err:
+        return err
+    shop = request.args.get("shop", "").strip()
+    pid = request.args.get("product_id", "").strip()
+    spec_name = request.args.get("spec_name", "").strip()
+    spec_id = request.args.get("spec_id", "").strip()
+    page = max(1, int(request.args.get("page", 1)))
+    per_page = min(100, max(10, int(request.args.get("per_page", 20))))
+
+    import pymysql
+
+    cfg = {
+        "host": os.getenv("MYSQL_HOST", "rm-7xv9u0s6tr3e24tg6.mysql.rds.aliyuncs.com"),
+        "port": int(os.getenv("MYSQL_PORT", "3306")),
+        "user": os.getenv("MYSQL_USER", "sanyang_app"),
+        "password": os.getenv("MYSQL_PASSWORD", ""),
+        "database": "sanyang",
+        "charset": "utf8mb4",
+    }
+    conn = pymysql.connect(**cfg, cursorclass=pymysql.cursors.DictCursor)
+    try:
+        cur = conn.cursor()
+        where = []
+        params = []
+        if shop:
+            where.append("shop_name LIKE %s")
+            params.append(f"%{shop}%")
+        if pid:
+            where.append("platform_product_id = %s")
+            params.append(pid)
+        if spec_name:
+            where.append("platform_spec_name LIKE %s")
+            params.append(f"%{spec_name}%")
+        if spec_id:
+            where.append("platform_spec_id = %s")
+            params.append(spec_id)
+
+        base_where = " AND ".join(where) if where else "1=1"
+
+        cur.execute(f"SELECT COUNT(*) AS total FROM platform_products WHERE {base_where}", params)
+        total = cur.fetchone()["total"]
+
+        offset = (page - 1) * per_page
+        cur.execute(
+            f"SELECT id, shop_name, platform_product_id, platform_spec_name, platform_spec_id, created_at "
+            f"FROM platform_products WHERE {base_where} ORDER BY id DESC LIMIT %s OFFSET %s",
+            params + [per_page, offset]
+        )
+        rows = cur.fetchall()
+        cur.close()
+        return jsonify({
+            "success": True,
+            "data": rows,
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+        })
+    finally:
+        conn.close()
+
+
+@app.route("/api/perm/route_save", methods=["POST"])
+def api_co_perm_route_save():
+    err = require_admin()
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    try:
+        result = emp_store.save_permission_bundle({
+            "employee_step_whitelist": data.get("employee_step_whitelist", {}),
+            "order_routes": data.get("order_routes", []),
+        })
+        return jsonify({"success": True, **result})
+    except RuntimeError as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# 功能1: 报表分析API
+# ---------------------------------------------------------------------------
+
+@app.route("/api/report/summary")
+def api_report_summary():
+    """今日订单/报工/完成/待产/本月概览"""
+    from datetime import date, datetime
+    import pymysql
+    from settings import DB_CONFIG
+
+    today = date.today()
+    today_str = today.isoformat()
+
+    # 加载订单缓存 (MySQL order_cache_store)
+    orders = ph.load_cache_orders()
+
+    # 今日订单
+    today_orders = [o for o in orders if ph.order_on_date(o, today_str)]
+    today_order_count = len(today_orders)
+    month_orders = [
+        o for o in orders
+        if ph.order_on_date(o, today_str[:7] + "-01")
+    ]  # approximate, we'll do proper month filter
+    # Proper month filter
+    month_orders = []
+    for o in orders:
+        dk = ph.order_date_key(o)
+        if dk and dk[:7] == today_str[:7]:
+            month_orders.append(o)
+    month_order_count = len(month_orders)
+
+    # 待生产订单: status != 'done'
+    pending_orders = [o for o in orders if str(o.get("order_status") or o.get("status") or "") != "done"]
+    # also check so_status / refund_status etc.
+    pending_count = 0
+    for o in orders:
+        st = str(o.get("order_status") or o.get("status") or o.get("so_status") or "").strip().lower()
+        if st != "done":
+            pending_count += 1
+
+    # MySQL scan_logs 今日数据
+    scan_today = []
+    try:
+        db = pymysql.connect(**DB_CONFIG, cursorclass=pymysql.cursors.DictCursor)
+        cur = db.cursor()
+        cur.execute(
+            "SELECT order_id, step_name, worker, created_at FROM scan_logs WHERE DATE(created_at)=%s",
+            (today_str,),
+        )
+        scan_today = cur.fetchall()
+        cur.close()
+        db.close()
+    except Exception as e:
+        print(f"[report/summary] scan_logs 查询失败: {e}")
+        scan_today = []
+
+    today_scan_count = len(scan_today)
+    workers_today = set()
+    for row in scan_today:
+        w = (row.get("worker") or "").strip()
+        if w:
+            workers_today.add(w)
+
+    # 今日完成订单：报工次数 >= 工序数（粗略）
+    # 从 production_flows 或 scan_logs 分组计数
+    order_scan_counts: dict[str, int] = {}
+    for row in scan_today:
+        oid = str(row.get("order_id") or "")
+        if oid:
+            order_scan_counts[oid] = order_scan_counts.get(oid, 0) + 1
+
+    # 工序数: 从 production_flows 读，或按模板估算
+    today_completed = 0
+    try:
+        db = pymysql.connect(**DB_CONFIG, cursorclass=pymysql.cursors.DictCursor)
+        cur = db.cursor()
+        for oid, sc in order_scan_counts.items():
+            cur.execute("SELECT steps_json FROM production_flows WHERE order_id=%s", (oid,))
+            row = cur.fetchone()
+            if row:
+                steps = ph.parse_flow_steps(row.get("steps_json"))
+                total_steps = len(steps)
+                if total_steps > 0 and sc >= total_steps:
+                    today_completed += 1
+        cur.close()
+        db.close()
+    except Exception as e:
+        print(f"[report/summary] production_flows 查询失败: {e}")
+
+    # 本月预估收入 - 从 orders_cache 订单总金额粗略汇总
+    month_revenue_estimate = None
+    try:
+        total_amt = 0.0
+        has_amt = False
+        for o in month_orders:
+            amt_v = o.get("payment") or o.get("total_amount") or o.get("pay_amount") or 0
+            try:
+                total_amt += float(amt_v)
+                has_amt = True
+            except (TypeError, ValueError):
+                pass
+        if has_amt:
+            month_revenue_estimate = round(total_amt, 2)
+    except Exception:
+        month_revenue_estimate = None
+
+    return jsonify({
+        "today_orders": today_order_count,
+        "today_scan_count": today_scan_count,
+        "today_workers": len(workers_today),
+        "today_completed_orders": today_completed,
+        "pending_orders": pending_count,
+        "month_orders": month_order_count,
+        "month_revenue_estimate": month_revenue_estimate,
+    })
+
+
+@app.route("/api/report/trend")
+def api_report_trend():
+    """过去 N 天每日数据 [{date, orders_count, scan_count, workers_count}]"""
+    from datetime import date, datetime, timedelta
+    import pymysql
+    from settings import DB_CONFIG
+
+    days = max(1, min(365, int(request.args.get("days", "30"))))
+    today = date.today()
+    start_date = today - timedelta(days=days - 1)
+
+    # 加载订单
+    orders = ph.load_cache_orders()
+
+    # 按天查 scan_logs
+    scan_rows = []
+    try:
+        db = pymysql.connect(**DB_CONFIG, cursorclass=pymysql.cursors.DictCursor)
+        cur = db.cursor()
+        cur.execute(
+            "SELECT DATE(created_at) AS d, COUNT(*) AS cnt, COUNT(DISTINCT worker) AS wc "
+            "FROM scan_logs WHERE created_at >= %s GROUP BY DATE(created_at) ORDER BY d",
+            (start_date.isoformat(),),
+        )
+        scan_rows = cur.fetchall()
+        cur.close()
+        db.close()
+    except Exception as e:
+        print(f"[report/trend] scan_logs 查询失败: {e}")
+
+    scan_map = {}
+    for r in scan_rows:
+        d = r.get("d")
+        if isinstance(d, date):
+            d = d.isoformat()
+        else:
+            d = str(d or "")[:10]
+        scan_map[d] = {
+            "scan_count": int(r.get("cnt", 0)),
+            "workers_count": int(r.get("wc", 0)),
+        }
+
+    result = []
+    for i in range(days):
+        d = (start_date + timedelta(days=i)).isoformat()
+        orders_count = sum(1 for o in orders if ph.order_on_date(o, d))
+        s = scan_map.get(d, {})
+        result.append({
+            "date": d,
+            "orders_count": orders_count,
+            "scan_count": s.get("scan_count", 0),
+            "workers_count": s.get("workers_count", 0),
+        })
+
+    return jsonify(result)
+
+
+@app.route("/api/report/employee")
+def api_report_employee():
+    """指定日期每位员工的报工统计"""
+    from datetime import date, datetime, timedelta
+    import pymysql
+    from settings import DB_CONFIG
+
+    date_str = (request.args.get("date") or "").strip()
+    if not date_str:
+        date_str = date.today().isoformat()
+
+    rows = []
+    try:
+        db = pymysql.connect(**DB_CONFIG, cursorclass=pymysql.cursors.DictCursor)
+        cur = db.cursor()
+        cur.execute(
+            "SELECT order_id, step_name, worker, created_at FROM scan_logs "
+            "WHERE DATE(created_at)=%s ORDER BY id ASC",
+            (date_str,),
+        )
+        rows = cur.fetchall()
+        cur.close()
+        db.close()
+    except Exception as e:
+        print(f"[report/employee] 查询失败: {e}")
+        return jsonify([])
+
+    # 按 worker 分组
+    from collections import OrderedDict
+    worker_map: dict[str, dict] = OrderedDict()
+    for r in rows:
+        w = (r.get("worker") or "").strip()
+        if not w:
+            continue
+        if w not in worker_map:
+            worker_map[w] = {
+                "name": w,
+                "scan_count": 0,
+                "steps": [],
+                "first_scan": None,
+                "last_scan": None,
+            }
+        data = worker_map[w]
+        data["scan_count"] += 1
+        sn = r.get("step_name") or ""
+        if sn and sn not in data["steps"]:
+            data["steps"].append(sn)
+        t = r.get("created_at")
+        if isinstance(t, datetime):
+            ts = t.strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            ts = str(t or "")
+        if data["first_scan"] is None or ts < data["first_scan"]:
+            data["first_scan"] = ts
+        if data["last_scan"] is None or ts > data["last_scan"]:
+            data["last_scan"] = ts
+
+    return jsonify(list(worker_map.values()))
+
+
+@app.route("/api/report/product")
+def api_report_product():
+    """指定时间段按产品类型统计"""
+    from datetime import date, datetime, timedelta
+    import production_spec as _ps
+
+    date_from = (request.args.get("date_from") or "").strip()
+    date_to = (request.args.get("date_to") or "").strip()
+    if not date_from:
+        date_from = (date.today() - timedelta(days=30)).isoformat()
+    if not date_to:
+        date_to = date.today().isoformat()
+
+    orders = ph.load_cache_orders()
+    type_map: dict[str, dict] = {}
+    for o in orders:
+        dk = ph.order_date_key(o)
+        if not dk:
+            continue
+        if dk < date_from or dk > date_to:
+            continue
+        # 用订单级 infer_order_type 判断产品类型
+        order_type = ph.infer_order_type(o)
+        if order_type not in type_map:
+            type_map[order_type] = {"product_type": order_type, "order_count": 0, "total_qty": 0}
+        type_map[order_type]["order_count"] += 1
+        for item in o.get("items") or []:
+            if not isinstance(item, dict):
+                continue
+            try:
+                type_map[order_type]["total_qty"] += int(item.get("qty") or 0)
+            except (TypeError, ValueError):
+                pass
+
+    return jsonify(sorted(type_map.values(), key=lambda x: -x["total_qty"]))
+
+
+# ---------------------------------------------------------------------------
+# 功能2: 生产工单API
+# ---------------------------------------------------------------------------
+
+@app.route("/api/workorder/order/<order_id>")
+def api_workorder_order(order_id):
+    """生成订单的生产工单数据"""
+    import production_spec as _ps
+    from settings import DB_CONFIG
+
+    orders = ph.load_cache_orders()
+    o = ph.find_order_in_cache(orders, order_id)
+    if not o:
+        return jsonify({"success": False, "error": f"未找到订单 {order_id}"}), 404
+
+    oid = ph.internal_order_id(o)
+    so_id = str(o.get("so_id") or o.get("tid") or oid or "")
+    customer = str(o.get("receiver_name") or o.get("buyer_nick") or "")
+    shop_name = str(o.get("shop_name") or "")
+    created_at = str(o.get("pay_time") or o.get("created") or "")
+
+    # 获取工序
+    try:
+        bundle = emp_store.load_permission_bundle()
+        process_tree = bundle.get("processes", [])
+    except Exception:
+        process_tree = []
+    order_type = ph.infer_order_type(o)
+    flow = ph.get_or_create_flow_steps(DB_CONFIG, process_tree, oid, order_type)
+    steps = [s["step"] for s in flow]
+
+    # 解析 items
+    items_out = []
+    for item in (o.get("items") or []):
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or item.get("spec") or "")
+        spec = str(item.get("spec") or item.get("display") or "")
+        qty = int(item.get("qty") or 0)
+        attrs = ph.item_buyer_attrs(item)
+        product_type = ph.infer_order_type(o)
+        material = config_json.match_material_from_mapping(attrs, None) if hasattr(config_json, "match_material_from_mapping") else ""
+        dimensions = _ps.parse_dimensions_for_item(attrs)
+        # 计算纸板尺寸
+        calc_result = {}
+        if dimensions.get("l") and dimensions.get("w") and dimensions.get("h"):
+            try:
+                l = dimensions["l"]
+                w = dimensions["w"]
+                h = dimensions["h"]
+                if product_type in ("飞机盒", "飞机盒内盒"):
+                    paper_l = (w + h) * 2 + 4
+                    paper_w = l + h + 2
+                    paper_g = round((paper_l * paper_w) / 10000 * 0.25, 2)
+                    paper_cost = round(paper_g * 2.8, 2)
+                elif product_type == "纸箱":
+                    paper_l = (w + h) * 2 + 6
+                    paper_w = l + h + 4
+                    paper_g = round((paper_l * paper_w) / 10000 * 0.35, 2)
+                    paper_cost = round(paper_g * 3.2, 2)
+                else:
+                    paper_l = (w + h) * 2 + 4
+                    paper_w = l + h + 2
+                    paper_g = round((paper_l * paper_w) / 10000 * 0.25, 2)
+                    paper_cost = round(paper_g * 2.8, 2)
+                calc_result = {
+                    "paper_l": round(paper_l, 1),
+                    "paper_w": round(paper_w, 1),
+                    "paper_g": paper_g,
+                    "paper_cost": paper_cost,
+                }
+            except Exception:
+                pass
+        items_out.append({
+            "name": name,
+            "spec": spec,
+            "qty": qty,
+            "product_type": product_type,
+            "material": material,
+            "dimensions": {"l": dimensions.get("l"), "w": dimensions.get("w"), "h": dimensions.get("h")},
+            "calc_result": calc_result,
+        })
+
+    return jsonify({
+        "order_id": oid,
+        "so_id": so_id,
+        "customer": customer,
+        "shop_name": shop_name,
+        "items": items_out,
+        "steps": steps,
+        "created_at": created_at,
+    })
+
+
+@app.route("/api/workorder/print", methods=["POST"])
+def api_workorder_print():
+    """生成打印工单的HTML"""
+    data = request.get_json(silent=True) or {}
+    order_ids = data.get("order_ids", [])
+    if not isinstance(order_ids, list) or not order_ids:
+        return jsonify({"success": False, "error": "order_ids 必填"}), 400
+
+    orders = ph.load_cache_orders()
+    lines = []
+    for oid in order_ids:
+        o = ph.find_order_in_cache(orders, str(oid).strip())
+        if not o:
+            continue
+        oid_str = ph.internal_order_id(o)
+        shop = str(o.get("shop_name") or "")
+        items_html = ""
+        for item in (o.get("items") or []):
+            if not isinstance(item, dict):
+                continue
+            spec = str(item.get("spec") or item.get("name") or "")
+            qty = int(item.get("qty") or 0)
+            items_html += f"<tr><td>{spec}</td><td>{qty}</td></tr>"
+        lines.append(f"""
+        <div class="workorder-page">
+            <h3>工单 #{oid_str}</h3>
+            <p>店铺: {shop}</p>
+            <table border="1" cellpadding="6" style="border-collapse:collapse;width:100%">
+                <thead><tr><th>品名/规格</th><th>数量</th></tr></thead>
+                <tbody>{items_html}</tbody>
+            </table>
+            <hr/>
+        </div>""")
+
+    html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+    <style>
+        body {{ font-family: SimSun, serif; font-size: 14px; }}
+        .workorder-page {{ page-break-after: always; padding: 20px; }}
+        table {{ margin-top: 10px; }}
+        h3 {{ margin: 0 0 5px 0; }}
+    </style>
+</head><body>
+    {''.join(lines)}
+    <script>window.print();</script>
+</body></html>"""
+
+    return jsonify({"html": html})
+
+
+@app.route("/api/workorder/scan/<order_id>")
+def api_workorder_scan(order_id):
+    """扫码后生产工单简化版"""
+    import production_spec as _ps
+    from settings import DB_CONFIG
+
+    orders = ph.load_cache_orders()
+    o = ph.find_order_in_cache(orders, order_id)
+    if not o:
+        return jsonify({"success": False, "error": f"未找到订单 {order_id}"}), 404
+
+    oid = ph.internal_order_id(o)
+    try:
+        bundle = emp_store.load_permission_bundle()
+        process_tree = bundle.get("processes", [])
+    except Exception:
+        process_tree = []
+    order_type = ph.infer_order_type(o)
+    flow = ph.get_or_create_flow_steps(DB_CONFIG, process_tree, oid, order_type)
+
+    # 当前工序（第一个未完成的）
+    current_step = ""
+    reportable_steps = []
+    for s in flow:
+        if not s.get("done"):
+            if not current_step:
+                current_step = s["step"]
+            reportable_steps.append(s["step"])
+
+    # 简约版 items
+    items_simple = []
+    for item in (o.get("items") or []):
+        if not isinstance(item, dict):
+            continue
+        spec = str(item.get("spec") or item.get("name") or "")
+        qty = int(item.get("qty") or 0)
+        attrs = ph.item_buyer_attrs(item)
+        pt = ph.infer_order_type(o)
+        dims = _ps.parse_dimensions_for_item(attrs)
+        items_simple.append({
+            "name": spec,
+            "spec": spec,
+            "qty": qty,
+            "product_type": pt,
+            "dimensions": {"l": dims.get("l"), "w": dims.get("w"), "h": dims.get("h")},
+        })
+
+    return jsonify({
+        "order_id": oid,
+        "shop_name": str(o.get("shop_name") or ""),
+        "customer": str(o.get("receiver_name") or o.get("buyer_nick") or ""),
+        "items": items_simple,
+        "current_step": current_step,
+        "reportable_steps": reportable_steps,
+    })
 
 
 if __name__ == "__main__":

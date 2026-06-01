@@ -274,11 +274,14 @@ tr:hover td { background: #fafcff; }
     <button data-page="customers" onclick="switchPage('customers')">客户管理</button>
     <button data-page="orders" onclick="switchPage('orders')">订单总览</button>
     <button data-page="sku_lookup" onclick="switchPage('sku_lookup')">SKU查询</button>
+    <button data-page="platform_products" onclick="switchPage('platform_products')">平台商品</button>
     <button data-page="cs_staff" onclick="switchPage('cs_staff')">客服员工</button>
     <button data-page="permissions" id="navPermissions" onclick="switchPage('permissions')">权限管理</button>
     <button data-page="embed_cs" onclick="switchPage('embed_cs')">客服端</button>
     <button data-page="embed_prod" onclick="switchPage('embed_prod')">生产端</button>
     <button data-page="route" id="navRoute" onclick="switchPage('route')" style="display:none;">路由</button>
+    <button data-page="report" id="navReport" onclick="switchPage('report')" style="display:none;">📊 报表</button>
+    <button data-page="workorder" id="navWorkorder" onclick="switchPage('workorder')" style="display:none;">📋 生产工单</button>
     <span class="nav-divider"></span>
     <a class="nav-ext" href="https://erp.superboss.cc/index.html#/index/" target="_blank" rel="noopener noreferrer">快麦ERP ↗</a>
   </div>
@@ -372,6 +375,8 @@ function showApp() {
     (currentUser.display_name || currentUser.username) + ' · ' + (currentUser.role === 'admin' ? '管理员' : '只读');
   document.getElementById('navPermissions').classList.toggle('hidden', currentUser.role !== 'admin');
   document.getElementById('navRoute').style.display = currentUser.role === 'admin' ? '' : 'none';
+  document.getElementById('navReport').style.display = currentUser.role === 'admin' ? '' : 'none';
+  document.getElementById('navWorkorder').style.display = currentUser.role === 'admin' ? '' : 'none';
 }
 
 function doLogin() {
@@ -429,11 +434,14 @@ function switchPage(page) {
     customers: loadCustomers,
     orders: loadOrders,
     sku_lookup: loadSkuLookup,
+    platform_products: loadPlatformProducts,
     cs_staff: loadCsStaff,
     permissions: loadPermissions,
     embed_cs: loadEmbedCs,
     embed_prod: loadEmbedProd,
-    route: loadRoute
+    route: loadRoute,
+    report: loadReport,
+    workorder: loadWorkorder
   };
   (loaders[page] || loadDashboard)();
 }
@@ -497,10 +505,26 @@ function loadRoute() {
 function fetchRouteData() {
   document.getElementById('routeLoading').style.display = '';
   document.getElementById('routeMain').style.display = 'none';
-  apiFetch('/api/perm/route_data').then(function(data) {
+  // 同时加载路由数据和生产线流程（获取工序列表）
+  Promise.all([
+    apiFetch('/api/perm/route_data'),
+    apiFetch('/api/perm/data')
+  ]).then(function(results) {
+    var data = results[0];
+    var permData = results[1];
     if (data.success) {
       _routeData.employee_step_whitelist = data.employee_step_whitelist || {};
       _routeData.order_routes = data.order_routes || [];
+      // 从生产线流程提取所有工序名
+      _routeData.allSteps = [];
+      var processes = (permData.data || {}).processes || [];
+      processes.forEach(function(dept) {
+        (dept.steps || []).forEach(function(step) {
+          if (step.name && _routeData.allSteps.indexOf(step.name) < 0) {
+            _routeData.allSteps.push(step.name);
+          }
+        });
+      });
       document.getElementById('routeLoading').style.display = 'none';
       document.getElementById('routeMain').style.display = '';
       renderEmpStepList();
@@ -514,15 +538,40 @@ function fetchRouteData() {
 function renderEmpStepList() {
   var map = _routeData.employee_step_whitelist;
   var names = Object.keys(map);
-  var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:#f5f5f5;"><th style="padding:8px;border:1px solid #e0e0e0;text-align:left;">员工</th><th style="padding:8px;border:1px solid #e0e0e0;text-align:left;">可报工序（逗号分隔）</th><th style="padding:8px;border:1px solid #e0e0e0;width:60px;">操作</th></tr></thead><tbody>';
+  var allSteps = _routeData.allSteps || [];
+  var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:#f5f5f5;"><th style="padding:8px;border:1px solid #e0e0e0;text-align:left;width:100px;">员工</th><th style="padding:8px;border:1px solid #e0e0e0;text-align:left;">可报工序（勾选，从生产线流程同步）</th><th style="padding:8px;border:1px solid #e0e0e0;width:60px;">操作</th></tr></thead><tbody>';
   names.forEach(function(name) {
-    var steps = (map[name] || []).join('，');
-    html += '<tr><td style="padding:8px;border:1px solid #e0e0e0;">' + esc(name) + '</td>' +
-      '<td style="padding:8px;border:1px solid #e0e0e0;"><input class="route-emp-input" data-name="' + escAttr(name) + '" value="' + esc(steps) + '" style="width:90%;padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;" placeholder="工序名，用逗号分隔"></td>' +
+    var selected = map[name] || [];
+    html += '<tr><td style="padding:8px;border:1px solid #e0e0e0;font-weight:500;">' + esc(name) + '</td>' +
+      '<td style="padding:8px;border:1px solid #e0e0e0;"><div style="display:flex;flex-wrap:wrap;gap:4px;max-height:120px;overflow-y:auto;">';
+    if (allSteps.length === 0) {
+      html += '<span style="color:#999;font-size:12px;">暂无工序，请先在「生产线流程」中添加工序</span>';
+    } else {
+      allSteps.forEach(function(step) {
+        var checked = selected.indexOf(step) !== -1 ? 'checked' : '';
+        html += '<label style="font-size:12px;cursor:pointer;white-space:nowrap;padding:2px 0;margin-right:6px;">' +
+          '<input type="checkbox" class="route-emp-step" data-name="' + escAttr(name) + '" data-step="' + escAttr(step) + '" ' + checked + ' onchange="toggleEmpStep(this)"> ' +
+          esc(step) + '</label>';
+      });
+    }
+    html += '</div></td>' +
       '<td style="padding:8px;border:1px solid #e0e0e0;"><button onclick="removeEmpStepRule(\'' + escAttr(name) + '\')" style="padding:3px 10px;background:#ff4d4f;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">删</button></td></tr>';
   });
   html += '</tbody></table>';
   document.getElementById('empStepList').innerHTML = html;
+}
+
+function toggleEmpStep(el) {
+  var name = el.getAttribute('data-name');
+  var step = el.getAttribute('data-step');
+  var list = _routeData.employee_step_whitelist[name] || [];
+  if (el.checked) {
+    if (list.indexOf(step) < 0) list.push(step);
+  } else {
+    var idx = list.indexOf(step);
+    if (idx >= 0) list.splice(idx, 1);
+  }
+  _routeData.employee_step_whitelist[name] = list;
 }
 
 function addEmpStepRule() {
@@ -572,12 +621,7 @@ function removeOrderRule(idx) {
 }
 
 function saveRouteConfig() {
-  // Collect employee whitelist from inputs
-  document.querySelectorAll('.route-emp-input').forEach(function(inp) {
-    var name = inp.getAttribute('data-name');
-    var val = inp.value.trim();
-    _routeData.employee_step_whitelist[name] = val ? val.split(/[，,、\s]+/).filter(Boolean) : [];
-  });
+  // 白名单数据已由复选框 onchange 实时同步，无需额外收集
   // Collect order rules from inputs
   document.querySelectorAll('.route-rule-name').forEach(function(inp) {
     var idx = parseInt(inp.getAttribute('data-idx'));
@@ -613,6 +657,125 @@ function saveRouteConfig() {
 }
 
 function escAttr(s) { return (s || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+
+// ===== 平台商品查询 =====
+var ppPage = 1;
+var ppPerPage = 20;
+var ppTotal = 0;
+
+function loadPlatformProducts() {
+  ppPage = 1;
+  var html = '<div class="card">' +
+    '<h2>📦 平台商品查询</h2>' +
+    '<p style="font-size:13px;color:#888;margin-bottom:14px;">查询已导入的平台商品数据（店铺、商品ID、规格名、规格ID）</p>' +
+    '<div class="toolbar">' +
+      '<select id="ppShop" style="width:150px;"><option value="">全部店铺</option>' +
+        '<option value="天猫小批量">天猫小批量</option>' +
+        '<option value="天猫彩色">天猫彩色</option>' +
+        '<option value="天猫扣底盒">天猫扣底盒</option>' +
+        '<option value="天猫止合">天猫止合</option>' +
+        '<option value="天猫正方形">天猫正方形</option>' +
+        '<option value="淘宝俊鑫">淘宝俊鑫</option>' +
+        '<option value="淘宝品牌店">淘宝品牌店</option>' +
+        '<option value="淘宝当下家">淘宝当下家</option>' +
+        '<option value="阿里三羊">阿里三羊</option>' +
+        '<option value="阿里亚润">阿里亚润</option>' +
+        '<option value="阿里友尚">阿里友尚</option>' +
+        '<option value="阿里大鱼">阿里大鱼</option>' +
+        '<option value="阿里新鑫星">阿里新鑫星</option>' +
+        '<option value="阿里正方形">阿里正方形</option>' +
+      '</select>' +
+      '<input id="ppPid" placeholder="平台商品ID" style="width:140px;">' +
+      '<input id="ppSpecId" placeholder="规格ID" style="width:140px;">' +
+      '<input id="ppSpecName" placeholder="规格名称（模糊）" style="width:200px;">' +
+      '<button onclick="searchPlatformProducts()">🔍 搜索</button>' +
+      '<button class="secondary" onclick="clearPlatformProducts()">清除</button>' +
+    '</div>' +
+    '<div id="ppResult" style="font-size:13px;color:#999;padding:20px;text-align:center;">输入搜索条件后点「搜索」</div>' +
+    '<div id="ppPagination" style="display:none;margin-top:12px;text-align:center;font-size:13px;"></div>' +
+  '</div>';
+  document.getElementById('mainContent').innerHTML = html;
+}
+
+function searchPlatformProducts() {
+  var shop = document.getElementById('ppShop').value;
+  var pid = document.getElementById('ppPid').value.trim();
+  var specId = document.getElementById('ppSpecId').value.trim();
+  var specName = document.getElementById('ppSpecName').value.trim();
+  if (!shop && !pid && !specId && !specName) {
+    document.getElementById('ppResult').innerHTML = '<div style="padding:20px;text-align:center;color:#999;">请至少输入一个搜索条件</div>';
+    return;
+  }
+  document.getElementById('ppResult').innerHTML = '<div style="padding:20px;text-align:center;color:#999;">⏳ 查询中...</div>';
+  document.getElementById('ppPagination').style.display = 'none';
+  var params = new URLSearchParams({ page: ppPage, per_page: ppPerPage });
+  if (shop) params.set('shop', shop);
+  if (pid) params.set('product_id', pid);
+  if (specId) params.set('spec_id', specId);
+  if (specName) params.set('spec_name', specName);
+  apiFetch('/api/platform_products?' + params.toString()).then(function(data) {
+    if (!data.success) { throw new Error(data.error || '查询失败'); }
+    ppTotal = data.total;
+    renderPlatformProducts(data.data, data.total, data.page);
+  }).catch(function(e) {
+    document.getElementById('ppResult').innerHTML = '<div style="padding:20px;text-align:center;color:#e74c3c;">❌ ' + e.message + '</div>';
+  });
+}
+
+function renderPlatformProducts(rows, total, page) {
+  if (!rows || rows.length === 0) {
+    document.getElementById('ppResult').innerHTML = '<div style="padding:20px;text-align:center;color:#999;">没有匹配结果</div>';
+    document.getElementById('ppPagination').style.display = 'none';
+    return;
+  }
+  var html = '<div style="margin-bottom:8px;font-size:13px;color:#888;">共 <strong>' + total + '</strong> 条记录，当前第 ' + page + ' 页</div>' +
+    '<div class="perm-table-wrap"><table><thead><tr>' +
+    '<th>店铺</th><th>平台商品ID</th><th>规格ID</th><th>规格名称</th><th>导入时间</th>' +
+    '</tr></thead><tbody>';
+  rows.forEach(function(r) {
+    html += '<tr>' +
+      '<td>' + esc(r.shop_name) + '</td>' +
+      '<td style="font-family:monospace;font-size:12px;">' + esc(r.platform_product_id) + '</td>' +
+      '<td style="font-family:monospace;font-size:12px;">' + esc(r.platform_spec_id) + '</td>' +
+      '<td style="max-width:300px;word-break:break-all;">' + esc(r.platform_spec_name) + '</td>' +
+      '<td style="font-size:12px;color:#888;">' + (r.created_at || '') + '</td>' +
+      '</tr>';
+  });
+  html += '</tbody></table></div>';
+
+  var totalPages = Math.ceil(total / ppPerPage);
+  var pgHtml = '';
+  if (totalPages > 1) {
+    pgHtml += '<button class="btn secondary" onclick="goPpPage(1)"' + (page <= 1 ? ' disabled style="opacity:0.5;"' : '') + '>首页</button> ';
+    pgHtml += '<button class="btn secondary" onclick="goPpPage(' + (page - 1) + ')"' + (page <= 1 ? ' disabled style="opacity:0.5;"' : '') + '>上一页</button> ';
+    pgHtml += '<span style="padding:0 8px;">' + page + '/' + totalPages + '</span> ';
+    pgHtml += '<button class="btn secondary" onclick="goPpPage(' + (page + 1) + ')"' + (page >= totalPages ? ' disabled style="opacity:0.5;"' : '') + '>下一页</button> ';
+    pgHtml += '<button class="btn secondary" onclick="goPpPage(' + totalPages + ')"' + (page >= totalPages ? ' disabled style="opacity:0.5;"' : '') + '>末页</button>';
+  }
+
+  document.getElementById('ppResult').innerHTML = html;
+  var pgEl = document.getElementById('ppPagination');
+  if (pgHtml) {
+    pgEl.innerHTML = pgHtml;
+    pgEl.style.display = '';
+  } else {
+    pgEl.style.display = 'none';
+  }
+}
+
+function goPpPage(p) {
+  ppPage = p;
+  searchPlatformProducts();
+}
+
+function clearPlatformProducts() {
+  document.getElementById('ppShop').value = '';
+  document.getElementById('ppPid').value = '';
+  document.getElementById('ppSpecId').value = '';
+  document.getElementById('ppSpecName').value = '';
+  document.getElementById('ppResult').innerHTML = '<div style="padding:20px;text-align:center;color:#999;">输入搜索条件后点「搜索」</div>';
+  document.getElementById('ppPagination').style.display = 'none';
+}
 
 function statusTag(s) {
   var cls = s === 'approved' || s === 'completed' ? 'tag-green' :
@@ -1157,9 +1320,9 @@ function renderPermissionsPage() {
   var html = '<div class="card"><h2>权限管理（3003 统一入口 · 3001/3002 暂保留旧页，测试通过后移除）</h2>' +
     '<div class="subnav">' +
     '<button class="' + (tab==='processes'?'active':'') + '" onclick="setPermSubTab(\'processes\')">🏭 生产线流程</button>' +
-    '<button class="' + (tab==='positions'?'active':'') + '" onclick="setPermSubTab(\'positions\')">👔 岗位设置</button>' +
+    '<button class="' + (tab==='positions'?'active':'') + '" onclick="setPermSubTab(\'positions\')">👔 角色设置</button>' +
     '<button class="' + (tab==='material_map'?'active':'') + '" onclick="setPermSubTab(\'material_map\')">🔑 材料映射</button>' +
-    '<button class="' + (tab==='full_emp'?'active':'') + '" onclick="setPermSubTab(\'full_emp\')">👥 管理全部员工</button>' +
+    '<button class="' + (tab==='full_emp'?'active':'') + '" onclick="setPermSubTab(\'full_emp\')">👥 员工管理</button>' +
     '<button class="' + (tab==='feature_perm'?'active':'') + '" onclick="setPermSubTab(\'feature_perm\')">🔐 功能权限</button>' +
     '<button class="' + (tab==='resigned'?'active':'') + '" onclick="setPermSubTab(\'resigned\')">🗑️ 回收站</button>' +
     '<button class="' + (tab==='quote'?'active':'') + '" onclick="setPermSubTab(\'quote\')">💰 报价参数</button>' +
@@ -1671,14 +1834,30 @@ function renderPermEmployees() {
   var employees = (data.employees || []).map(function(e) { return e.name || e; });
   var perms = data.permissions || {};
   var enabledMap = data.employee_enabled || {};
+  var empRoles = data.employee_roles || {};
+  // 收集所有角色
+  var allRoles = ['超级管理员', '主管', '管理', '客服', '员工', '财务', '业务员'];
+  var selectedRole = window._permRoleFilter || '';
   var html = '<div class="toolbar">' +
+    '<span style="font-size:13px;color:#666;">角色筛选：</span>' +
+    '<select id="permRoleFilter" onchange="window._permRoleFilter=this.value;renderPermEmployees()" style="padding:6px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;">' +
+    '<option value="">全部角色</option>';
+  allRoles.forEach(function(r) {
+    html += '<option value="' + esc(r) + '"' + (selectedRole === r ? ' selected' : '') + '>' + esc(r) + '</option>';
+  });
+  html += '</select>' +
     '<button onclick="addPermEmployee()">+ 新增员工</button>' +
     '<button class="btn" onclick="savePermMatrix()">💾 保存员工权限</button></div>' +
-    '<div class="perm-table-wrap"><table><thead><tr><th>启用</th><th>员工</th><th>岗位</th>';
+    '<div class="perm-table-wrap"><table><thead><tr><th>启用</th><th>员工</th><th>职务</th>';
   features.forEach(function(f) { html += '<th style="font-size:11px;min-width:52px;text-align:center;">' + esc(f) + '</th>'; });
   html += '</tr></thead><tbody>';
   employees.forEach(function(name) {
     var emp = (data.employees || []).find(function(e) { return (e.name||e) === name; }) || { name: name, position: '' };
+    // 角色筛选
+    if (selectedRole) {
+      var empRole = empRoles[name] || '';
+      if (empRole !== selectedRole) return;
+    }
     var row = perms[name] || {};
     var on = enabledMap[name] !== false;
     html += '<tr><td style="text-align:center;"><input type="checkbox" data-emp-en="' + esc(name) + '" ' + (on?'checked':'') + '></td>' +
@@ -2241,7 +2420,407 @@ function tryRestoreSession() {
   });
 }
 
-tryRestoreSession();
+// ===== 报表分析页面 =====
+var _reportToday = null; // cache date string to avoid redundant reloads
+
+function loadReport() {
+  var html =
+    '<div style="padding:4px 0;">' +
+      '<h3 style="font-size:18px;margin-bottom:16px;">📊 报表分析</h3>' +
+      // 今日概览
+      '<div class="card">' +
+        '<h2>📋 今日概览</h2>' +
+        '<div class="stats" id="reportSummaryGrid">' +
+          '<div class="stat-box"><div class="num" id="rTodayOrders">—</div><div class="lbl">今日订单数</div></div>' +
+          '<div class="stat-box"><div class="num" id="rTodayScanCount">—</div><div class="lbl">今日报工次数</div></div>' +
+          '<div class="stat-box"><div class="num" id="rTodayWorkers">—</div><div class="lbl">今日报工员工数</div></div>' +
+          '<div class="stat-box"><div class="num" id="rTodayCompleted">—</div><div class="lbl">今日完成订单数</div></div>' +
+          '<div class="stat-box"><div class="num" id="rPendingOrders">—</div><div class="lbl">待生产订单数</div></div>' +
+          '<div class="stat-box"><div class="num" id="rMonthOrders">—</div><div class="lbl">本月订单数</div></div>' +
+          '<div class="stat-box"><div class="num" id="rMonthRevenue">—</div><div class="lbl">本月营收预估</div></div>' +
+        '</div>' +
+      '</div>' +
+      // 趋势图
+      '<div class="card">' +
+        '<h2>📈 近30天趋势</h2>' +
+        '<div class="toolbar">' +
+          '<label style="font-size:13px;">天数：</label>' +
+          '<select id="reportTrendDays" onchange="loadReportTrend()">' +
+            '<option value="7">7天</option>' +
+            '<option value="15">15天</option>' +
+            '<option value="30" selected>30天</option>' +
+            '<option value="60">60天</option>' +
+          '</select>' +
+        '</div>' +
+        '<div id="reportTrendChart" style="min-height:200px;padding:8px 0;"></div>' +
+      '</div>' +
+      // 员工报工表
+      '<div class="card">' +
+        '<h2>👤 员工报工明细</h2>' +
+        '<div class="toolbar">' +
+          '<label style="font-size:13px;">日期：</label>' +
+          '<input type="date" id="reportEmpDate" onchange="loadReportEmployee()">' +
+          '<button onclick="loadReportEmployee()">查询</button>' +
+        '</div>' +
+        '<div id="reportEmployeeTable"><p class="empty">选择日期后查询</p></div>' +
+      '</div>' +
+      // 产品类型统计
+      '<div class="card">' +
+        '<h2>📦 产品类型统计</h2>' +
+        '<div class="toolbar">' +
+          '<label style="font-size:13px;">日期从：</label>' +
+          '<input type="date" id="reportProdFrom" onchange="loadReportProduct()">' +
+          '<label style="font-size:13px;">至：</label>' +
+          '<input type="date" id="reportProdTo" onchange="loadReportProduct()">' +
+          '<button onclick="loadReportProduct()">查询</button>' +
+        '</div>' +
+        '<div id="reportProductTable"><p class="empty">选择日期范围后查询</p></div>' +
+      '</div>' +
+    '</div>';
+  document.getElementById('mainContent').innerHTML = html;
+  // 设置默认日期
+  var today = new Date();
+  var y = today.getFullYear();
+  var m = String(today.getMonth() + 1).padStart(2, '0');
+  var d = String(today.getDate()).padStart(2, '0');
+  var dateStr = y + '-' + m + '-' + d;
+  document.getElementById('reportEmpDate').value = dateStr;
+  // 本月第一天
+  var firstDay = y + '-' + m + '-01';
+  document.getElementById('reportProdFrom').value = firstDay;
+  document.getElementById('reportProdTo').value = dateStr;
+  // 加载数据
+  loadReportSummary();
+  loadReportTrend();
+  loadReportEmployee();
+  loadReportProduct();
+}
+
+function loadReportSummary() {
+  apiFetch('/api/report/summary').then(function(d) {
+    if (!d.success && d.error) throw new Error(d.error);
+    var data = d.data || d;
+    document.getElementById('rTodayOrders').textContent = data.today_orders != null ? data.today_orders : '—';
+    document.getElementById('rTodayScanCount').textContent = data.today_scan_count != null ? data.today_scan_count : '—';
+    document.getElementById('rTodayWorkers').textContent = data.today_workers != null ? data.today_workers : '—';
+    document.getElementById('rTodayCompleted').textContent = data.today_completed_orders != null ? data.today_completed_orders : '—';
+    document.getElementById('rPendingOrders').textContent = data.pending_orders != null ? data.pending_orders : '—';
+    document.getElementById('rMonthOrders').textContent = data.month_orders != null ? data.month_orders : '—';
+    document.getElementById('rMonthRevenue').textContent = data.month_revenue_estimate != null ? '¥' + Number(data.month_revenue_estimate).toLocaleString() : '—';
+  }).catch(function(e) {
+    document.getElementById('rTodayOrders').textContent = '❌';
+    toast('今日概览加载失败: ' + e.message);
+  });
+}
+
+function loadReportTrend() {
+  var days = document.getElementById('reportTrendDays').value || 30;
+  apiFetch('/api/report/trend?days=' + days).then(function(d) {
+    if (!d.success && d.error) throw new Error(d.error);
+    var data = d.data || d;
+    if (!Array.isArray(data)) data = data.list || data.trend || [];
+    var chartEl = document.getElementById('reportTrendChart');
+    if (!data.length) {
+      chartEl.innerHTML = '<p class="empty">暂无趋势数据</p>';
+      return;
+    }
+    // 计算最大值用于条形图比例
+    var maxOrders = 1, maxScan = 1;
+    data.forEach(function(row) {
+      if (row.orders_count > maxOrders) maxOrders = row.orders_count;
+      if (row.scan_count > maxScan) maxScan = row.scan_count;
+    });
+    var barMaxH = 120;
+    var html = '<div style="overflow-x:auto;"><table style="font-size:12px;border-collapse:collapse;width:100%;">' +
+      '<thead><tr style="background:#fafafa;">' +
+        '<th style="padding:6px 8px;border:1px solid #eee;text-align:center;">日期</th>' +
+        '<th style="padding:6px 8px;border:1px solid #eee;text-align:center;">订单数</th>' +
+        '<th style="padding:6px 8px;border:1px solid #eee;text-align:center;">报工次数</th>' +
+        '<th style="padding:6px 8px;border:1px solid #eee;text-align:center;">员工数</th>' +
+      '</tr></thead><tbody>';
+    data.forEach(function(row) {
+      var ordersPct = (row.orders_count / maxOrders * 100).toFixed(1);
+      var scanPct = (row.scan_count / maxScan * 100).toFixed(1);
+      html += '<tr>' +
+        '<td style="padding:6px 8px;border:1px solid #eee;text-align:center;white-space:nowrap;">' + esc(row.date || '') + '</td>' +
+        '<td style="padding:6px 8px;border:1px solid #eee;">' +
+          '<div style="display:flex;align-items:center;gap:6px;">' +
+            '<div style="width:100px;height:18px;background:#f0f0f0;border-radius:3px;overflow:hidden;">' +
+              '<div style="height:100%;width:' + ordersPct + '%;background:#2980b9;border-radius:3px;transition:width .3s;"></div>' +
+            '</div>' +
+            '<span>' + (row.orders_count || 0) + '</span>' +
+          '</div>' +
+        '</td>' +
+        '<td style="padding:6px 8px;border:1px solid #eee;">' +
+          '<div style="display:flex;align-items:center;gap:6px;">' +
+            '<div style="width:100px;height:18px;background:#f0f0f0;border-radius:3px;overflow:hidden;">' +
+              '<div style="height:100%;width:' + scanPct + '%;background:#27ae60;border-radius:3px;transition:width .3s;"></div>' +
+            '</div>' +
+            '<span>' + (row.scan_count || 0) + '</span>' +
+          '</div>' +
+        '</td>' +
+        '<td style="padding:6px 8px;border:1px solid #eee;text-align:center;">' + (row.workers_count || 0) + '</td>' +
+      '</tr>';
+    });
+    html += '</tbody></table></div>';
+    chartEl.innerHTML = html;
+  }).catch(function(e) {
+    document.getElementById('reportTrendChart').innerHTML = '<p class="empty">❌ 趋势加载失败: ' + esc(e.message) + '</p>';
+  });
+}
+
+function loadReportEmployee() {
+  var date = document.getElementById('reportEmpDate').value;
+  if (!date) { toast('请选择日期'); return; }
+  apiFetch('/api/report/employee?date=' + date).then(function(d) {
+    if (!d.success && d.error) throw new Error(d.error);
+    var data = d.data || d;
+    if (!Array.isArray(data)) data = data.list || data.employees || [];
+    var el = document.getElementById('reportEmployeeTable');
+    if (!data.length) {
+      el.innerHTML = '<p class="empty">当天无报工记录</p>';
+      return;
+    }
+    var html = '<div style="overflow-x:auto;"><table><thead><tr>' +
+      '<th>员工名</th><th>报工次数</th><th>工序</th><th>首次报工</th><th>最后报工</th>' +
+      '</tr></thead><tbody>';
+    data.forEach(function(row) {
+      var steps = row.steps || row.step_names || [];
+      var stepsStr = Array.isArray(steps) ? steps.join(', ') : String(steps || '');
+      html += '<tr>' +
+        '<td>' + esc(row.name || '') + '</td>' +
+        '<td>' + (row.scan_count != null ? row.scan_count : 0) + '</td>' +
+        '<td>' + esc(stepsStr) + '</td>' +
+        '<td>' + esc(row.first_scan || '') + '</td>' +
+        '<td>' + esc(row.last_scan || '') + '</td>' +
+      '</tr>';
+    });
+    html += '</tbody></table></div>';
+    el.innerHTML = html;
+  }).catch(function(e) {
+    document.getElementById('reportEmployeeTable').innerHTML = '<p class="empty">❌ 加载失败: ' + esc(e.message) + '</p>';
+  });
+}
+
+function loadReportProduct() {
+  var from = document.getElementById('reportProdFrom').value;
+  var to = document.getElementById('reportProdTo').value;
+  if (!from || !to) { toast('请选择日期范围'); return; }
+  apiFetch('/api/report/product?date_from=' + from + '&date_to=' + to).then(function(d) {
+    if (!d.success && d.error) throw new Error(d.error);
+    var data = d.data || d;
+    if (!Array.isArray(data)) data = data.list || data.products || [];
+    var el = document.getElementById('reportProductTable');
+    if (!data.length) {
+      el.innerHTML = '<p class="empty">该日期范围内无数据</p>';
+      return;
+    }
+    var html = '<div style="overflow-x:auto;"><table><thead><tr>' +
+      '<th>产品类型</th><th>订单数</th><th>总数量</th>' +
+      '</tr></thead><tbody>';
+    data.forEach(function(row) {
+      html += '<tr>' +
+        '<td>' + esc(row.product_type || row.name || '') + '</td>' +
+        '<td>' + (row.order_count != null ? row.order_count : 0) + '</td>' +
+        '<td>' + (row.total_qty != null ? row.total_qty : 0) + '</td>' +
+      '</tr>';
+    });
+    html += '</tbody></table></div>';
+    el.innerHTML = html;
+  }).catch(function(e) {
+    document.getElementById('reportProductTable').innerHTML = '<p class="empty">❌ 加载失败: ' + esc(e.message) + '</p>';
+  });
+}
+
+// ===== 生产工单页面 =====
+var _workorderData = null;
+
+function loadWorkorder() {
+  var html =
+    '<div style="padding:4px 0;">' +
+      '<h3 style="font-size:18px;margin-bottom:16px;">📋 生产工单</h3>' +
+      // 工单查询
+      '<div class="card">' +
+        '<h2>🔍 工单查询</h2>' +
+        '<div class="toolbar">' +
+          '<input type="text" id="woSearchInput" placeholder="输入订单ID或SO编号" style="width:280px;">' +
+          '<button onclick="searchWorkorder()">查询</button>' +
+        '</div>' +
+        '<div id="woResult" style="margin-top:8px;"></div>' +
+      '</div>' +
+      // 工单打印预览
+      '<div class="card">' +
+        '<h2>🖨️ 工单打印</h2>' +
+        '<div class="toolbar">' +
+          '<input type="text" id="woPrintInput" placeholder="输入订单ID（多个用英文逗号分隔）" style="width:320px;">' +
+          '<button onclick="previewWorkorderPrint()">打印预览</button>' +
+          '<button onclick="printWorkorder()" style="background:#27ae60;">直接打印</button>' +
+        '</div>' +
+        '<div id="woPrintPreview" style="margin-top:8px;"></div>' +
+      '</div>' +
+    '</div>';
+  document.getElementById('mainContent').innerHTML = html;
+  // 监听回车
+  setTimeout(function() {
+    var inp = document.getElementById('woSearchInput');
+    if (inp) inp.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') searchWorkorder();
+    });
+  }, 100);
+}
+
+function searchWorkorder() {
+  var q = document.getElementById('woSearchInput').value.trim();
+  if (!q) { toast('请输入订单ID或SO编号'); return; }
+  var resultEl = document.getElementById('woResult');
+  resultEl.innerHTML = '<p style="text-align:center;color:#999;padding:20px;">查询中...</p>';
+  // 先尝试完整工单 API
+  apiFetch('/api/workorder/order/' + encodeURIComponent(q))
+    .then(function(d) {
+      if (!d.success && d.error) throw new Error(d.error);
+      var data = d.data || d;
+      _workorderData = data;
+      renderWorkorderDetail(data, resultEl);
+    })
+    .catch(function(err) {
+      // 回退到简化工单 API
+      apiFetch('/api/workorder/scan/' + encodeURIComponent(q))
+        .then(function(d2) {
+          if (!d2.success && d2.error) throw new Error(d2.error);
+          var data2 = d2.data || d2;
+          _workorderData = data2;
+          renderWorkorderDetail(data2, resultEl);
+        })
+        .catch(function(err2) {
+          resultEl.innerHTML = '<div class="card" style="border:1px solid #f5b7b1;background:#fef9f9;"><h2 style="color:#e74c3c;">❌ 未找到工单</h2><p style="font-size:13px;">' + esc(err2.message || '查询失败，请检查订单ID') + '</p></div>';
+        });
+    });
+}
+
+function renderWorkorderDetail(data, el) {
+  var html = '<div style="border:1px solid #d9d9d9;border-radius:8px;padding:16px;background:#fafafa;">';
+  // 基本信息
+  html += '<div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:12px;">';
+  var fields = [
+    { label: '订单ID', val: data.id || data.order_id || '-' },
+    { label: '订单编号', val: data.order_no || data.so_id || '-' },
+    { label: '客户', val: data.customer_name || data.customer || '-' },
+    { label: '状态', val: data.status || data.order_status || '-' },
+    { label: '创建时间', val: data.created_at || data.create_time || '-' }
+  ];
+  fields.forEach(function(f) {
+    html += '<div style="min-width:140px;"><span style="font-size:12px;color:#888;">' + esc(f.label) + '</span><div style="font-size:14px;font-weight:600;margin-top:2px;">' + esc(f.val) + '</div></div>';
+  });
+  html += '</div>';
+
+  // 工单项
+  var items = data.items || data.order_items || [];
+  if (items.length) {
+    html += '<h4 style="font-size:14px;margin-bottom:8px;color:#1a5276;">📦 工单项</h4>' +
+      '<div style="overflow-x:auto;"><table><thead><tr>' +
+        '<th>商品名</th><th>规格</th><th>数量</th><th>产品类型</th><th>备注</th>' +
+      '</tr></thead><tbody>';
+    items.forEach(function(item) {
+      html += '<tr>' +
+        '<td>' + esc(item.name || item.product_name || '') + '</td>' +
+        '<td>' + esc(item.spec || '') + '</td>' +
+        '<td>' + (item.qty || item.quantity || 0) + '</td>' +
+        '<td>' + esc(item.product_type || '') + '</td>' +
+        '<td>' + esc(item.remark || item.note || '') + '</td>' +
+      '</tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+
+  // 计算/工序结果
+  var calcResult = data.calc_result || data.calculation || {};
+  var steps = data.steps || data.process_steps || calcResult.steps || [];
+  if (steps.length) {
+    html += '<h4 style="font-size:14px;margin:12px 0 8px;color:#1a5276;">⚙️ 工序信息</h4>' +
+      '<div style="overflow-x:auto;"><table><thead><tr>' +
+        '<th>工序</th><th>部门</th><th>说明</th>' +
+      '</tr></thead><tbody>';
+    steps.forEach(function(step) {
+      var s = typeof step === 'string' ? { name: step } : step;
+      html += '<tr>' +
+        '<td>' + esc(s.name || s.step_name || '') + '</td>' +
+        '<td>' + esc(s.dept || s.department || '') + '</td>' +
+        '<td>' + esc(s.description || s.desc || s.note || '') + '</td>' +
+      '</tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+
+  // 操作按钮
+  html += '<div class="form-actions" style="margin-top:16px;">' +
+    '<button onclick="printSingleWorkorder()" style="padding:8px 20px;background:#2980b9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">🖨️ 打印此工单</button>' +
+    '</div>';
+
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+function printSingleWorkorder() {
+  if (!_workorderData) { toast('请先查询工单'); return; }
+  var id = _workorderData.id || _workorderData.order_id;
+  if (!id) { toast('工单缺少ID'); return; }
+  apiFetch('/api/workorder/print', {
+    method: 'POST',
+    body: JSON.stringify({ order_ids: [id] })
+  }).then(function(d) {
+    if (!d.success && d.error) throw new Error(d.error);
+    var html = d.html || d.data || '';
+    if (!html) { toast('打印内容为空'); return; }
+    var win = window.open('', '_blank');
+    if (!win) { toast('请允许弹出窗口'); return; }
+    win.document.write('<html><head><meta charset="UTF-8"><title>工单打印</title><style>body{font-family:sans-serif;padding:20px;}table{width:100%;border-collapse:collapse;}th,td{padding:8px;border:1px solid #ccc;text-align:left;}th{background:#f5f5f5;}</style></head><body>');
+    win.document.write(html);
+    win.document.write('</body></html>');
+    win.document.close();
+    setTimeout(function() { win.print(); }, 500);
+  }).catch(function(e) {
+    toast('打印失败: ' + e.message);
+  });
+}
+
+function previewWorkorderPrint() {
+  var ids = document.getElementById('woPrintInput').value.trim();
+  if (!ids) { toast('请输入订单ID'); return; }
+  var idArr = ids.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+  if (!idArr.length) { toast('请输入有效的订单ID'); return; }
+  var previewEl = document.getElementById('woPrintPreview');
+  previewEl.innerHTML = '<p style="text-align:center;color:#999;padding:20px;">加载中...</p>';
+  apiFetch('/api/workorder/print', {
+    method: 'POST',
+    body: JSON.stringify({ order_ids: idArr })
+  }).then(function(d) {
+    if (!d.success && d.error) throw new Error(d.error);
+    var html = d.html || d.data || '';
+    if (!html) { previewEl.innerHTML = '<p class="empty">打印内容为空</p>'; return; }
+    previewEl.innerHTML = '<div style="border:1px solid #d9d9d9;border-radius:6px;padding:16px;background:#fff;max-height:600px;overflow-y:auto;font-size:13px;">' + html + '</div>' +
+      '<div class="form-actions" style="margin-top:8px;"><button onclick="printCurrentPreview()" style="padding:8px 20px;background:#27ae60;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">🖨️ 打印预览内容</button></div>';
+    _woPrintHtml = html;
+  }).catch(function(e) {
+    previewEl.innerHTML = '<p class="empty">❌ 加载失败: ' + esc(e.message) + '</p>';
+  });
+}
+
+var _woPrintHtml = '';
+
+function printCurrentPreview() {
+  if (!_woPrintHtml) { toast('没有预览内容'); return; }
+  var win = window.open('', '_blank');
+  if (!win) { toast('请允许弹出窗口'); return; }
+  win.document.write('<html><head><meta charset="UTF-8"><title>工单打印</title><style>body{font-family:sans-serif;padding:20px;}table{width:100%;border-collapse:collapse;}th,td{padding:8px;border:1px solid #ccc;text-align:left;}th{background:#f5f5f5;}</style></head><body>');
+  win.document.write(_woPrintHtml);
+  win.document.write('</body></html>');
+  win.document.close();
+  setTimeout(function() { win.print(); }, 500);
+}
+
+function printWorkorder() {
+  previewWorkorderPrint();
+}
 </script>
 </body>
 </html>
