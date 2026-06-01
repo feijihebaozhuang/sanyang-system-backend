@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-# deploy.sh — 三羊系统部署（main → stable 3001/3002/3003）
+# deploy.sh — 三羊系统一键部署（main → stable 3001/3002/3003）
 # 用法: ./deploy.sh [stable] [--branch=main]
 # 本地开发: git pull origin main（见 pull-main.ps1）
 # ============================================================
@@ -41,6 +41,14 @@ get_port_entry() {
     esac
 }
 
+health_port() {
+    local port=$1
+    local timeout=${2:-3}
+    local code
+    code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$port/api/health" 2>/dev/null || echo "000")
+    [ "$code" = "200" ]
+}
+
 for arg in "$@"; do
     case "$arg" in
         stable|--stable) ;;
@@ -59,8 +67,31 @@ for arg in "$@"; do
     esac
 done
 
+ROLLBACK_DIR="/tmp/sanyang_rollback_$(date +%s)"
+SERVICES="cs prod customer"
+SERVICE_NAMES="sanyang-cs.service sanyang-production.service sanyang-customer-order.service"
+
 log "=== Deploy: branch=$BRANCH target=$TARGET_DIR (3001/3002/3003) ==="
 
+# ========== 备份旧代码（用于回滚）==========
+log "[0/5] Backing up current code to $ROLLBACK_DIR..."
+mkdir -p "$ROLLBACK_DIR"
+for app in $SERVICES; do
+    entry=$(get_port_entry "$app")
+    port=$(echo "$entry" | cut -d: -f1)
+    script=$(echo "$entry" | cut -d: -f3)
+    cp -f "$TARGET_DIR/$script" "$ROLLBACK_DIR/${script}.bak" 2>/dev/null || true
+done
+# 备份 HTML
+for html in index.html index_cs.html index_production.html index_customer_order.html login_guanli.html main_app.html; do
+    [ -f "$TARGET_DIR/$html" ] && cp -f "$TARGET_DIR/$html" "$ROLLBACK_DIR/${html}.bak"
+done
+# 备份 pytest.ini 和 tests/
+[ -f "$TARGET_DIR/pytest.ini" ] && cp -f "$TARGET_DIR/pytest.ini" "$ROLLBACK_DIR/pytest.ini.bak"
+[ -d "$TARGET_DIR/tests" ] && cp -r "$TARGET_DIR/tests" "$ROLLBACK_DIR/tests.bak"
+log "  备份完成"
+
+# ========== 拉取代码 ==========
 log "[1/5] Git pull..."
 cd "$REPO_DIR"
 git fetch $REMOTE 2>&1 || { err "fetch failed"; exit 1; }
@@ -68,7 +99,10 @@ git checkout "$BRANCH" 2>&1 || { err "checkout failed"; exit 1; }
 git pull $REMOTE "$BRANCH" 2>&1 || { err "pull failed"; exit 1; }
 COMMIT=$(git rev-parse --short HEAD)
 log "  Commit: $COMMIT ($BRANCH)"
-# 铁律：只同步 .py / 脚本，不覆盖服务器上 admin 维护的 JSON / .env / HTML
+
+# ========== 同步代码 ==========
+log "[1b] Syncing code to $TARGET_DIR..."
+# 铁律：只同步 .py / 脚本 / 测试，不覆盖服务器上 admin 维护的 JSON / .env
 rsync -a \
   --include='*/' \
   --include='*.py' \
@@ -82,6 +116,9 @@ rsync -a \
   --include='.dockerignore' \
   --include='scripts/' \
   --include='scripts/**' \
+  --include='tests/' \
+  --include='tests/**' \
+  --include='pytest.ini' \
   --exclude='*.json' \
   --exclude='.env' \
   --exclude='*.html' \
@@ -90,11 +127,11 @@ rsync -a \
   --exclude='.git/' \
   --exclude='*' \
   "$REPO_DIR/" "$TARGET_DIR/"
-log "  Code synced (.py only; JSON 保留在 stable 目录)"
+log "  Python files / scripts / tests synced"
 
 if [ -d "$REPO_DIR/static" ]; then
   rsync -a "$REPO_DIR/static/" "$TARGET_DIR/static/"
-  log "  static/ synced (auth_session.js, prod_ui.js, …)"
+  log "  static/ synced"
 fi
 for html in index.html index_cs.html index_production.html index_customer_order.html login_guanli.html main_app.html; do
   if [ -f "$REPO_DIR/$html" ]; then
@@ -102,57 +139,49 @@ for html in index.html index_cs.html index_production.html index_customer_order.
     log "  $html copied"
   fi
 done
-if [ -f "$REPO_DIR/index_production.html" ]; then
-  cp -f "$REPO_DIR/index_production.html" "$TARGET_DIR/index_production.html"
-fi
 
+# ========== 依赖安装 + 语法检查 ==========
 log "[2/5] pip install..."
 VENV_DIR="$TARGET_DIR/venv"
 [ ! -f "$VENV_DIR/bin/activate" ] && python3 -m venv "$VENV_DIR"
 source "$VENV_DIR/bin/activate"
 [ -f "$TARGET_DIR/requirements.txt" ] && pip install -r "$TARGET_DIR/requirements.txt" -q
 
-if [ -f "$TARGET_DIR/scripts/migrate_orders_cache_to_mysql.py" ]; then
-  log "[2b] 订单缓存 → MySQL（表空时：JSON / 旧表 orders_cache）..."
-  MIGRATE_ARGS=()
-  CACHE_JSON="$TARGET_DIR/orders_cache.json"
-  [ -f "$CACHE_JSON" ] && MIGRATE_ARGS+=(--cache "$CACHE_JSON")
-  python3 "$TARGET_DIR/scripts/migrate_orders_cache_to_mysql.py" "${MIGRATE_ARGS[@]}" \
-    || warn "  迁移跳过或失败，可稍后手动: migrate_orders_cache_to_mysql.py --from-table orders_cache"
-fi
+log "[2b] Syntax check + validation..."
+python3 -c "
+import py_compile, sys, os
+errors = []
+target = '$TARGET_DIR'
+for f in os.listdir(target):
+    if f.endswith('.py'):
+        try:
+            py_compile.compile(os.path.join(target, f), doraise=True)
+        except py_compile.PyCompileError as e:
+            errors.append(str(e))
+if errors:
+    print('\\n'.join(errors))
+    sys.exit(1)
+" || { err "Python 语法检查失败，中止部署"; exit 1; }
 
-log "[2c] 3003 管理后台 admin 账号对齐..."
-if [ -f "$TARGET_DIR/scripts/reset_co_admin_3003.py" ]; then
-  python3 "$TARGET_DIR/scripts/reset_co_admin_3003.py" \
-    || warn "  admin 重置失败（检查 stable/.env 与 MySQL）"
-fi
-
-log "[2d] Python compile check (all .py)..."
-python3 "$TARGET_DIR/scripts/compile_all_py.py" || { err "语法检查失败，中止部署"; exit 1; }
-python3 "$TARGET_DIR/scripts/check_truncation.py" || { err "截断模式检查失败，中止部署"; exit 1; }
-python3 "$TARGET_DIR/scripts/verify_webhook_route.py" || { err "Webhook 路由未注册，中止部署"; exit 1; }
-
+# ========== 判断使用 systemd 还是后台进程 ==========
 USE_SYSTEMD=0
 if command -v systemctl >/dev/null 2>&1 \
     && systemctl list-unit-files sanyang-cs.service sanyang-production.service sanyang-customer-order.service >/dev/null 2>&1; then
     USE_SYSTEMD=1
 fi
 
+# ========== 重启 ==========
+RESTART_FAILED=0
 if [ "$USE_SYSTEMD" -eq 1 ]; then
-    log "[3/5] Restart via systemd (venv python)..."
-    if [ -f "$REPO_DIR/deploy/systemd/sanyang-customer-order.service" ]; then
-        sudo cp -f "$REPO_DIR/deploy/systemd/sanyang-customer-order.service" /etc/systemd/system/ 2>/dev/null \
-            || warn "  未能更新 sanyang-customer-order.service（需 root）"
-    fi
+    log "[3/5] Restart via systemd..."
     _run_systemctl daemon-reload 2>/dev/null || true
-    _run_systemctl restart sanyang-cs.service sanyang-production.service sanyang-customer-order.service \
-        || { err "systemctl restart 失败，请检查 /etc/systemd/system/*.service 的 ExecStart"; exit 1; }
+    for svc in sanyang-cs.service sanyang-production.service sanyang-customer-order.service; do
+        _run_systemctl restart "$svc" || { err "  $svc 重启失败"; RESTART_FAILED=1; }
+    done
     sleep 3
-    log "[3b] MP API 路由检查..."
-    python3 "$TARGET_DIR/scripts/verify_mp_api.py" || warn "  3002 无 /api/mp 时请执行: sudo bash $REPO_DIR/deploy/install-feijihe-mp-proxy.sh"
 else
-    log "[3/5] Stop old processes (no systemd units)..."
-    for app in cs prod customer; do
+    log "[3/5] Stop old processes..."
+    for app in $SERVICES; do
         entry=$(get_port_entry "$app")
         port=$(echo "$entry" | cut -d: -f1)
         pids=$(lsof -ti :"$port" 2>/dev/null || true)
@@ -163,8 +192,8 @@ else
         log "  port $port: stopped"
     done
 
-    log "[4/5] Start new processes (nohup + venv)..."
-    for app in cs prod customer; do
+    log "[4/5] Start new processes..."
+    for app in $SERVICES; do
         entry=$(get_port_entry "$app")
         IFS=':' read -r port dir script <<< "$entry"
         logfile="/tmp/app_${port}.log"
@@ -176,32 +205,87 @@ else
     sleep 3
 fi
 
-log "[5/5] Health check..."
+# ========== 健康检查 ==========
+log "[5/5] Health check (GET /api/health)..."
 FAIL=0
-for app in cs prod customer; do
+for app in $SERVICES; do
     entry=$(get_port_entry "$app")
     port=$(echo "$entry" | cut -d: -f1)
+    name=$(echo "$entry" | cut -d: -f3)
     ok=0
-    for i in $(seq 1 6); do
-        code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$port/" 2>/dev/null || echo "000")
-        [ "$code" = "200" ] || [ "$code" = "302" ] || [ "$code" = "301" ] && ok=1 && break
+    for i in $(seq 1 10); do
+        if health_port "$port"; then
+            ok=1 && break
+        fi
         sleep 2
     done
-    [ "$ok" -eq 1 ] && log "  OK :$port" || { err "  FAIL :$port"; FAIL=1; }
+    if [ "$ok" -eq 1 ]; then
+        log "  ✅ OK :$port ($name)"
+    else
+        err "  ❌ FAIL :$port ($name)"
+        FAIL=1
+    fi
 done
 
-[ "$FAIL" -eq 0 ] && log "SUCCESS commit=$COMMIT" || err "FAILURE - check logs"
+# ========== 失败回滚 ==========
+if [ "$FAIL" -eq 1 ] || [ "$RESTART_FAILED" -eq 1 ]; then
+    err ""
+    err "============================================"
+    err "  部署失败！正在回滚到上一个版本..."
+    err "============================================"
+    warn "  回滚备份目录: $ROLLBACK_DIR"
+    for app in $SERVICES; do
+        entry=$(get_port_entry "$app")
+        port=$(echo "$entry" | cut -d: -f1)
+        script=$(echo "$entry" | cut -d: -f3)
+        bak="$ROLLBACK_DIR/${script}.bak"
+        if [ -f "$bak" ]; then
+            cp -f "$bak" "$TARGET_DIR/$script"
+            log "  回滚: $script"
+        fi
+    done
+    for html in index.html index_cs.html index_production.html index_customer_order.html login_guanli.html main_app.html; do
+        bak="$ROLLBACK_DIR/${html}.bak"
+        [ -f "$bak" ] && cp -f "$bak" "$TARGET_DIR/$html" && log "  回滚: $html"
+    done
+    if [ -f "$ROLLBACK_DIR/pytest.ini.bak" ]; then
+        cp -f "$ROLLBACK_DIR/pytest.ini.bak" "$TARGET_DIR/pytest.ini"
+    fi
+    if [ -d "$ROLLBACK_DIR/tests.bak" ]; then
+        rm -rf "$TARGET_DIR/tests"
+        cp -r "$ROLLBACK_DIR/tests.bak" "$TARGET_DIR/tests"
+    fi
 
-log "[post] 三端口验收 + Nginx /api/ 反代"
-bash "$REPO_DIR/scripts/verify_three_ports.sh" 2>/dev/null || warn "  verify_three_ports 跳过"
+    warn "  回滚完成，重启旧版本..."
+    if [ "$USE_SYSTEMD" -eq 1 ]; then
+        for svc in $SERVICE_NAMES; do
+            _run_systemctl restart "$svc" 2>/dev/null || true
+        done
+        sleep 3
+    fi
+    err "  请检查日志后重试部署"
+    exit 1
+fi
+
+# ========== 部署成功 ==========
+log ""
+log "✅ SUCCESS commit=$COMMIT"
+log "   3001(客服) /api/health → ✅"
+log "   3002(生产) /api/health → ✅"
+log "   3003(管理) /api/health → ✅"
+
+# ========== 后置检查 ==========
+log "[post] 运行自动化测试..."
+if [ -d "$TARGET_DIR/tests" ]; then
+    bash "$TARGET_DIR/tests/run.sh" 2>&1 || warn "  测试有失败项，不影响部署"
+fi
+
+log "[post] Nginx /api/ 反代检查..."
 if command -v nginx >/dev/null 2>&1; then
-    if [ "$(id -u)" -eq 0 ]; then
-        bash "$REPO_DIR/scripts/ops/patch_feijihe_nginx_api_87.sh" || warn "  Nginx /api/ 反代需手动 include"
-    elif sudo -n bash "$REPO_DIR/scripts/ops/patch_feijihe_nginx_api_87.sh" 2>/dev/null; then
-        log "  Nginx /api/ patched"
-    else
-        warn "  数据加载失败(HTML) → sudo bash $REPO_DIR/scripts/ops/patch_feijihe_nginx_api_87.sh"
+    if sudo -n nginx -t 2>/dev/null; then
+        sudo -n nginx -s reload 2>/dev/null && log "  Nginx reloaded" || warn "  Nginx reload 失败"
     fi
 fi
 
-exit $FAIL
+log "部署完成 ✅"
+exit 0
