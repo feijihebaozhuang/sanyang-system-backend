@@ -421,6 +421,8 @@
         <a onclick="switchTopPage('inventory', this)">📦 成品</a>
         <a onclick="switchTopPage('raw', this)">🧱 原材料</a>
         <a onclick="switchTopPage('employee', this)">👥 员工</a>
+        <a onclick="switchTopPage('report', this)">📊 报表分析</a>
+        <a onclick="switchTopPage('workorder', this)">📋 生产工单</a>
     </div>
     <div class="user" id="userInfo" onclick="showUserMenu()">🔑 登录</div>
 </div>
@@ -1316,6 +1318,81 @@
         </div>
     </div>
 
+    <!-- ===== 报表分析 ===== -->
+    <div id="page-report" class="page-section">
+        <div class="overview-header">
+            <h3>📊 报表分析</h3>
+            <div style="font-size:13px;color:#888;">生产数据统计与分析</div>
+        </div>
+        <div id="reportContent" style="padding:16px;">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:20px;" id="reportSummaryCards"></div>
+            <div style="background:#fff;border-radius:10px;padding:16px;margin-bottom:16px;">
+                <h4 style="margin-bottom:12px;">📈 近30天趋势</h4>
+                <div style="display:flex;gap:8px;margin-bottom:12px;">
+                    <select id="trendDays" onchange="loadReportTrend()" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;">
+                        <option value="7">7天</option>
+                        <option value="15">15天</option>
+                        <option value="30" selected>30天</option>
+                        <option value="60">60天</option>
+                    </select>
+                </div>
+                <div id="trendChart" style="overflow-x:auto;"></div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                <div style="background:#fff;border-radius:10px;padding:16px;">
+                    <h4 style="margin-bottom:12px;">👤 员工报工明细</h4>
+                    <div style="margin-bottom:8px;">
+                        <input type="date" id="reportEmpDate" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;" onchange="loadReportEmployee()">
+                    </div>
+                    <div id="reportEmployeeTable" style="max-height:400px;overflow-y:auto;"></div>
+                </div>
+                <div style="background:#fff;border-radius:10px;padding:16px;">
+                    <h4 style="margin-bottom:12px;">📦 产品类型统计</h4>
+                    <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+                        <input type="date" id="reportProdFrom" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;">
+                        <span style="font-size:12px;color:#999;line-height:28px;">至</span>
+                        <input type="date" id="reportProdTo" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;">
+                        <button onclick="loadReportProduct()" style="padding:4px 12px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">查询</button>
+                    </div>
+                    <div id="reportProductTable" style="max-height:400px;overflow-y:auto;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== 生产工单 ===== -->
+    <div id="page-workorder" class="page-section">
+        <div class="overview-header">
+            <h3>📋 生产工单</h3>
+            <div style="font-size:13px;color:#888;">查询、查看与打印生产工单</div>
+        </div>
+        <div id="workorderContent" style="padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+            <div style="background:#fff;border-radius:10px;padding:16px;">
+                <h4 style="margin-bottom:12px;">🔍 工单查询</h4>
+                <div style="display:flex;gap:8px;margin-bottom:12px;">
+                    <input type="text" id="woSearchInput" placeholder="输入订单ID 或 SO单号" style="flex:1;padding:8px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;" onkeydown="if(event.key==='Enter') searchWorkorder()">
+                    <button onclick="searchWorkorder()" style="padding:8px 16px;background:#1677ff;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">查询</button>
+                </div>
+                <div id="woDetail" style="font-size:13px;color:#999;">输入订单ID后点击查询</div>
+                <div id="woPrintArea" style="display:none;margin-top:12px;">
+                    <button onclick="printCurrentPreview()" style="padding:8px 20px;background:#faad14;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;">🖨️ 打印此工单</button>
+                </div>
+            </div>
+            <div style="background:#fff;border-radius:10px;padding:16px;">
+                <h4 style="margin-bottom:12px;">🖨️ 工单打印</h4>
+                <div style="margin-bottom:12px;">
+                    <label style="font-size:12px;color:#666;">输入订单ID（多个用逗号分隔）：</label>
+                    <input type="text" id="woPrintIds" placeholder="如: 12345, 12346" style="width:100%;padding:8px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;margin-top:4px;">
+                </div>
+                <div style="display:flex;gap:8px;">
+                    <button onclick="previewWorkorderPrint()" style="padding:8px 16px;background:#1677ff;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">👁️ 打印预览</button>
+                    <button onclick="printWorkorder()" style="padding:8px 16px;background:#faad14;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">🖨️ 直接打印</button>
+                </div>
+                <div id="woPrintPreview" style="margin-top:12px;border:1px solid #eee;border-radius:6px;padding:12px;max-height:500px;overflow:auto;font-size:13px;"></div>
+            </div>
+        </div>
+    </div>
+
     <!-- ===== 实时订单页（多平台聚合，未来扩展） ===== -->
         </div>
     </div>
@@ -1853,6 +1930,14 @@
         // 切到成品库存页时自动加载
         if (name === 'inventory') {
             loadInventory(1);
+        }
+        // 切到报表页时自动加载
+        if (name === 'report') {
+            loadReport();
+        }
+        // 切到生产工单页时自动加载
+        if (name === 'workorder') {
+            loadWorkorder();
         }
 
         // iframe懒加载
@@ -6223,6 +6308,217 @@ async function initSingleFlow(orderId) {
 async function filterProdOrders(keyword) {
     document.getElementById('prodFilterSearch').value = keyword;
     loadProdDashboard();
+}
+
+// ===== 报表分析 JS =====
+function _e(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function loadReport() {
+    var html = document.getElementById('reportContent');
+    if (!html) return;
+    loadReportSummary();
+    loadReportTrend();
+    loadReportEmployee();
+    loadReportProduct();
+    // 设置默认日期
+    var today = new Date().toISOString().split('T')[0];
+    var el = document.getElementById('reportEmpDate');
+    if (el && !el.value) el.value = today;
+    var first = new Date(); first.setDate(1);
+    var el2 = document.getElementById('reportProdFrom');
+    if (el2 && !el2.value) el2.value = first.toISOString().split('T')[0];
+    var el3 = document.getElementById('reportProdTo');
+    if (el3 && !el3.value) el3.value = today;
+}
+
+function loadReportSummary() {
+    fetch('/api/report/summary').then(function(r){return r.json();}).then(function(d){
+        var cards = [
+            {icon:'📦', label:'今日订单', val:d.today_orders},
+            {icon:'✅', label:'今日报工', val:d.today_scan_count},
+            {icon:'👤', label:'今日员工', val:d.today_workers},
+            {icon:'🏁', label:'今日完成', val:d.today_completed_orders},
+            {icon:'⏳', label:'待生产', val:d.pending_orders},
+            {icon:'📅', label:'本月订单', val:d.month_orders},
+        ];
+        if (d.month_revenue_estimate) cards.push({icon:'💰', label:'本月预估营收', val:'¥' + d.month_revenue_estimate.toFixed(2)});
+        var h = '';
+        cards.forEach(function(c){
+            h += '<div style="background:#fff;border-radius:10px;padding:16px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,0.06);">' +
+              '<div style="font-size:24px;margin-bottom:4px;">'+c.icon+'</div>' +
+              '<div style="font-size:24px;font-weight:700;color:#1677ff;">'+c.val+'</div>' +
+              '<div style="font-size:12px;color:#888;">'+c.label+'</div></div>';
+        });
+        document.getElementById('reportSummaryCards').innerHTML = h;
+    }).catch(function(){});
+}
+
+function loadReportTrend() {
+    var days = (document.getElementById('trendDays')||{}).value || 30;
+    fetch('/api/report/trend?days='+days).then(function(r){return r.json();}).then(function(data){
+        if (!data || !data.length) { document.getElementById('trendChart').innerHTML = '<div style="color:#999;text-align:center;padding:20px;">暂无趋势数据</div>'; return; }
+        var maxCount = 0; data.forEach(function(d){ if(d.orders_count > maxCount) maxCount = d.orders_count; if(d.scan_count > maxCount) maxCount = d.scan_count; });
+        maxCount = maxCount || 1;
+        var h = '<table style="width:100%;border-collapse:collapse;font-size:12px;">' +
+          '<thead><tr style="background:#f5f5f5;"><th style="padding:6px;border:1px solid #e0e0e0;">日期</th><th style="padding:6px;border:1px solid #e0e0e0;">订单</th><th style="padding:6px;border:1px solid #e0e0e0;">报工</th><th style="padding:6px;border:1px solid #e0e0e0;">员工</th></tr></thead><tbody>';
+        data.forEach(function(d){
+            h += '<tr>' +
+              '<td style="padding:6px;border:1px solid #e0e0e0;">'+_e(d.date)+'</td>' +
+              '<td style="padding:6px;border:1px solid #e0e0e0;"><div style="display:flex;align-items:center;gap:4px;"><div style="width:'+(d.orders_count/maxCount*100)+'px;height:16px;background:#1677ff;border-radius:3px;"></div>'+d.orders_count+'</div></td>' +
+              '<td style="padding:6px;border:1px solid #e0e0e0;"><div style="display:flex;align-items:center;gap:4px;"><div style="width:'+(d.scan_count/maxCount*100)+'px;height:16px;background:#52c41a;border-radius:3px;"></div>'+d.scan_count+'</div></td>' +
+              '<td style="padding:6px;border:1px solid #e0e0e0;">'+d.workers_count+'</td></tr>';
+        });
+        h += '</tbody></table>';
+        document.getElementById('trendChart').innerHTML = h;
+    }).catch(function(){});
+}
+
+function loadReportEmployee() {
+    var date = (document.getElementById('reportEmpDate')||{}).value || new Date().toISOString().split('T')[0];
+    fetch('/api/report/employee?date='+date).then(function(r){return r.json();}).then(function(data){
+        if (!data || !data.length) { document.getElementById('reportEmployeeTable').innerHTML = '<div style="color:#999;text-align:center;padding:20px;">该日暂无报工记录</div>'; return; }
+        var h = '<table style="width:100%;border-collapse:collapse;font-size:12px;">' +
+          '<thead><tr style="background:#f5f5f5;"><th style="padding:6px;border:1px solid #e0e0e0;">员工</th><th style="padding:6px;border:1px solid #e0e0e0;">次数</th><th style="padding:6px;border:1px solid #e0e0e0;">工序</th><th style="padding:6px;border:1px solid #e0e0e0;">首次</th><th style="padding:6px;border:1px solid #e0e0e0;">末次</th></tr></thead><tbody>';
+        data.forEach(function(d){
+            h += '<tr><td style="padding:6px;border:1px solid #e0e0e0;">'+_e(d.name)+'</td><td style="padding:6px;border:1px solid #e0e0e0;">'+d.scan_count+'</td><td style="padding:6px;border:1px solid #e0e0e0;">'+_e((d.steps||[]).join(', '))+'</td><td style="padding:6px;border:1px solid #e0e0e0;">'+_e(d.first_scan||'')+'</td><td style="padding:6px;border:1px solid #e0e0e0;">'+_e(d.last_scan||'')+'</td></tr>';
+        });
+        h += '</tbody></table>';
+        document.getElementById('reportEmployeeTable').innerHTML = h;
+    }).catch(function(){});
+}
+
+function loadReportProduct() {
+    var from = (document.getElementById('reportProdFrom')||{}).value || '';
+    var to = (document.getElementById('reportProdTo')||{}).value || '';
+    var url = '/api/report/product';
+    if (from && to) url += '?date_from='+from+'&date_to='+to;
+    fetch(url).then(function(r){return r.json();}).then(function(data){
+        if (!data || !data.length) { document.getElementById('reportProductTable').innerHTML = '<div style="color:#999;text-align:center;padding:20px;">暂无数据</div>'; return; }
+        var h = '<table style="width:100%;border-collapse:collapse;font-size:12px;">' +
+          '<thead><tr style="background:#f5f5f5;"><th style="padding:6px;border:1px solid #e0e0e0;">产品类型</th><th style="padding:6px;border:1px solid #e0e0e0;">订单数</th><th style="padding:6px;border:1px solid #e0e0e0;">总数量</th></tr></thead><tbody>';
+        data.forEach(function(d){
+            h += '<tr><td style="padding:6px;border:1px solid #e0e0e0;">'+_e(d.product_type)+'</td><td style="padding:6px;border:1px solid #e0e0e0;">'+d.order_count+'</td><td style="padding:6px;border:1px solid #e0e0e0;">'+d.total_qty+'</td></tr>';
+        });
+        h += '</tbody></table>';
+        document.getElementById('reportProductTable').innerHTML = h;
+    }).catch(function(){});
+}
+
+// ===== 生产工单 JS =====
+function loadWorkorder() {
+    // 页面内容已在HTML中，不需要额外加载
+}
+
+function searchWorkorder() {
+    var input = document.getElementById('woSearchInput');
+    var id = (input||{}).value || '';
+    if (!id.trim()) { alert('请输入订单ID'); return; }
+    fetch('/api/workorder/order/'+encodeURIComponent(id.trim())).then(function(r){
+        if (!r.ok) throw new Error('订单不存在');
+        return r.json();
+    }).then(function(d){
+        renderWorkorderDetail(d);
+    }).catch(function(e){
+        // fallback: 试试 scan 接口
+        fetch('/api/workorder/scan/'+encodeURIComponent(id.trim())).then(function(r){
+            if (!r.ok) throw new Error('订单不存在');
+            return r.json();
+        }).then(function(d){
+            renderWorkorderDetail(d);
+        }).catch(function(e2){
+            document.getElementById('woDetail').innerHTML = '<div style="color:#ff4d4f;padding:20px;text-align:center;">❌ 未找到订单: ' + _e(e2.message) + '</div>';
+        });
+    });
+}
+
+function renderWorkorderDetail(d) {
+    var items = d.items || [];
+    var steps = d.steps || [];
+    var h = '<div style="border:1px solid #e0e0e0;border-radius:8px;padding:12px;font-size:13px;">' +
+      '<div style="margin-bottom:8px;"><strong>订单号：</strong>' + _e(d.so_id || d.order_id || '') + '</div>' +
+      '<div style="margin-bottom:8px;"><strong>客户：</strong>' + _e(d.customer || '') + '</div>' +
+      '<div style="margin-bottom:8px;"><strong>店铺：</strong>' + _e(d.shop_name || '') + '</div>';
+    if (d.created_at) h += '<div style="margin-bottom:8px;"><strong>创建时间：</strong>' + _e(d.created_at) + '</div>';
+    h += '<hr style="border:none;border-top:1px solid #eee;margin:8px 0;">' +
+      '<div style="font-weight:600;margin-bottom:6px;">📦 商品明细</div>';
+    items.forEach(function(it, i){
+        h += '<div style="background:#f9f9f9;border-radius:6px;padding:8px;margin-bottom:6px;">' +
+          '<div><strong>' + _e(it.name || it.product_name || '') + '</strong> × ' + (it.qty || 0) + '</div>' +
+          '<div style="font-size:12px;color:#666;">';
+        if (it.spec) h += '规格: ' + _e(it.spec) + ' | ';
+        if (it.product_type) h += '类型: ' + _e(it.product_type) + ' | ';
+        if (it.material) h += '材质: ' + _e(it.material);
+        var dims = it.dimensions || {};
+        if (dims.l && dims.w) h += '<br>尺寸: ' + dims.l + '×' + dims.w + (dims.h ? '×' + dims.h : '') + ' cm';
+        var calc = it.calc_result || {};
+        if (calc.paper_l && calc.paper_w) h += '<br>纸板: ' + calc.paper_l + '×' + calc.paper_w + (calc.paper_g ? ' (克重' + calc.paper_g + ')' : '');
+        if (calc.paper_cost) h += ' 成本: ¥' + calc.paper_cost.toFixed(2);
+        h += '</div></div>';
+    });
+    if (steps.length) {
+        h += '<div style="margin-top:8px;"><strong>🔧 工序流程：</strong>' + steps.join(' → ') + '</div>';
+    }
+    h += '</div>';
+    document.getElementById('woDetail').innerHTML = h;
+    document.getElementById('woPrintArea').style.display = '';
+    // 保存当前工单数据用于打印
+    window._currentWorkorderData = d;
+}
+
+function printCurrentPreview() {
+    var d = window._currentWorkorderData;
+    if (!d) { alert('请先查询工单'); return; }
+    var ids = [d.so_id || d.order_id].filter(Boolean);
+    if (!ids.length) { alert('没有订单ID'); return; }
+    fetch('/api/workorder/print', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({order_ids: ids})
+    }).then(function(r){return r.json();}).then(function(data){
+        if (data.html) {
+            var w = window.open('', '_blank');
+            w.document.write('<html><head><style>body{font-family:sans-serif;padding:20px;}@media print{@page{size:A4;margin:10mm;}}</style></head><body>' + data.html + '<script>window.print();window.close();<\/script></body></html>');
+            w.document.close();
+        } else {
+            alert('打印内容为空');
+        }
+    }).catch(function(e){
+        alert('打印失败: ' + e.message);
+    });
+}
+
+function previewWorkorderPrint() {
+    var idsStr = (document.getElementById('woPrintIds')||{}).value || '';
+    var ids = idsStr.split(/[,，\s]+/).filter(Boolean);
+    if (!ids.length) { alert('请输入订单ID'); return; }
+    fetch('/api/workorder/print', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({order_ids: ids})
+    }).then(function(r){return r.json();}).then(function(data){
+        document.getElementById('woPrintPreview').innerHTML = data.html || '<div style="color:#999;">空内容</div>';
+    }).catch(function(e){
+        document.getElementById('woPrintPreview').innerHTML = '<div style="color:#ff4d4f;">❌ ' + _e(e.message) + '</div>';
+    });
+}
+
+function printWorkorder() {
+    var idsStr = (document.getElementById('woPrintIds')||{}).value || '';
+    var ids = idsStr.split(/[,，\s]+/).filter(Boolean);
+    if (!ids.length) { alert('请输入订单ID'); return; }
+    fetch('/api/workorder/print', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({order_ids: ids})
+    }).then(function(r){return r.json();}).then(function(data){
+        if (data.html) {
+            var w = window.open('', '_blank');
+            w.document.write('<html><head><style>body{font-family:sans-serif;padding:20px;}@media print{@page{size:A4;margin:10mm;}}</style></head><body>' + data.html + '<script>window.print();window.close();<\/script></body></html>');
+            w.document.close();
+        }
+    }).catch(function(e){
+        alert('打印失败: ' + e.message);
+    });
 }
 </script>
 <script>
