@@ -1073,6 +1073,7 @@ def auto_calc_all_orders(
     dimoldb = load_dimoldb_fn()
     km_index = kms.load_all()
     done = failed = 0
+    skipped = 0
     errors: list[str] = []
 
     for order in orders or []:
@@ -1080,6 +1081,10 @@ def auto_calc_all_orders(
         if only_so_ids is not None and so_id not in only_so_ids:
             continue
         for idx, _it in enumerate(order.get("items") or []):
+            # 缓存已存在的不论成功失败都跳过，避免白算
+            if get_cached_line(so_id, idx) is not None:
+                skipped += 1
+                continue
             try:
                 r = calc_order_line(
                     order,
@@ -1111,6 +1116,7 @@ def auto_calc_all_orders(
         "success": True,
         "lines_done": done,
         "lines_failed": failed,
+        "lines_skipped": skipped,
         "errors": errors[:50],
     }
 
