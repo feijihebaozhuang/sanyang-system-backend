@@ -35,6 +35,16 @@ def ensure_scan_logs_table(db_config: dict) -> None:
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             """
         )
+        # 兼容旧表：补 extra_data 列（已有则忽略）
+        try:
+            cur.execute(
+                "ALTER TABLE scan_logs "
+                "ADD COLUMN extra_data TEXT DEFAULT NULL "
+                "COMMENT '报工额外字段值(JSON)'"
+            )
+            db.commit()
+        except Exception:
+            db.rollback()
         db.commit()
         cur.close()
         db.close()
