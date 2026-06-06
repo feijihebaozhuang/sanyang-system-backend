@@ -815,7 +815,14 @@ def scan_order_detail(order_id):
     )
     if not order:
         return jsonify({"success": False, "error": f"未找到订单 {query}"})
-    return jsonify({"success": True, "order": order})
+    # 附加工序字段定义（每个工序的额外填写字段）
+    step_fields = {}
+    step_fields_raw = ph.get_all_step_fields(process_tree)
+    for s in (order.get("flow") or []):
+        name = s.get("step") or s.get("name") or ""
+        if name in step_fields_raw:
+            step_fields[name] = step_fields_raw[name]
+    return jsonify({"success": True, "order": order, "step_fields": step_fields})
 
 
 # ==================== 扫码报工 ====================
@@ -875,6 +882,7 @@ def scan_report():
         step,
         worker,
         _orders_cache_path(),
+        extra_fields=data.get('extra_fields'),
     )
     if not result.get("success"):
         return jsonify({"success": False, "message": result.get("msg", "报工失败")})
@@ -4441,6 +4449,22 @@ body {{ font-family:-apple-system,sans-serif; background:#f5f6fa; min-height:100
 .result.ok {{ display:block; background:#f6ffed; border:1px solid #b7eb8f; color:#52c41a; }}
 .result.err {{ display:block; background:#fff2f0; border:1px solid #ffccc7; color:#e94560; }}
 .back-btn {{ display:inline-block; margin-top:16px; padding:8px 24px; background:#f0f0f0; border:none; border-radius:8px; font-size:13px; color:#666; cursor:pointer; text-decoration:none; }}
+/* 字段填写弹窗 */
+.modal-overlay {{ display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:1000; justify-content:center; align-items:center; }}
+.modal-overlay.show {{ display:flex; }}
+.modal-box {{ background:#fff; border-radius:16px; padding:24px; width:90%; max-width:380px; max-height:80vh; overflow-y:auto; text-align:left; }}
+.modal-title {{ font-size:17px; font-weight:700; color:#1a1a2e; margin-bottom:16px; text-align:center; }}
+.field-group {{ margin-bottom:14px; }}
+.field-label {{ display:block; font-size:13px; color:#666; margin-bottom:4px; font-weight:500; }}
+.field-label .required {{ color:#e94560; margin-left:2px; }}
+.field-input {{ width:100%; padding:10px 12px; border:1.5px solid #d9d9d9; border-radius:8px; font-size:15px; outline:none; transition:border 0.2s; }}
+.field-input:focus {{ border-color:#1677ff; }}
+.modal-actions {{ display:flex; gap:10px; margin-top:20px; }}
+.modal-actions button {{ flex:1; padding:12px; border:none; border-radius:10px; font-size:15px; font-weight:600; cursor:pointer; }}
+.modal-cancel {{ background:#f0f0f0; color:#666; }}
+.modal-confirm {{ background:#1677ff; color:#fff; }}
+.modal-confirm:active {{ transform:scale(0.97); }}
+.field-hint {{ font-size:11px; color:#bbb; margin-top:2px; }}
 </style>
 </head>
 <body>
@@ -4453,9 +4477,25 @@ body {{ font-family:-apple-system,sans-serif; background:#f5f6fa; min-height:100
     <div style="font-size:11px;color:#bbb;margin-top:12px;">请选择要报工的工序</div>
 </div>
 <a class="back-btn" href="javascript:history.back()">← 返回</a>
+
+<!-- 字段填写弹窗 -->
+<div id="fieldModal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-title" id="modalTitle">填写报工数据</div>
+    <div id="modalFields"></div>
+    <div class="modal-actions">
+      <button class="modal-cancel" onclick="closeFieldModal()">取消</button>
+      <button class="modal-confirm" onclick="confirmFieldSubmit()">确认报工</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const ORDER_ID = "{order_id}";
 let WORKER = "";
+let CURRENT_STEP = "";
+let CURRENT_FIELDS = [];
+let STEP_FIELDS_MAP = {{}};
 
 // 先获取可选操作人列表
 fetch('/api/scan_workers?step=').then(r=>r.json()).then(data => {{
@@ -4477,11 +4517,15 @@ fetch('/api/scan_workers?step=').then(r=>r.json()).then(data => {{
 function loadSteps() {{
 if (!WORKER) {{ document.body.innerHTML = '<div style="text-align:center;padding:40px;color:#e94560;">❌ 需要姓名才能报工</div>'; return; }}
 
-// 获取订单工序
-fetch('/api/production_orders').then(r=>r.json()).then(data => {{
-    const orders = data.orders || [];
-    const order = orders.find(o => o.inner_id === ORDER_ID);
-    const steps = order ? (order.flow || []) : [];
+// 使用 scan_order API（含 step_fields）
+fetch('/api/scan_order/' + encodeURIComponent(ORDER_ID)).then(r=>r.json()).then(data => {{
+    if (!data.success) {{
+        document.getElementById('stepList').innerHTML = '<div class="info">' + (data.error || '未找到订单') + '</div>';
+        return;
+    }}
+    const order = data.order || {{}};
+    const steps = order.flow || [];
+    STEP_FIELDS_MAP = data.step_fields || {{}};
     const container = document.getElementById('stepList');
     if (steps.length === 0) {{
         container.innerHTML = '<div class="info">该订单暂无工序数据</div>';
@@ -4489,39 +4533,103 @@ fetch('/api/production_orders').then(r=>r.json()).then(data => {{
     }}
     steps.forEach((s, i) => {{
         const done = s.done;
+        const name = s.step || s.name || '';
         const btn = document.createElement('button');
         btn.className = 'step-btn ' + (done ? 'btn-gray' : 'btn-primary');
-        btn.textContent = (done ? '✅ ' : '') + s.step + (done ? ' (已完成)' : '');
+        btn.textContent = (done ? '✅ ' : '') + name + (done ? ' (已完成)' : '');
         btn.disabled = done;
         if (!done) {{
-            btn.onclick = () => submitReport(i, s.step);
+            btn.onclick = () => openStepSubmit(name);
         }}
         container.appendChild(btn);
     }});
 }}).catch(e => {{
     document.getElementById('stepList').innerHTML = '<div class="info">加载失败: ' + e.message + '</div>';
 }});
+}}
 
-async function submitReport(stepIndex, stepName) {{
+function openStepSubmit(stepName) {{
+    CURRENT_STEP = stepName;
+    const fields = STEP_FIELDS_MAP[stepName] || [];
+    CURRENT_FIELDS = fields;
+
+    if (fields.length === 0) {{
+        // 没有额外字段，直接提交
+        doSubmit(stepName, {{}});
+        return;
+    }}
+
+    // 显示弹窗
+    document.getElementById('modalTitle').textContent = stepName + ' - 填写数据';
+    const container = document.getElementById('modalFields');
+    container.innerHTML = '';
+    fields.forEach((f, i) => {{
+        const key = f.key || 'field_' + i;
+        const label = f.label || key;
+        const required = f.required ? '<span class="required">*</span>' : '';
+        const type = f.type || 'text';
+        const inputType = type === 'number' ? 'number' : (type === 'text' ? 'text' : type);
+        const hint = f.hint ? '<div class="field-hint">' + f.hint + '</div>' : '';
+        container.innerHTML +=
+            '<div class="field-group">' +
+            '<label class="field-label" for="fld_' + key + '">' + label + required + '</label>' +
+            '<input class="field-input" id="fld_' + key + '" type="' + inputType + '" data-key="' + key + '" placeholder="请输入' + label + '" step="any">' +
+            hint +
+            '</div>';
+    }});
+    document.getElementById('fieldModal').classList.add('show');
+}}
+
+function closeFieldModal() {{
+    document.getElementById('fieldModal').classList.remove('show');
+}}
+
+function confirmFieldSubmit() {{
+    const extra = {{}};
+    let valid = true;
+    CURRENT_FIELDS.forEach(f => {{
+        const el = document.getElementById('fld_' + f.key);
+        if (!el) return;
+        const val = el.value.trim();
+        if (f.required && !val) {{
+            valid = false;
+            el.style.borderColor = '#e94560';
+        }} else {{
+            el.style.borderColor = '';
+            if (val) extra[f.key] = val;
+        }}
+    }});
+    if (!valid) {{
+        alert('请填写所有必填字段');
+        return;
+    }}
+    closeFieldModal();
+    doSubmit(CURRENT_STEP, extra);
+}}
+
+async function doSubmit(stepName, extraFields) {{
     const resultEl = document.getElementById('result');
     resultEl.className = 'result';
     resultEl.textContent = '提交中...';
     resultEl.style.display = 'block';
     try {{
+        const body = {{order_id: ORDER_ID, step: stepName, worker: WORKER}};
+        if (Object.keys(extraFields).length > 0) {{
+            body.extra_fields = extraFields;
+        }}
         const res = await fetch('/api/scan_report', {{
             method: 'POST',
             headers: {{'Content-Type': 'application/json'}},
-            body: JSON.stringify({{order_id: ORDER_ID, step: stepName, worker: WORKER}})
+            body: JSON.stringify(body)
         }});
         const data = await res.json();
         if (data.success) {{
             resultEl.className = 'result ok';
             resultEl.textContent = '✅ ' + (data.message || '报工成功');
-            // 刷新页面
             setTimeout(() => location.reload(), 1500);
         }} else {{
             resultEl.className = 'result err';
-            resultEl.textContent = '❌ ' + (data.error || '报工失败');
+            resultEl.textContent = '❌ ' + (data.message || data.error || '报工失败');
         }}
     }} catch(e) {{
         resultEl.className = 'result err';

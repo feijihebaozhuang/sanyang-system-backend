@@ -1083,7 +1083,7 @@
         <div class="order-table-wrap" style="margin-top:16px;">
             <div class="table-title">📋 今日报工记录</div>
             <table>
-                <thead><tr><th>时间</th><th>内部单号</th><th>工序</th><th>操作人</th><th>状态</th></tr></thead>
+                <thead><tr><th>时间</th><th>内部单号</th><th>工序</th><th>操作人</th><th>状态</th><th>数据</th></tr></thead>
                 <tbody id="scanLogTable"></tbody>
             </table>
         </div>
@@ -2709,27 +2709,91 @@
                         <span style="font-size:13px;color:#666;">${order.product} × ${order.qty}</span><br>
                         <span style="font-size:13px;color:#1677ff;">下一工序：${nextStep.step}</span>
                     </div>
-                    <div style="display:flex;gap:8px;">
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
                         <select id="scanWorker" style="padding:6px 12px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px;">
                             <option value="">选择操作人</option>
                         </select>
-                        <button onclick="confirmScan('${orderId}','${nextStep.step}')" style="padding:6px 20px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;">确认报工</button>
+                        <button id="scanExtraBtn" onclick="showScanFields('${orderId}','${nextStep.step}')" style="padding:6px 20px;background:#1677ff;color:#fff;border:none;border-radius:4px;cursor:pointer;">确认报工</button>
                     </div>
                 </div>
+                <div id="scanExtraFields" style="margin-top:10px;display:none;"></div>
             </div>
         `;
         // 按角色加载可选操作人
         loadScanWorkers();
+        // 检查该工序是否有字段
+        checkStepFields('${nextStep.step}');
     }
-    
-    async function confirmScan(orderId, step) {
+
+    async function checkStepFields(stepName) {
+        try {
+            const res = await fetch('/api/scan_order/' + encodeURIComponent(document.getElementById('scanInput').value.trim()));
+            const data = await res.json();
+            if (data.success && data.step_fields && data.step_fields[stepName]) {
+                const fields = data.step_fields[stepName];
+                if (fields.length > 0) {
+                    _scanStepFields = fields;
+                    _scanStepName = stepName;
+                    document.getElementById('scanExtraBtn').textContent = '填写数据并报工';
+                }
+            }
+        } catch(e) {}
+    }
+    let _scanStepFields = [];
+    let _scanStepName = '';
+
+    function showScanFields(orderId, step) {
+        if (_scanStepFields.length === 0) {
+            confirmScan(orderId, step, {});
+            return;
+        }
+        // 显示字段表单弹窗
+        const container = document.getElementById('scanExtraFields');
+        container.style.display = 'block';
+        container.innerHTML = '<div style="background:#f9f9f9;border-radius:8px;padding:12px;"><strong style="font-size:13px;color:#333;">📝 ' + step + ' 报工数据</strong>';
+        _scanStepFields.forEach(f => {
+            const label = f.label || f.key;
+            const req = f.required ? ' <span style="color:#e94560;">*</span>' : '';
+            const hint = f.hint ? '<div style="font-size:11px;color:#bbb;margin-top:2px;">' + f.hint + '</div>' : '';
+            const inputType = (f.type === 'number') ? 'number' : 'text';
+            container.innerHTML += '<div style="margin:8px 0;"><label style="font-size:12px;color:#666;display:block;margin-bottom:2px;">' + label + req + '</label><input id="sf_' + f.key + '" type="' + inputType + '" style="width:100%;padding:6px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px;" placeholder="请输入' + label + '" step="any"></div>' + hint;
+        });
+        container.innerHTML += '<button onclick="confirmScanWithFields(\'' + orderId + '\',\'' + step + '\')" style="margin-top:8px;padding:6px 20px;background:#52c41a;color:#fff;border:none;border-radius:4px;cursor:pointer;">确认提交</button></div>';
+    }
+
+    function confirmScanWithFields(orderId, step) {
+        const extra = {};
+        let valid = true;
+        _scanStepFields.forEach(f => {
+            const el = document.getElementById('sf_' + f.key);
+            if (!el) return;
+            const val = el.value.trim();
+            if (f.required && !val) {
+                valid = false;
+                el.style.borderColor = '#e94560';
+            } else {
+                el.style.borderColor = '';
+                if (val) extra[f.key] = val;
+            }
+        });
+        if (!valid) { alert('请填写所有必填字段'); return; }
+        document.getElementById('scanExtraFields').style.display = 'none';
+        confirmScan(orderId, step, extra);
+    }
+
+    async function confirmScan(orderId, step, extraFields) {
+        extraFields = extraFields || {};
         const worker = document.getElementById('scanWorker').value;
         if (!worker) { alert('请选择操作人'); return; }
         
+        const body = {order_id: orderId, step: step, worker: worker};
+        if (Object.keys(extraFields).length > 0) {
+            body.extra_fields = extraFields;
+        }
         const res = await fetch('/api/scan_report', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({order_id: orderId, step: step, worker: worker})
+            body: JSON.stringify(body)
         });
         const data = await res.json();
         
@@ -2810,9 +2874,16 @@
     
     async function loadScanLogs() {
         const data = await getAPI('/api/scan_logs');
-        const html = data.logs.map(l => `
-            <tr><td>${l.time}</td><td style="font-family:monospace;font-size:12px;">${l.order_id}</td><td>${l.step}</td><td>${l.worker}</td><td style="color:#52c41a;">${l.status}</td></tr>
-        `).join('');
+        const html = data.logs.map(l => {
+            let extraHtml = '';
+            if (l.extra_data) {
+                try {
+                    const ed = JSON.parse(l.extra_data);
+                    extraHtml = ' ' + Object.values(ed).join(' / ');
+                } catch(e) { extraHtml = ''; }
+            }
+            return `<tr><td>${l.time}</td><td style="font-family:monospace;font-size:12px;">${l.order_id}</td><td>${l.step}</td><td>${l.worker}</td><td style="color:#52c41a;">${l.status}</td><td style="font-size:11px;color:#888;">${extraHtml}</td></tr>`;
+        }).join('');
         document.getElementById('scanLogTable').innerHTML = html;
     }
 

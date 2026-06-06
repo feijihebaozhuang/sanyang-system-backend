@@ -28,6 +28,7 @@ def ensure_scan_logs_table(db_config: dict) -> None:
                 step_name VARCHAR(128) NOT NULL,
                 worker VARCHAR(64) DEFAULT '',
                 status VARCHAR(32) DEFAULT '已完成',
+                extra_data TEXT DEFAULT NULL COMMENT '报工额外字段值(JSON)',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 INDEX idx_order (order_id),
                 INDEX idx_created (created_at)
@@ -40,6 +41,29 @@ def ensure_scan_logs_table(db_config: dict) -> None:
         _scan_table_ready = True
     except Exception as e:
         print(f"[scan_logs] 建表失败: {e}")
+
+
+def get_step_fields(process_tree: list, step_name: str) -> list[dict]:
+    """从工序树查找指定工序的 fields 定义，返回 [] 表示无额外字段。"""
+    for dept in process_tree:
+        if not isinstance(dept, dict):
+            continue
+        for s in dept.get("steps") or []:
+            if isinstance(s, dict) and s.get("name") == step_name:
+                return s.get("fields") or []
+    return []
+
+
+def get_all_step_fields(process_tree: list) -> dict[str, list[dict]]:
+    """获取所有工序的字段定义 {工序名: [fields]}。"""
+    result = {}
+    for dept in process_tree:
+        if not isinstance(dept, dict):
+            continue
+        for s in dept.get("steps") or []:
+            if isinstance(s, dict) and s.get("fields"):
+                result[s["name"]] = s["fields"]
+    return result
 
 
 def order_date_key(o: dict) -> str:
@@ -480,6 +504,7 @@ def apply_scan_report(
     step_name: str,
     worker: str,
     cache_file: str,
+    extra_fields: dict | None = None,
 ) -> dict[str, Any]:
     ensure_scan_logs_table(db_config)
     orders = load_cache_orders(cache_file)
@@ -515,15 +540,38 @@ def apply_scan_report(
     target["time"] = now
     target["person"] = worker
     save_flow_row(db_config, oid, order_type, steps)
+
+    # 校验额外字段
+    step_fields = get_step_fields(process_tree, step_name)
+    extra_json = ""
+    if step_fields:
+        extra_fields = extra_fields or {}
+        clean = {}
+        for fdef in step_fields:
+            key = fdef.get("key", "")
+            val = extra_fields.get(key, "")
+            if fdef.get("required") and not val:
+                return {"success": False, "msg": f"字段「{fdef.get('label', key)}」不能为空"}
+            ftype = fdef.get("type", "text")
+            if ftype == "number" and val:
+                try:
+                    val = float(val)
+                    if val == int(val):
+                        val = int(val)
+                except (ValueError, TypeError):
+                    return {"success": False, "msg": f"字段「{fdef.get('label', key)}」必须是数字"}
+            clean[key] = val
+        extra_json = json.dumps(clean, ensure_ascii=False)
+
     try:
         db = pymysql.connect(**db_config, cursorclass=pymysql.cursors.DictCursor)
         cur = db.cursor()
         cur.execute(
             """
-            INSERT INTO scan_logs (order_id, step_name, worker, status)
-            VALUES (%s,%s,%s,'已完成')
+            INSERT INTO scan_logs (order_id, step_name, worker, status, extra_data)
+            VALUES (%s,%s,%s,'已完成',%s)
             """,
-            (oid, step_name, worker),
+            (oid, step_name, worker, extra_json or None),
         )
         db.commit()
         cur.close()
@@ -549,7 +597,7 @@ def fetch_scan_logs(db_config: dict, limit: int = 50) -> list[dict]:
         cur = db.cursor()
         cur.execute(
             """
-            SELECT order_id, step_name, worker, status, created_at
+            SELECT order_id, step_name, worker, status, extra_data, created_at
             FROM scan_logs ORDER BY id DESC LIMIT %s
             """,
             (limit,),
@@ -569,6 +617,7 @@ def fetch_scan_logs(db_config: dict, limit: int = 50) -> list[dict]:
                     "step": r.get("step_name") or "",
                     "worker": r.get("worker") or "",
                     "status": "✅" if (r.get("status") or "") == "已完成" else r.get("status"),
+                    "extra_data": r.get("extra_data") or "",
                 }
             )
         return logs
