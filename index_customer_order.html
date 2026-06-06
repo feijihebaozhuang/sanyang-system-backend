@@ -1978,10 +1978,13 @@ function renderPermProcessTree(processes) {
           '<input type="checkbox" data-di="' + di + '" data-si="' + si + '" data-pos="' + p + '" ' + checked +
           ' onchange="toggleStepPosition(this)" style="margin-right:1px;">' + p + '</label>';
       }).join('');
-      html += '<div class="process-step"><div><span>' + esc(step.id) + '. ' + esc(step.name) + '</span>' +
+      var fc = (step.fields && step.fields.length) ? step.fields.length : 0;
+      html += '<div class="process-step"><div><span>' + esc(step.id) + '. ' + esc(step.name) +
+        (fc ? ' <span style="color:#52c41a;font-size:10px;">[' + fc + '个字段]</span>' : '') + '</span>' +
         '<span style="margin-left:6px;font-size:10px;color:#999;">岗位：</span>' +
         '<span style="display:inline-flex;flex-wrap:wrap;gap:2px;">' + posHtml + '</span></div>' +
-        '<span><button class="btn-xs blue" onclick="editProcessStep(' + di + ',' + si + ')">✏️</button> ' +
+        '<span><button class="btn-xs" style="background:#722ed1;color:#fff;border:none;padding:1px 6px;border-radius:3px;cursor:pointer;font-size:9px;" onclick="editProcessStepFields(' + di + ',' + si + ')">📋 字段</button> ' +
+        '<button class="btn-xs blue" onclick="editProcessStep(' + di + ',' + si + ')">✏️</button> ' +
         '<button class="btn-xs red" onclick="deleteProcessStep(' + di + ',' + si + ')">✕</button></span></div>';
     });
     html += '</div>';
@@ -2031,6 +2034,75 @@ function editProcessStep(di, si) {
   if (!name || !name.trim()) return;
   step.name = name.trim();
   renderPermProcessTree(window._permBundle.processes);
+}
+
+function editProcessStepFields(di, si) {
+  var step = window._permBundle.processes[di].steps[si];
+  if (!step) return;
+  var current = step.fields || [];
+  var container = document.createElement('div');
+  container.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:99999;display:flex;align-items:center;justify-content:center;';
+  var box = document.createElement('div');
+  box.style.cssText = 'background:#fff;border-radius:8px;padding:20px;max-width:500px;width:90%;box-shadow:0 4px 20px rgba(0,0,0,0.3);max-height:80vh;overflow-y:auto;';
+  var listHtml = '';
+  for (var fi = 0; fi < current.length; fi++) {
+    var f = current[fi];
+    listHtml += '<div class="_sfRow" style="display:flex;gap:6px;align-items:center;padding:4px 0;border-bottom:1px solid #f0f0f0;">' +
+      '<input class="_sfKey" value="' + (f.key || '').replace(/"/g,'&quot;') + '" placeholder="字段标识(英文)" style="width:100px;padding:3px 6px;font-size:12px;border:1px solid #ddd;border-radius:3px;">' +
+      '<input class="_sfLabel" value="' + (f.label || '').replace(/"/g,'&quot;') + '" placeholder="字段名" style="width:100px;padding:3px 6px;font-size:12px;border:1px solid #ddd;border-radius:3px;">' +
+      '<select class="_sfType" style="padding:3px;font-size:12px;border:1px solid #ddd;border-radius:3px;"><option value="number"' + (f.type==='number'?' selected':'') + '>数字</option><option value="text"' + (f.type==='text'?' selected':'') + '>文本</option></select>' +
+      '<label style="font-size:11px;white-space:nowrap;"><input class="_sfReq" type="checkbox"' + (f.required?' checked':'') + '>必填</label>' +
+      '<button onclick="this.parentElement.remove()" style="padding:1px 6px;background:#ff4d4f;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:12px;">✕</button></div>';
+  }
+  box.innerHTML = '<div style="font-size:14px;font-weight:bold;margin-bottom:8px;">配置工序「' + step.name + '」的填写字段</div>' +
+    '<div id="_sfList" style="margin-bottom:8px;">' + (listHtml || '<p style="color:#999;font-size:12px;" id="_sfEmpty">暂无字段，点「添加字段」</p>') + '</div>' +
+    '<button onclick="addFieldRow()" style="padding:4px 12px;background:#1677ff;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:12px;">+ 添加字段</button>' +
+    '<div style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end;">' +
+    '<button onclick="this.closest(\'div[data-role=fieldsEditor]\').remove()" style="padding:6px 16px;background:#eee;border:none;border-radius:4px;cursor:pointer;">取消</button>' +
+    '<button onclick="_saveFieldsVisual(' + di + ',' + si + ')" style="padding:6px 16px;background:#722ed1;color:#fff;border:none;border-radius:4px;cursor:pointer;">确定保存</button></div>';
+  container.setAttribute('data-role', 'fieldsEditor');
+  container.appendChild(box);
+  document.body.appendChild(container);
+}
+
+function addFieldRow() {
+  var list = document.getElementById('_sfList');
+  if (!list) return;
+  var empty = document.getElementById('_sfEmpty');
+  if (empty) empty.remove();
+  var row = document.createElement('div');
+  row.className = '_sfRow';
+  row.style.cssText = 'display:flex;gap:6px;align-items:center;padding:4px 0;border-bottom:1px solid #f0f0f0;';
+  row.innerHTML =
+    '<input class="_sfKey" placeholder="字段标识(英文)" style="width:100px;padding:3px 6px;font-size:12px;border:1px solid #ddd;border-radius:3px;">' +
+    '<input class="_sfLabel" placeholder="字段名" style="width:100px;padding:3px 6px;font-size:12px;border:1px solid #ddd;border-radius:3px;">' +
+    '<select class="_sfType" style="padding:3px;font-size:12px;border:1px solid #ddd;border-radius:3px;"><option value="number">数字</option><option value="text">文本</option></select>' +
+    '<label style="font-size:11px;white-space:nowrap;"><input class="_sfReq" type="checkbox">必填</label>' +
+    '<button onclick="this.parentElement.remove()" style="padding:1px 6px;background:#ff4d4f;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:12px;">✕</button>';
+  list.appendChild(row);
+}
+
+function _saveFieldsVisual(di, si) {
+  var rows = document.querySelectorAll('#_sfList ._sfRow');
+  var step = window._permBundle.processes[di].steps[si];
+  if (!step) return;
+  var fields = [];
+  for (var i = 0; i < rows.length; i++) {
+    var key = rows[i].querySelector('._sfKey').value.trim();
+    var label = rows[i].querySelector('._sfLabel').value.trim();
+    if (!key || !label) continue;
+    fields.push({
+      key: key,
+      label: label,
+      type: rows[i].querySelector('._sfType').value,
+      required: rows[i].querySelector('._sfReq').checked
+    });
+  }
+  step.fields = fields;
+  renderPermProcessTree(window._permBundle.processes);
+  savePermProcesses();
+  var container = document.querySelector('div[data-role=fieldsEditor]');
+  if (container) container.remove();
 }
 
 function deleteProcessStep(di, si) {
