@@ -3761,9 +3761,11 @@
                 <div style="padding-left:12px;">`;
             
             (dept.steps || []).forEach((step, si) => {
+                const fieldsCount = (step.fields && step.fields.length) ? step.fields.length : 0;
                 html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 6px;border-bottom:1px solid #f5f5f5;">
-                    <span style="font-size:12px;color:#555;">${step.id}. ${step.name}</span>
+                    <span style="font-size:12px;color:#555;">${step.id}. ${step.name}${fieldsCount ? ` <span style="color:#52c41a;font-size:10px;">[${fieldsCount}个字段]</span>` : ''}</span>
                     <div style="display:flex;gap:4px;">
+                        <button onclick="editProcessStepFields(${di}, ${si})" style="padding:1px 6px;background:#722ed1;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:9px;">📋 字段</button>
                         <button onclick="editProcessStep(${di}, ${si}, '${step.name}')" style="padding:1px 6px;background:#1677ff;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:9px;">✏️</button>
                         <button onclick="deleteProcessStep(${di}, ${si}, '${step.name}')" style="padding:1px 6px;background:#ff4d4f;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:9px;">✕</button>
                     </div>
@@ -3835,6 +3837,33 @@
         if (!_permData) return;
         _permData.processes[di].steps.splice(si, 1);
         renderPermProcesses(_permData.processes);
+    }
+
+    function editProcessStepFields(di, si) {
+        const step = _permData.processes[di].steps[si];
+        const current = step.fields || [];
+        const json = prompt(
+            `配置工序「${step.name}」的填写字段\n每行一个JSON对象，格式：\n{"key":"total","label":"总数","type":"number","required":true}`,
+            current.length ? JSON.stringify(current, null, 2) : ''
+        );
+        if (json === null) return;
+        try {
+            const parsed = json.trim() ? JSON.parse(json.trim()) : [];
+            if (!Array.isArray(parsed)) throw new Error('必须是数组');
+            for (const f of parsed) {
+                if (!f.key || !f.label) throw new Error('每个字段必须有 key 和 label');
+            }
+            step.fields = parsed;
+            renderPermProcesses(_permData.processes);
+            // 自动保存
+            fetch('/api/processes/save', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({processes: _permData.processes})
+            }).catch(e => console.error('保存字段失败', e));
+        } catch(e) {
+            alert('格式错误：' + e.message);
+        }
     }
 
     function renderPermPositions(positions) {
