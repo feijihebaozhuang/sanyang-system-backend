@@ -5,15 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>三羊客户下单 · 管理后台</title>
 <script>
-/* guanli 子域 SSL 异常时，统一跳到 feijihe.top/guanli/（证书有效、API 同域 /api/co） */
-(function () {
-  var host = (location.hostname || '').toLowerCase();
-  if (host === 'guanli.feijihe.top' || host === 'www.guanli.feijihe.top') {
-    location.replace('https://feijihe.top/guanli/' + (location.search || '') + (location.hash || ''));
-  }
-})();
-</script>
-<script>
 /* 内联 auth_session.js：guanli Nginx IP 白名单会拦 /static/，导致 SY_AUTH 未定义、登录无反应 */
 (function (global) {
     const ROUTE_KEY = 'sanyang_ui_route';
@@ -2821,6 +2812,8 @@ function printCurrentPreview() {
 function printWorkorder() {
   previewWorkorderPrint();
 }
+
+tryRestoreSession();
 </script>
 </body>
 </html>
