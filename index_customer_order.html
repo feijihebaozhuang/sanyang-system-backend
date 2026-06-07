@@ -529,26 +529,46 @@ function fetchRouteData() {
 }
 
 function renderEmpStepList() {
-  var map = _routeData.employee_step_whitelist;
+  var map = _routeData.employee_step_whitelist || {};
   var names = Object.keys(map);
-  var allSteps = _routeData.allSteps || [];
-  var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:#f5f5f5;"><th style="padding:8px;border:1px solid #e0e0e0;text-align:left;width:100px;">员工</th><th style="padding:8px;border:1px solid #e0e0e0;text-align:left;">可报工序（勾选，从生产线流程同步）</th><th style="padding:8px;border:1px solid #e0e0e0;width:60px;">操作</th></tr></thead><tbody>';
-  names.forEach(function(name) {
+  // 从权限数据读取员工列表
+  var permEmployees = [];
+  if (window._permBundle && window._permBundle.employees) {
+    permEmployees = window._permBundle.employees.map(function(e) { return e.name; }).filter(Boolean);
+  }
+  // 合并：已有白名单员工 + 权限系统员工
+  var allNames = names.slice();
+  permEmployees.forEach(function(n) {
+    if (allNames.indexOf(n) < 0) allNames.push(n);
+  });
+  var processes = _routeData.permProcesses || [];
+  var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:#f5f5f5;"><th style="padding:8px;border:1px solid #e0e0e0;text-align:left;width:100px;">员工</th><th style="padding:8px;border:1px solid #e0e0e0;text-align:left;">可报工序（按部门分组，从生产线流程同步）</th><th style="padding:8px;border:1px solid #e0e0e0;width:60px;">操作</th></tr></thead><tbody>';
+  allNames.forEach(function(name) {
     var selected = map[name] || [];
     html += '<tr><td style="padding:8px;border:1px solid #e0e0e0;font-weight:500;">' + esc(name) + '</td>' +
-      '<td style="padding:8px;border:1px solid #e0e0e0;"><div style="display:flex;flex-wrap:wrap;gap:4px;max-height:120px;overflow-y:auto;">';
-    if (allSteps.length === 0) {
-      html += '<span style="color:#999;font-size:12px;">暂无工序，请先在「生产线流程」中添加工序</span>';
+      '<td style="padding:8px;border:1px solid #e0e0e0;"><div style="max-height:180px;overflow-y:auto;">';
+    if (processes.length === 0) {
+      html += '<span style="color:#999;font-size:12px;">暂无工序，请先在「生产线流程」中添加</span>';
     } else {
-      allSteps.forEach(function(step) {
-        var checked = selected.indexOf(step) !== -1 ? 'checked' : '';
-        html += '<label style="font-size:12px;cursor:pointer;white-space:nowrap;padding:2px 0;margin-right:6px;">' +
-          '<input type="checkbox" class="route-emp-step" data-name="' + escAttr(name) + '" data-step="' + escAttr(step) + '" ' + checked + ' onchange="toggleEmpStep(this)"> ' +
-          esc(step) + '</label>';
+      processes.forEach(function(dept) {
+        var deptName = dept.dept || '';
+        var steps = dept.steps || [];
+        html += '<div style="margin:2px 0;"><span style="font-size:10px;color:#888;font-weight:600;">🏭 ' + esc(deptName) + '</span><div style="display:flex;flex-wrap:wrap;gap:2px;">';
+        steps.forEach(function(step) {
+          var stepName = typeof step === 'string' ? step : (step.name || '');
+          if (!stepName) return;
+          var checked = selected.indexOf(stepName) !== -1 ? 'checked' : '';
+          html += '<label style="font-size:11px;cursor:pointer;white-space:nowrap;padding:1px 4px;margin:1px;background:#f9f9f9;border:1px solid #eee;border-radius:3px;">' +
+            '<input type="checkbox" class="route-emp-step" data-name="' + escAttr(name) + '" data-step="' + escAttr(stepName) + '" ' + checked + ' onchange="toggleEmpStep(this)"> ' +
+            esc(stepName) + '</label>';
+        });
+        html += '</div></div>';
       });
     }
     html += '</div></td>' +
-      '<td style="padding:8px;border:1px solid #e0e0e0;"><button onclick="removeEmpStepRule(\'' + escAttr(name) + '\')" style="padding:3px 10px;background:#ff4d4f;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">删</button></td></tr>';
+      '<td style="padding:8px;border:1px solid #e0e0e0;">' +
+      (map[name] !== undefined ? '<button onclick="removeEmpStepRule(\'' + escAttr(name) + '\')" style="padding:3px 10px;background:#ff4d4f;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">删</button>' : '') +
+      '</td></tr>';
   });
   html += '</tbody></table>';
   document.getElementById('empStepList').innerHTML = html;
