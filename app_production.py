@@ -2333,46 +2333,70 @@ def scan_workers():
 
 # ==================== 订单路由规则 ====================
 def _match_order_route(order: dict) -> dict | None:
-    """匹配订单路由规则，返回整条规则（含 flow_template/process_dept）。"""
+    """匹配订单路由规则，返回整条规则（含 flow_template/process_dept）。支持多条件 AND。"""
     rules = _permission_data.get("order_routes") or []
     if not rules:
         return None
     import re as _re
     for rule in rules:
-        cond = rule.get("condition") or {}
-        field = (cond.get("field") or "").strip()
-        pattern = (cond.get("pattern") or "").strip()
-        if not field or not pattern:
+        conds = rule.get("conditions")
+        if not conds:
+            # 兼容旧版单条件
+            cond = rule.get("condition")
+            if cond:
+                conds = [cond]
+        if not conds:
             continue
-        val = None
-        if field.startswith("items."):
-            parts = field.split(".")
-            if parts[0] == "items" and len(parts) >= 3:
-                try:
-                    idx = int(parts[1])
-                except ValueError:
-                    continue
-                items = order.get("items") or []
-                if idx < len(items):
-                    item = items[idx]
-                    key = parts[2]
-                    # 先取顶层
-                    val = str(item.get(key) or "")
-                    # 再试试 km_product_dims
-                    if not val:
-                        kmd = item.get("km_product_dims") or {}
-                        val = str(kmd.get(key) or "")
-                    # 再试试 platform_attrs
-                    if not val:
-                        pa = item.get("platform_attrs") or {}
-                        val = str(pa.get(key) or "")
-        elif field == "order_type":
-            val = ph.infer_order_type(order)
-        else:
-            val = str(order.get(field) or "")
-        if val and _re.search(pattern, val, _re.IGNORECASE):
+        all_match = True
+        for cond in conds:
+            field = (cond.get("field") or "").strip()
+            pattern = (cond.get("pattern") or "").strip()
+            if not field or not pattern:
+                all_match = False
+                break
+            val = _resolve_route_cond_value(order, field)
+            if val is None or not _re.search(pattern, val, _re.IGNORECASE):
+                all_match = False
+                break
+        if all_match:
             return rule
     return None
+
+
+def _resolve_route_cond_value(order: dict, field: str) -> str | None:
+    """解析路由条件字段的值。"""
+    if field.startswith("items."):
+        parts = field.split(".")
+        if parts[0] == "items" and len(parts) >= 3:
+            try:
+                idx = int(parts[1])
+            except ValueError:
+                return None
+            items = order.get("items") or []
+            if idx >= len(items):
+                return None
+            item = items[idx]
+            key = parts[2]
+            # 先取顶层
+            val = str(item.get(key) or "")
+            # 再试试 km_product_dims
+            if not val:
+                kmd = item.get("km_product_dims") or {}
+                val = str(kmd.get(key) or "")
+            # 再试试 platform_attrs
+            if not val:
+                pa = item.get("platform_attrs") or {}
+                val = str(pa.get(key) or "")
+            # 数量字段转字符串
+            if key == "qty" and not val:
+                val = str(item.get("num") or item.get("qty") or "")
+            return val if val else None
+        return None
+    elif field == "order_type":
+        return ph.infer_order_type(order)
+    else:
+        val = str(order.get(field) or "")
+        return val if val else None
 
 
 def _get_order_flow_steps(order: dict) -> list[dict] | None:

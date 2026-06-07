@@ -581,52 +581,81 @@ function removeEmpStepRule(name) {
 
 function renderOrderRuleList() {
   var rules = _routeData.order_routes;
-  var processes = (_routeData.permProcesses || _routeData.allSteps ? [] : []);
-  // 取生产流程中的部门名称
   var deptNames = [];
   if (_routeData.permProcesses && Array.isArray(_routeData.permProcesses)) {
     _routeData.permProcesses.forEach(function(dept) {
       if (dept.dept) deptNames.push(dept.dept);
     });
   }
-  var deptOpts = '<option value="">— 不选择 —</option>' + deptNames.map(function(d) {
-    return '<option value="' + esc(d) + '">' + esc(d) + '</option>';
+  var fieldOpts = [
+    { v: 'order_type', l: '订单类型(自动推断)' },
+    { v: 'items.0.name', l: '商品名称' },
+    { v: 'items.0.spec', l: '规格' },
+    { v: 'items.0.material', l: '材质' },
+    { v: 'items.0.product_type', l: '产品类型' },
+    { v: 'items.0.产品分类', l: '产品分类' },
+    { v: 'items.0.开数', l: '开数' },
+    { v: 'items.0.刀模', l: '刀模' },
+    { v: 'items.0.qty', l: '数量' },
+  ];
+  var fieldSelHtml = fieldOpts.map(function(fo) {
+    return '<option value="' + fo.v + '">' + fo.l + '</option>';
   }).join('');
-  var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:#f5f5f5;"><th style="padding:8px;border:1px solid #e0e0e0;text-align:left;">规则名</th><th style="padding:8px;border:1px solid #e0e0e0;text-align:left;">条件字段</th><th style="padding:8px;border:1px solid #e0e0e0;text-align:left;">匹配模式</th><th style="padding:8px;border:1px solid #e0e0e0;text-align:left;">产线模板</th><th style="padding:8px;border:1px solid #e0e0e0;text-align:left;">目标部门</th><th style="padding:8px;border:1px solid #e0e0e0;width:60px;">操作</th></tr></thead><tbody>';
+
+  var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:#f5f5f5;"><th style="padding:8px;border:1px solid #e0e0e0;text-align:left;">规则名</th><th style="padding:8px;border:1px solid #e0e0e0;text-align:left;">条件（多条件AND）</th><th style="padding:8px;border:1px solid #e0e0e0;text-align:left;">产线模板</th><th style="padding:8px;border:1px solid #e0e0e0;width:60px;">操作</th></tr></thead><tbody>';
   rules.forEach(function(r, i) {
-    var cond = r.condition || {};
+    var conds = r.conditions || (r.condition ? [r.condition] : []);
+    // 渲染条件行
+    var condHtml = conds.map(function(c, ci) {
+      return '<div style="display:flex;gap:4px;margin:2px 0;align-items:center;flex-wrap:nowrap;">' +
+        '<select class="route-cond-field" data-ri="' + i + '" data-ci="' + ci + '" style="padding:2px 4px;border:1px solid #d9d9d9;border-radius:3px;font-size:11px;width:100px;">' +
+        fieldOpts.map(function(fo) {
+          return '<option value="' + fo.v + '"' + ((c.field || '') === fo.v ? ' selected' : '') + '>' + fo.l + '</option>';
+        }).join('') +
+        '</select>' +
+        '<input class="route-cond-pattern" data-ri="' + i + '" data-ci="' + ci + '" value="' + esc(c.pattern || '') + '" style="width:80px;padding:2px 4px;border:1px solid #d9d9d9;border-radius:3px;font-size:11px;" placeholder="值">' +
+        '<button onclick="removeRuleCond(' + i + ',' + ci + ')" style="padding:0 4px;background:#ff4d4f;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:10px;line-height:18px;">✕</button>' +
+        '</div>';
+    }).join('');
+    condHtml += '<button onclick="addRuleCond(' + i + ')" style="padding:1px 6px;background:#1890ff;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:10px;">+ 条件</button>';
+
     var ft = r.flow_template || [];
     var ftHtml = deptNames.map(function(d) {
       var checked = ft.indexOf(d) !== -1 ? 'checked' : '';
       return '<label style="margin:0 4px;font-size:10px;white-space:nowrap;cursor:pointer;"><input type="checkbox" class="route-rule-ft" data-idx="' + i + '" data-dept="' + esc(d) + '" ' + checked + '>' + esc(d) + '</label>';
     }).join('');
-    if (!ftHtml) ftHtml = '<span style="color:#999;font-size:10px;">无产线部门可选，请先在「生产线流程」添加</span>';
+    if (!ftHtml) ftHtml = '<span style="color:#999;font-size:10px;">无产线部门，请先在「生产线流程」添加</span>';
+
     html += '<tr><td style="padding:8px;border:1px solid #e0e0e0;"><input class="route-rule-name" data-idx="' + i + '" value="' + esc(r.name || '') + '" style="width:80px;padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;"></td>' +
-      '<td style="padding:8px;border:1px solid #e0e0e0;"><select class="route-rule-field" data-idx="' + i + '" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;">' +
-        '<option value="order_type"' + (cond.field === 'order_type' ? ' selected' : '') + '>订单类型(自动推断)</option>' +
-        '<option value="items.0.name"' + (cond.field === 'items.0.name' ? ' selected' : '') + '>商品名称</option>' +
-        '<option value="items.0.spec"' + (cond.field === 'items.0.spec' ? ' selected' : '') + '>规格</option>' +
-        '<option value="items.0.material"' + (cond.field === 'items.0.material' ? ' selected' : '') + '>材质</option>' +
-        '<option value="items.0.product_type"' + (cond.field === 'items.0.product_type' ? ' selected' : '') + '>产品类型</option>' +
-        '<option value="items.0.产品分类"' + (cond.field === 'items.0.产品分类' ? ' selected' : '') + '>产品分类</option>' +
-        '<option value="items.0.开数"' + (cond.field === 'items.0.开数' ? ' selected' : '') + '>开数</option>' +
-        '<option value="items.0.刀模"' + (cond.field === 'items.0.刀模' ? ' selected' : '') + '>刀模</option>' +
-      '</select></td>' +
-      '<td style="padding:8px;border:1px solid #e0e0e0;"><input class="route-rule-pattern" data-idx="' + i + '" value="' + esc(cond.pattern || '') + '" style="width:100px;padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;" placeholder="正则/关键词"></td>' +
+      '<td style="padding:8px;border:1px solid #e0e0e0;"><div style="max-width:240px;">' + condHtml + '</div></td>' +
       '<td style="padding:8px;border:1px solid #e0e0e0;"><div style="display:flex;flex-wrap:wrap;gap:2px;max-width:200px;">' + ftHtml + '</div></td>' +
-      '<td style="padding:8px;border:1px solid #e0e0e0;"><select class="route-rule-dept" data-idx="' + i + '" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;max-width:100px;">' +
-        '<option value="">—</option>' + deptNames.map(function(d) {
-          return '<option value="' + esc(d) + '"' + (r.process_dept === d ? ' selected' : '') + '>' + esc(d) + '</option>';
-        }).join('') +
-      '</select></td>' +
       '<td style="padding:8px;border:1px solid #e0e0e0;"><button onclick="removeOrderRule(' + i + ')" style="padding:3px 10px;background:#ff4d4f;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">删</button></td></tr>';
   });
   html += '</tbody></table>';
   document.getElementById('orderRuleList').innerHTML = html;
 }
 
+function addRuleCond(ri) {
+  var rule = _routeData.order_routes[ri];
+  if (!rule) return;
+  var conds = rule.conditions || (rule.condition ? [rule.condition] : []);
+  conds.push({ field: 'order_type', pattern: '' });
+  rule.conditions = conds;
+  renderOrderRuleList();
+}
+
+function removeRuleCond(ri, ci) {
+  var rule = _routeData.order_routes[ri];
+  if (!rule) return;
+  var conds = rule.conditions || (rule.condition ? [rule.condition] : []);
+  conds.splice(ci, 1);
+  if (conds.length === 0) conds.push({ field: 'order_type', pattern: '' });
+  rule.conditions = conds;
+  renderOrderRuleList();
+}
+
 function addOrderRule() {
-  _routeData.order_routes.push({ name: '新规则', condition: { field: 'order_type', pattern: '' }, process_dept: '' });
+  _routeData.order_routes.push({ name: '新规则', conditions: [{ field: 'order_type', pattern: '' }], flow_template: [] });
   renderOrderRuleList();
 }
 
@@ -643,13 +672,20 @@ function saveRouteConfig() {
     var r = _routeData.order_routes[idx];
     if (r) {
       r.name = inp.value.trim();
-      r.condition = r.condition || {};
-      var fieldEl = document.querySelector('.route-rule-field[data-idx="' + idx + '"]');
-      var patternEl = document.querySelector('.route-rule-pattern[data-idx="' + idx + '"]');
-      var deptEl = document.querySelector('.route-rule-dept[data-idx="' + idx + '"]');
-      if (fieldEl) r.condition.field = fieldEl.value;
-      if (patternEl) r.condition.pattern = patternEl.value.trim();
-      if (deptEl) r.process_dept = deptEl.value || '';
+      // 收集多条件
+      var conds = [];
+      document.querySelectorAll('.route-cond-field[data-ri="' + idx + '"]').forEach(function(sel) {
+        var ci = parseInt(sel.getAttribute('data-ci'));
+        var patternEl = document.querySelector('.route-cond-pattern[data-ri="' + idx + '"][data-ci="' + ci + '"]');
+        conds.push({
+          field: sel.value,
+          pattern: patternEl ? patternEl.value.trim() : ''
+        });
+      });
+      // 过滤掉空条件
+      conds = conds.filter(function(c) { return c.pattern; });
+      r.conditions = conds.length > 0 ? conds : undefined;
+      delete r.condition; // 清理旧格式
       // 收集产线模板勾选
       var ft = [];
       document.querySelectorAll('.route-rule-ft[data-idx="' + idx + '"]').forEach(function(cb) {
