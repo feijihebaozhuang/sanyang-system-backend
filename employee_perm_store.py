@@ -275,6 +275,8 @@ def save_permission_bundle(data: dict, *, base_dir: str | None = None) -> dict[s
         "employee_roles",
         "production_material_mapping",
         "process_timeouts",
+        "employee_step_whitelist",
+        "order_routes",
     ):
         if key in data:
             bundle[key] = copy.deepcopy(data[key])
