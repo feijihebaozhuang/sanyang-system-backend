@@ -323,6 +323,18 @@ def get_flow_row(db_config: dict, order_id: str) -> dict | None:
         return None
 
 
+def _delete_flow_row(db_config: dict, order_id: str) -> None:
+    try:
+        db = pymysql.connect(**db_config)
+        cur = db.cursor()
+        cur.execute("DELETE FROM production_flows WHERE order_id=%s", (order_id,))
+        db.commit()
+        cur.close()
+        db.close()
+    except Exception:
+        pass
+
+
 def save_flow_row(
     db_config: dict,
     order_id: str,
@@ -398,12 +410,16 @@ def get_or_create_flow_steps(
     *,
     order: dict | None = None,
     order_routes: list | None = None,
+    force_refresh: bool = False,
 ) -> list[dict]:
-    row = get_flow_row(db_config, order_id)
-    if row:
-        steps = parse_flow_steps(row.get("steps_json"))
-        if steps:
-            return steps
+    if not force_refresh:
+        row = get_flow_row(db_config, order_id)
+        if row:
+            steps = parse_flow_steps(row.get("steps_json"))
+            if steps:
+                return steps
+    if force_refresh:
+        _delete_flow_row(db_config, order_id)
     steps = match_order_route_steps(order, process_tree, order_routes)
     if not steps:
         dept = get_process_dept(process_tree, order_type)

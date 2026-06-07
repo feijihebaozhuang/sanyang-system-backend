@@ -1316,6 +1316,8 @@ def api_workorder_scan(order_id):
     import production_spec as _ps
     from settings import DB_CONFIG
 
+    force_refresh = request.args.get("refresh", "").strip() in ("1", "true", "yes")
+
     orders = ph.load_cache_orders()
     o = ph.find_order_in_cache(orders, order_id)
     if not o:
@@ -1331,7 +1333,8 @@ def api_workorder_scan(order_id):
         order_routes = None
     order_type = ph.infer_order_type(o)
     flow = ph.get_or_create_flow_steps(DB_CONFIG, process_tree, oid, order_type,
-                                       order=o, order_routes=order_routes)
+                                       order=o, order_routes=order_routes,
+                                       force_refresh=force_refresh)
 
     # 当前工序（第一个未完成的）
     current_step = ""
