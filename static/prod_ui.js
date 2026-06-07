@@ -489,8 +489,8 @@
         }
         try {
             var qs = window.prodBuildDashboardQuery();
-            // 仅在首屏或手动刷新时 force refresh；翻页走缓存不要重建
-            if (options.forceRefresh || (window._prodPage === 1 && !options.paging && !hadCache)) {
+            // 首屏不走refresh=1（防止后端重建缓存阻塞）；手动按搜索键或翻页才强制刷新
+            if (options.forceRefresh && !hadCache) {
                 qs += (qs ? '&' : '') + 'refresh=1';
             }
             if (options.paging) {
