@@ -5524,7 +5524,8 @@ def production_flow_create():
         oid = ph.internal_order_id(o) if o else order_id
         order_type = ph.infer_order_type(o) if o else '飞机盒'
         # 优先路由规则（支持 flow_template 多部门产线）
-        route_steps = _get_order_flow_steps(o) if o else None
+        order_routes = _permission_data.get("order_routes")
+        route_steps = ph.match_order_route_steps(o, _permission_data.get("processes", []), order_routes)
         if route_steps:
             steps = route_steps
         else:

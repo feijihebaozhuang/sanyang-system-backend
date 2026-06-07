@@ -1325,10 +1325,13 @@ def api_workorder_scan(order_id):
     try:
         bundle = emp_store.load_permission_bundle()
         process_tree = bundle.get("processes", [])
+        order_routes = bundle.get("order_routes")
     except Exception:
         process_tree = []
+        order_routes = None
     order_type = ph.infer_order_type(o)
-    flow = ph.get_or_create_flow_steps(DB_CONFIG, process_tree, oid, order_type)
+    flow = ph.get_or_create_flow_steps(DB_CONFIG, process_tree, oid, order_type,
+                                       order=o, order_routes=order_routes)
 
     # 当前工序（第一个未完成的）
     current_step = ""

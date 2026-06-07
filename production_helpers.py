@@ -395,16 +395,103 @@ def get_or_create_flow_steps(
     process_tree: list,
     order_id: str,
     order_type: str,
+    *,
+    order: dict | None = None,
+    order_routes: list | None = None,
 ) -> list[dict]:
     row = get_flow_row(db_config, order_id)
     if row:
         steps = parse_flow_steps(row.get("steps_json"))
         if steps:
             return steps
-    dept = get_process_dept(process_tree, order_type)
-    steps = steps_from_dept(dept)
+    steps = match_order_route_steps(order, process_tree, order_routes)
+    if not steps:
+        dept = get_process_dept(process_tree, order_type)
+        steps = steps_from_dept(dept)
     save_flow_row(db_config, order_id, order_type, steps)
     return steps
+
+
+def match_order_route_steps(
+    order: dict | None,
+    process_tree: list,
+    order_routes: list | None,
+) -> list[dict] | None:
+    """按订单路由规则匹配产线步骤（多部门 flow_template），供 3002/3003 共用。"""
+    if not order or not order_routes:
+        return None
+    import re as _re
+    for rule in order_routes:
+        conds = rule.get("conditions")
+        if not conds:
+            cond = rule.get("condition")
+            if cond:
+                conds = [cond]
+        if not conds:
+            continue
+        all_match = True
+        for cond in conds:
+            field = (cond.get("field") or "").strip()
+            pattern = (cond.get("pattern") or "").strip()
+            if not field or not pattern:
+                all_match = False
+                break
+            val = None
+            if field == "order_type":
+                val = infer_order_type(order)
+            elif field.startswith("items."):
+                parts = field.split(".")
+                if parts[0] == "items" and len(parts) >= 3:
+                    try:
+                        idx = int(parts[1])
+                    except ValueError:
+                        val = None
+                    else:
+                        items = order.get("items") or []
+                        if idx < len(items):
+                            item = items[idx]
+                            key = parts[2]
+                            val = str(item.get(key) or "")
+                            if not val:
+                                kmd = item.get("km_product_dims") or {}
+                                val = str(kmd.get(key) or "")
+                            if not val:
+                                pa = item.get("platform_attrs") or {}
+                                val = str(pa.get(key) or "")
+                            if key == "qty" and not val:
+                                val = str(item.get("num") or item.get("qty") or "")
+            else:
+                val = str(order.get(field) or "")
+            if not val or not _re.search(pattern, val, _re.IGNORECASE):
+                all_match = False
+                break
+        if not all_match:
+            continue
+        # 匹配成功，取 flow_template
+        ft = rule.get("flow_template")
+        if ft and isinstance(ft, list) and ft:
+            out = []
+            ft_depts = [d.strip() for d in ft if isinstance(d, str)]
+            for dept in process_tree:
+                if isinstance(dept, dict) and dept.get("dept") in ft_depts:
+                    for s in (dept.get("steps") or []):
+                        if isinstance(s, dict):
+                            out.append({
+                                "step": s.get("name", ""),
+                                "dept": dept.get("dept", ""),
+                                "done": False,
+                                "time": "-",
+                                "person": "",
+                            })
+            if out:
+                return out
+        # 或 process_dept
+        match_dept = rule.get("process_dept")
+        if match_dept and isinstance(match_dept, str):
+            for dept in process_tree:
+                if isinstance(dept, dict) and dept.get("dept") == match_dept:
+                    return steps_from_dept(dept)
+    return None
 
 
 def find_order_in_cache(orders: list[dict], query: str) -> dict | None:
