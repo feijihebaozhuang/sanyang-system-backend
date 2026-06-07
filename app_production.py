@@ -2332,7 +2332,8 @@ def scan_workers():
 
 
 # ==================== 订单路由规则 ====================
-def _match_order_route(order: dict) -> str | list | None:
+def _match_order_route(order: dict) -> dict | None:
+    """匹配订单路由规则，返回整条规则（含 flow_template/process_dept）。"""
     rules = _permission_data.get("order_routes") or []
     if not rules:
         return None
@@ -2370,29 +2371,57 @@ def _match_order_route(order: dict) -> str | list | None:
         else:
             val = str(order.get(field) or "")
         if val and _re.search(pattern, val, _re.IGNORECASE):
-            sf = rule.get("step_filter")
-            if sf:
-                return sf
-            return rule.get("process_dept")
+            return rule
     return None
 
 
 def _get_order_flow_steps(order: dict) -> list[dict] | None:
-    match = _match_order_route(order)
-    if not match:
+    """按路由规则取订单的产线步骤。
+    
+    优先用 flow_template（多部门产线），其次 process_dept（单部门）。
+    """
+    rule = _match_order_route(order)
+    if not rule:
         return None
-    if isinstance(match, list):
+    
+    processes = _permission_data.get("processes") or []
+    
+    # 1) flow_template: 选择多个部门组成的产线
+    ft = rule.get("flow_template")
+    if ft and isinstance(ft, list) and ft:
         out = []
-        for dept in (_permission_data.get("processes") or []):
+        ft_depts = [d.strip() for d in ft if isinstance(d, str)]
+        for dept in processes:
+            if isinstance(dept, dict) and dept.get("dept") in ft_depts:
+                for s in (dept.get("steps") or []):
+                    if isinstance(s, dict):
+                        out.append({
+                            "step": s.get("name", ""),
+                            "dept": dept.get("dept", ""),
+                            "done": False,
+                            "time": "-",
+                            "person": "",
+                        })
+        return out if out else None
+    
+    # 2) step_filter: 过滤工序名列表
+    sf = rule.get("step_filter")
+    if sf and isinstance(sf, list):
+        out = []
+        for dept in processes:
             if isinstance(dept, dict):
                 for s in (dept.get("steps") or []):
-                    if isinstance(s, dict) and s.get("name") in match:
+                    if isinstance(s, dict) and s.get("name") in sf:
                         out.append(s)
         return out if out else None
-    if isinstance(match, str):
-        for dept in (_permission_data.get("processes") or []):
-            if isinstance(dept, dict) and dept.get("dept") == match:
+    
+    # 3) process_dept: 单部门
+    match_dept = rule.get("process_dept")
+    if match_dept and isinstance(match_dept, str):
+        for dept in processes:
+            if isinstance(dept, dict) and dept.get("dept") == match_dept:
                 return dept.get("steps") or []
+    
     return None
 
 
@@ -5470,8 +5499,13 @@ def production_flow_create():
         o = ph.find_order_in_cache(orders, order_id)
         oid = ph.internal_order_id(o) if o else order_id
         order_type = ph.infer_order_type(o) if o else '飞机盒'
-        dept = ph.get_process_dept(_permission_data.get("processes", []), order_type)
-        steps = ph.steps_from_dept(dept)
+        # 优先路由规则（支持 flow_template 多部门产线）
+        route_steps = _get_order_flow_steps(o) if o else None
+        if route_steps:
+            steps = route_steps
+        else:
+            dept = ph.get_process_dept(_permission_data.get("processes", []), order_type)
+            steps = ph.steps_from_dept(dept)
         existed = ph.get_flow_row(DB_CONFIG, oid) is not None
         ph.save_flow_row(DB_CONFIG, oid, order_type, steps)
         msg = '工单已重置' if existed else '工单已创建'
@@ -5482,7 +5516,7 @@ def production_flow_create():
                 'order_id': oid,
                 'product_type': order_type,
                 'total_steps': len(steps),
-                'dept': (dept or {}).get('dept', ''),
+                'dept': (dept or {}).get('dept', '') if not route_steps else '多部门产线',
             },
         })
     except Exception as e:
