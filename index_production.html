@@ -476,6 +476,7 @@
     <a onclick="switchSubPage('scan', this)">📱 扫码报工</a>
     <a onclick="switchSubPage('report', this)">📋 日报表</a>
     <a onclick="switchSubPage('databoard', this)">📈 数据看板</a>
+    <a onclick="switchSubPage('jst', this)">🔄 聚水潭</a>
 </div>
 
 <!-- ====== 主内容 ====== -->
@@ -845,6 +846,33 @@
             allow="clipboard-read; clipboard-write"
             sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox"
             style="width:100%;height:calc(100vh - 160px);border:none;border-radius:8px;"></iframe>
+    </div>
+
+    <!-- ===== 聚水潭同步 ===== -->
+    <div id="page-jst" class="page-section">
+        <div class="overview-header">
+            <h3>🔄 聚水潭商品同步</h3>
+            <span id="jstStatus" style="font-size:12px;color:#888;"></span>
+        </div>
+        <div style="max-width:800px;margin:0 auto;">
+            <div style="background:#fff;border-radius:10px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.06);margin-bottom:16px;">
+                <h4 style="margin-bottom:12px;">📦 商品同步（快麦 → 聚水潭）</h4>
+                <p style="font-size:13px;color:#666;margin-bottom:16px;">
+                    从快麦商品库拉取商家编码、规格尺寸、材质，一键上传到聚水潭。
+                </p>
+                <div style="display:flex;gap:12px;flex-wrap:wrap;">
+                    <button onclick="jstSyncItems()" style="padding:10px 24px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;">🚀 开始同步商品</button>
+                    <button onclick="jstTestUpload()" style="padding:10px 24px;background:#f59e0b;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;">🧪 测试上传20条</button>
+                </div>
+                <div id="jstSyncResult" style="margin-top:16px;font-size:13px;"></div>
+            </div>
+
+            <div style="background:#fff;border-radius:10px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.06);margin-bottom:16px;">
+                <h4 style="margin-bottom:12px;">📊 聚水潭库存查询</h4>
+                <button onclick="jstQueryInventory()" style="padding:10px 24px;background:#059669;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;">📡 查最近库存</button>
+                <div id="jstInventoryResult" style="margin-top:16px;font-size:13px;"></div>
+            </div>
+        </div>
     </div>
 
     <!-- ===== 首页（生产概览 + 查单） ===== -->
@@ -6557,9 +6585,85 @@ async function filterProdOrders(keyword) {
     document.getElementById('prodFilterSearch').value = keyword;
     loadProdDashboard();
 }
+
+// ===== 聚水潭函数 =====
+async function jstSyncItems() {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = '⏳ 同步中...';
+    document.getElementById('jstSyncResult').innerHTML = '';
+    try {
+        const res = await fetch('/api/jst/sync/items', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+        const data = await res.json();
+        if (data.ok) {
+            document.getElementById('jstSyncResult').innerHTML =
+                `<div style="color:#059669;">✅ 同步完成：${data.synced}/${data.total} 条上传成功${data.errors.length ? '<br>⚠️ 错误：'+data.errors.join('<br>') : ''}</div>`;
+        } else {
+            document.getElementById('jstSyncResult').innerHTML =
+                `<div style="color:#dc2626;">❌ ${data.error || '同步失败'}</div>`;
+        }
+    } catch(e) {
+        document.getElementById('jstSyncResult').innerHTML = `<div style="color:#dc2626;">❌ ${e.message}</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🚀 开始同步商品';
+    }
+}
+
+async function jstTestUpload() {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = '⏳ 测试中...';
+    document.getElementById('jstSyncResult').innerHTML = '';
+    try {
+        const res = await fetch('/api/jst/sync/items', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit:20})});
+        const data = await res.json();
+        if (data.ok) {
+            document.getElementById('jstSyncResult').innerHTML =
+                `<div style="color:#059669;">✅ 测试完成：${data.synced} 条上传成功</div>`;
+        } else {
+            document.getElementById('jstSyncResult').innerHTML =
+                `<div style="color:#dc2626;">❌ ${data.error || '测试失败'}</div>`;
+        }
+    } catch(e) {
+        document.getElementById('jstSyncResult').innerHTML = `<div style="color:#dc2626;">❌ ${e.message}</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🧪 测试上传20条';
+    }
+}
+
+async function jstQueryInventory() {
+    const btn = event.target;
+    btn.disabled = true;
+    document.getElementById('jstInventoryResult').innerHTML = '⏳ 查询中...';
+    try {
+        const res = await fetch('/api/jst/sync/inventory', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+        const data = await res.json();
+        if (data.ok) {
+            let html = `<div style="color:#059669;">✅ 共 ${data.total} 条库存记录</div>`;
+            if (data.inventory && data.inventory.length) {
+                html += '<div style="max-height:400px;overflow-y:auto;margin-top:8px;"><table style="width:100%;font-size:12px;border-collapse:collapse;">';
+                html += '<tr style="background:#f1f5f9;"><th style="padding:6px;text-align:left;">SKU</th><th style="padding:6px;text-align:left;">商品名</th><th style="padding:6px;text-align:right;">库存</th><th style="padding:6px;text-align:right;">锁定</th></tr>';
+                for (const inv of data.inventory.slice(0, 50)) {
+                    html += `<tr><td style="padding:4px 6px;border-top:1px solid #eee;">${inv.sku_id || '-'}</td><td style="padding:4px 6px;border-top:1px solid #eee;">${inv.name || '-'}</td><td style="padding:4px 6px;border-top:1px solid #eee;text-align:right;">${inv.qty || 0}</td><td style="padding:4px 6px;border-top:1px solid #eee;text-align:right;">${inv.order_lock || 0}</td></tr>`;
+                }
+                html += '</table></div>';
+            }
+            document.getElementById('jstInventoryResult').innerHTML = html;
+        } else {
+            document.getElementById('jstInventoryResult').innerHTML = `<div style="color:#dc2626;">❌ ${data.error || '查询失败'}</div>`;
+        }
+    } catch(e) {
+        document.getElementById('jstInventoryResult').innerHTML = `<div style="color:#dc2626;">❌ ${e.message}</div>`;
+    } finally {
+        btn.disabled = false;
+    }
+}
 </script>
 <script src="/static/prod_ui.js?v=20260607a"></script>
 
 </body>
+</html>
 </html>
 

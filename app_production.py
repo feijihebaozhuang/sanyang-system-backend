@@ -20,6 +20,7 @@ import production_helpers as ph
 from quote_config_merge import merge_quote_config
 import employee_perm_store as emp_store
 import config_json
+import jushuitan_store as jst
 
 
 def _auth_token_for(username: str) -> str:
@@ -6093,6 +6094,102 @@ def api_workorder_scan(order_id):
         "items": items_simple,
         "current_step": current_step,
         "reportable_steps": reportable_steps,
+    })
+
+
+
+
+# ---------- 聚水潭同步 ----------
+
+@app.route('/api/jst/status', methods=['GET'])
+def jst_status():
+    """聚水潭连接状态。"""
+    return jsonify({
+        "configured": jst.configured(),
+    })
+
+
+@app.route('/api/jst/sync/items', methods=['POST'])
+def jst_sync_items():
+    """从快麦km_sku_map拉商品→上传到聚水潭。"""
+    import km_sku_map_store as kms
+    
+    if not jst.configured():
+        return jsonify({"ok": False, "error": "聚水潭未配置"})
+    
+    data = request.get_json(silent=True) or {}
+    limit = int(data.get("limit") or 0)  # 0=全部
+    
+    # 拉本地映射表
+    mapping = kms.load_all(force=True)
+    rows = list(mapping.values())
+    
+    # 筛选：只传有商家编码的
+    to_sync = []
+    for row in rows:
+        oid = (row.get("outer_id") or "").strip()
+        if not oid:
+            continue
+        # 跳过纯数字短码（可能不是有效商品）
+        item = jst.km_map_row_to_jst_item(row)
+        if item:
+            to_sync.append(item)
+    
+    if limit > 0:
+        to_sync = to_sync[:limit]
+    
+    if not to_sync:
+        return jsonify({"ok": True, "synced": 0, "msg": "无可同步的商品"})
+    
+    # 分批上传（每批200条）
+    batch_size = 200
+    total_ok = 0
+    errors = []
+    for i in range(0, len(to_sync), batch_size):
+        batch = to_sync[i:i + batch_size]
+        res = jst.upload_items(batch)
+        if res.get("code") != 0:
+            errors.append(f"第{i//batch_size+1}批失败: {res.get('msg')}")
+        else:
+            total_ok += len(batch)
+    
+    return jsonify({
+        "ok": True,
+        "synced": total_ok,
+        "total": len(to_sync),
+        "errors": errors[:5],
+    })
+
+
+@app.route('/api/jst/sync/inventory', methods=['POST'])
+def jst_sync_inventory():
+    """从快麦拉库存数据（展示用，聚水潭库存同步需盘点接口权限）。"""
+    if not jst.configured():
+        return jsonify({"ok": False, "error": "聚水潭未配置"})
+    
+    data = request.get_json(silent=True) or {}
+    sku_ids = (data.get("sku_ids") or "").strip()
+    
+    if sku_ids:
+        inv = jst.inventory_query(sku_ids=sku_ids)
+    else:
+        now = time.strftime("%Y-%m-%d %H:%M:%S")
+        inv = jst.inventory_query(modified_begin="2026-06-01 00:00:00", modified_end=now, page_index=1, page_size=100)
+    
+    return jsonify({
+        "ok": True,
+        "inventory": inv[:500],
+        "total": len(inv),
+    })
+
+
+@app.route('/api/jst/shops', methods=['GET'])
+def jst_shops():
+    """聚水潭店铺列表。"""
+    shops = jst.shops_query()
+    return jsonify({
+        "ok": True,
+        "shops": shops,
     })
 
 
