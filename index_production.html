@@ -2106,6 +2106,7 @@
     function showOrderDetailModal() {
         const d = window._orderDetailData;
         const jstInv = window._jstOrderInventory;
+        const ps = window._prodData;
         if (!d) return;
         // 快麦ERP详情：有快麦ERP权限的人才能查看
         const canViewJST = _currentUser && hasPerm('快麦ERP');
@@ -2125,43 +2126,59 @@
                 <div class="info-row"><span class="label">产品</span><span>${d.product}</span></div>
             </div>`;
 
-            // 并排：左边快麦，右边聚水潭
-            html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px;">`;
+            // 三栏：快麦 | 聚水潭 | 三羊生产
+            html += `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:8px;">`;
 
-            // 左边：快麦发货信息
+            // 第1栏：快麦发货信息
             html += `
-            <div style="background:#f6ffed;border:1px solid #b7eb8f;border-radius:8px;padding:12px;">
-                <div style="font-weight:600;font-size:13px;margin-bottom:8px;color:#389e0d;">📦 快麦发货信息</div>
+            <div style="background:#f6ffed;border:1px solid #b7eb8f;border-radius:8px;padding:10px;">
+                <div style="font-weight:600;font-size:12px;margin-bottom:6px;color:#389e0d;">📦 快麦</div>
                 <div class="info-row"><span class="label">数量</span><span style="font-weight:600;">${d.qty}</span></div>
                 <div class="info-row"><span class="label">金额</span><span style="font-weight:600;">¥${d.amount}</span></div>
-                <div class="info-row"><span class="label">下单日期</span><span>${d.order_date}</span></div>
-                <div class="info-row"><span class="label">交货日期</span><span>${d.delivery_date}</span></div>
+                <div class="info-row"><span class="label">下单</span><span>${d.order_date}</span></div>
+                <div class="info-row"><span class="label">交货</span><span>${d.delivery_date}</span></div>
             </div>`;
 
-            // 右边：聚水潭库存
+            // 第2栏：聚水潭库存
             if (jstInv) {
                 const jstQty = jstInv.phy_qty || jstInv.qty || 0;
                 const orderQty = parseInt(d.qty) || 0;
                 const enough = jstQty >= orderQty;
                 html += `
-                <div style="background:${enough ? '#f0fdf4' : '#fff1f2'};border:1px solid ${enough ? '#86efac' : '#fecaca'};border-radius:8px;padding:12px;">
-                    <div style="font-weight:600;font-size:13px;margin-bottom:8px;color:${enough ? '#16a34a' : '#dc2626'};">🔄 聚水潭库存</div>
-                    <div class="info-row"><span class="label">SKU</span><span>${jstInv.sku_id || '—'}</span></div>
-                    <div class="info-row"><span class="label">库存数量</span><span style="font-size:18px;font-weight:800;color:${jstQty > 0 ? '#16a34a' : '#dc2626'};">${jstQty}</span></div>
-                    <div class="info-row"><span class="label">此单需要</span><span style="font-weight:600;">${orderQty}</span></div>
-                    <div style="margin-top:6px;padding:6px;border-radius:4px;background:${enough ? '#dcfce7' : '#fee2e2'};text-align:center;font-weight:600;font-size:13px;color:${enough ? '#16a34a' : '#dc2626'};">
-                        ${enough ? '✅ 库存充足' : '⚠️ 库存不足，差 ' + (orderQty - jstQty) + ' 个'}
+                <div style="background:${enough ? '#f0fdf4' : '#fff1f2'};border:1px solid ${enough ? '#86efac' : '#fecaca'};border-radius:8px;padding:10px;">
+                    <div style="font-weight:600;font-size:12px;margin-bottom:6px;color:${enough ? '#16a34a' : '#dc2626'};">🔄 聚水潭</div>
+                    <div class="info-row"><span class="label">SKU</span><span style="font-size:11px;">${jstInv.sku_id || '—'}</span></div>
+                    <div class="info-row"><span class="label">库存</span><span style="font-size:16px;font-weight:800;color:${jstQty > 0 ? '#16a34a' : '#dc2626'};">${jstQty}</span></div>
+                    <div class="info-row"><span class="label">需发</span><span style="font-weight:600;">${orderQty}</span></div>
+                    <div style="margin-top:4px;padding:4px;border-radius:4px;background:${enough ? '#dcfce7' : '#fee2e2'};text-align:center;font-weight:600;font-size:11px;color:${enough ? '#16a34a' : '#dc2626'};">
+                        ${enough ? '✅ 充足' : '⚠️ 差 ' + (orderQty - jstQty) + ' 个'}
                     </div>
                 </div>`;
             } else {
                 html += `
-                <div style="background:#fafafa;border:1px solid #eee;border-radius:8px;padding:12px;">
-                    <div style="font-weight:600;font-size:13px;margin-bottom:8px;color:#888;">🔄 聚水潭库存</div>
-                    <div style="text-align:center;padding:20px 0;color:#999;font-size:13px;">
-                        无库存数据<br><span style="font-size:11px;">商品未同步到聚水潭</span>
+                <div style="background:#fafafa;border:1px solid #eee;border-radius:8px;padding:10px;">
+                    <div style="font-weight:600;font-size:12px;margin-bottom:6px;color:#888;">🔄 聚水潭</div>
+                    <div style="text-align:center;padding:12px 0;color:#999;font-size:11px;">
+                        未同步商品
                     </div>
                 </div>`;
             }
+
+            // 第3栏：三羊生产
+            const prodQty = ps ? (ps.completed_qty || 0) : 0;
+            const progPct = ps ? (ps.progress || 0) : 0;
+            const prodStatus = ps ? (ps.status || '—') : '—';
+            html += `
+            <div style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:10px;">
+                <div style="font-weight:600;font-size:12px;margin-bottom:6px;color:#4338ca;">🏭 三羊生产</div>
+                <div class="info-row"><span class="label">状态</span><span style="font-weight:600;">${prodStatus}</span></div>
+                <div class="info-row"><span class="label">进度</span><span style="font-size:16px;font-weight:800;color:#4338ca;">${progPct}%</span></div>
+                <div class="info-row"><span class="label">已完工</span><span style="font-weight:600;">${prodQty}</span></div>
+                <div style="margin-top:4px;height:4px;background:#e0e7ff;border-radius:2px;overflow:hidden;">
+                    <div style="height:100%;width:${progPct}%;background:#4338ca;border-radius:2px;"></div>
+                </div>
+            </div>`;
+
             html += `</div>`;
 
             // 地址&物流（全宽）
@@ -5638,9 +5655,10 @@
         const localMap = {};
         localItems.forEach(item => { localMap[item.name] = item; });
 
-        let html = `<div style="display:flex;gap:6px;margin-bottom:10px;">
-            <span style="font-size:11px;background:#2563eb;color:#fff;padding:2px 8px;border-radius:4px;">三羊本地</span>
-            <span style="font-size:11px;background:#059669;color:#fff;padding:2px 8px;border-radius:4px;">聚水潭</span>
+        let html = `<div style="margin-bottom:8px;font-size:11px;color:#666;display:flex;gap:6px;">
+            <span style="background:#2563eb;color:#fff;padding:1px 6px;border-radius:3px;">三羊本地</span>
+            <span style="background:#059669;color:#fff;padding:1px 6px;border-radius:3px;">聚水潭</span>
+            <span style="background:#4338ca;color:#fff;padding:1px 6px;border-radius:3px;">生产中</span>
         </div>`;
 
         // 按聚水潭结果展示
@@ -5649,6 +5667,7 @@
             const qty = sku.phy_qty || sku.qty || 0;
             const localItem = localMap[skuId];
             const localQty = localItem ? (localItem.stock || 0) : '—';
+            const inProd = localItem ? (localItem.in_production || 0) : 0;
             const diff = (typeof localQty === 'number') ? (localQty - qty) : '—';
             const diffColor = diff === 0 ? '#52c41a' : (diff > 0 ? '#1677ff' : '#e94560');
             const diffIcon = diff === 0 ? '✅' : (diff > 0 ? '⬆️' : '⬇️');
@@ -5658,16 +5677,16 @@
                 <div style="font-weight:600;font-size:13px;margin-bottom:6px;">${skuId}</div>
                 <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;font-size:12px;">
                     <div style="background:#eef2ff;padding:6px;border-radius:4px;text-align:center;">
-                        <div style="color:#666;">三羊</div>
-                        <div style="font-size:20px;font-weight:800;color:#2563eb;">${localQty}</div>
+                        <div style="color:#666;font-size:10px;">三羊</div>
+                        <div style="font-size:18px;font-weight:800;color:#2563eb;">${localQty}</div>
                     </div>
                     <div style="background:#ecfdf5;padding:6px;border-radius:4px;text-align:center;">
-                        <div style="color:#666;">聚水潭</div>
-                        <div style="font-size:20px;font-weight:800;color:#059669;">${qty}</div>
+                        <div style="color:#666;font-size:10px;">聚水潭</div>
+                        <div style="font-size:18px;font-weight:800;color:#059669;">${qty}</div>
                     </div>
                     <div style="background:${diff === 0 ? '#f0fdf4' : '#fff1f2'};padding:6px;border-radius:4px;text-align:center;">
-                        <div style="color:#666;">差异</div>
-                        <div style="font-size:20px;font-weight:800;color:${diffColor};">${diffIcon} ${diff}</div>
+                        <div style="color:#666;font-size:10px;">差异</div>
+                        <div style="font-size:18px;font-weight:800;color:${diffColor};">${diffIcon} ${diff}</div>
                     </div>
                 </div>
             </div>`;
