@@ -475,6 +475,7 @@
     <a onclick="switchSubPage('production', this)">🖨️ 打单管理</a>
     <a onclick="switchSubPage('scan', this)">📱 扫码报工</a>
     <a onclick="switchSubPage('report', this)">📋 日报表</a>
+    <a onclick="switchSubPage('recon', this)">📊 三方对账</a>
     <a onclick="switchSubPage('databoard', this)">📈 数据看板</a>
     <a onclick="switchSubPage('jst', this)">🔄 聚水潭</a>
 </div>
@@ -1078,6 +1079,56 @@
                 <thead><tr><th>时间</th><th>内部单号</th><th>工序</th><th>操作人</th><th>状态</th><th>数据</th></tr></thead>
                 <tbody id="scanLogTable"></tbody>
             </table>
+        </div>
+    </div>
+
+    <!-- ===== 三方对账页 ===== -->
+    <div id="page-recon" class="page-section" style="background:#f0f5ff;min-height:calc(100vh - 104px);">
+        <div class="overview-header" style="background:linear-gradient(135deg,#1e293b,#334155);color:#fff;border-radius:12px 12px 0 0;margin:0;padding:14px 20px;">
+            <h3 style="color:#fff;font-size:18px;">📊 三方对账</h3>
+            <div style="display:flex;gap:10px;align-items:center;">
+                <span style="font-size:11px;color:rgba(255,255,255,0.5);">快麦 · 聚水潭 · 三羊生产</span>
+                <select id="reconStore" style="padding:4px 10px;border:1px solid rgba(255,255,255,0.2);border-radius:5px;font-size:12px;background:rgba(255,255,255,0.1);color:#fff;outline:none;">
+                    <option value="" style="background:#1e293b;color:#fff;">全部店铺</option>
+                </select>
+                <button onclick="loadRecon()" style="padding:5px 14px;background:#2563eb;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:12px;">🔄 刷新</button>
+            </div>
+        </div>
+        <div style="padding:16px 20px;">
+            <!-- 搜索框 -->
+            <div style="display:flex;gap:8px;margin-bottom:14px;">
+                <input type="text" id="reconSearch" placeholder="搜索商品名称/SKU..." style="flex:1;padding:8px 14px;border:1px solid #d9d9d9;border-radius:8px;font-size:14px;" onkeydown="if(event.key==='Enter') loadRecon()">
+                <select id="reconType" style="padding:8px 12px;border:1px solid #d9d9d9;border-radius:8px;font-size:13px;background:#fff;">
+                    <option value="">全部类型</option>
+                    <option value="diff">仅显示有差异</option>
+                    <option value="zhengsquare">正方形飞机盒</option>
+                    <option value="juxing">长方形飞机盒</option>
+                    <option value="daikou">带扣飞机盒</option>
+                    <option value="pe">珍珠棉</option>
+                </select>
+                <button onclick="loadRecon()" style="padding:8px 20px;background:#1e293b;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;">🔍 查询</button>
+            </div>
+
+            <!-- 统计条 -->
+            <div style="display:flex;gap:12px;margin-bottom:14px;font-size:12px;">
+                <span style="background:#fff;padding:4px 12px;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,0.05);">商品: <strong id="reconTotalCount">0</strong></span>
+                <span style="background:#fff;padding:4px 12px;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,0.05);">三羊库存: <strong id="reconSanSum" style="color:#2563eb;">0</strong></span>
+                <span style="background:#fff;padding:4px 12px;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,0.05);">聚水潭: <strong id="reconJstSum" style="color:#059669;">0</strong></span>
+                <span style="background:#fff;padding:4px 12px;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,0.05);">生产中: <strong id="reconProdSum" style="color:#9333ea;">0</strong></span>
+            </div>
+
+            <!-- 表头 -->
+            <div style="display:grid;grid-template-columns:2.5fr 1fr 1fr 1fr 1fr 0.8fr;gap:6px;padding:8px 12px;background:#fff;border-radius:8px 8px 0 0;box-shadow:0 1px 3px rgba(0,0,0,0.05);font-size:11px;font-weight:600;color:#666;border-bottom:2px solid #e0e7ff;margin-bottom:4px;">
+                <div>商品</div>
+                <div style="text-align:center;">三羊 <span style="color:#999;font-weight:400;">库存</span></div>
+                <div style="text-align:center;">聚水潭 <span style="color:#999;font-weight:400;">库存</span></div>
+                <div style="text-align:center;">三羊 <span style="color:#999;font-weight:400;">生产中</span></div>
+                <div style="text-align:center;">三羊 <span style="color:#999;font-weight:400;">已完成</span></div>
+                <div style="text-align:center;">状态</div>
+            </div>
+            <div id="reconList" style="min-height:200px;">
+                <div style="text-align:center;padding:60px 0;color:#999;">输入商品名，点查询</div>
+            </div>
         </div>
     </div>
 
@@ -1971,7 +2022,11 @@
             document.getElementById('page-main').classList.remove('active');
             document.getElementById('page-raw').classList.add('active');
             loadRaw();
-                } else {
+        } else if (name === 'recon') {
+            document.getElementById('page-main').classList.remove('active');
+            document.getElementById('page-recon').classList.add('active');
+            loadRecon();
+        } else {
             document.body.classList.remove('dark-bg');
             document.querySelector('.content').classList.remove('databoard-mode');
         }
@@ -6844,6 +6899,109 @@ async function jstQueryInventory() {
     } finally {
         btn.disabled = false;
     }
+}
+
+// ===== 三方对账 =====
+async function loadRecon() {
+    const search = document.getElementById('reconSearch').value.trim();
+    const typeFilter = document.getElementById('reconType').value;
+    const listEl = document.getElementById('reconList');
+    listEl.innerHTML = '<div style="text-align:center;padding:40px;color:#999;">⏳ 加载中...</div>';
+
+    try {
+        // 1. 拉三羊所有库存
+        let url = '/api/inventory?tab=finished';
+        if (typeFilter && typeFilter !== 'diff') url += '&type=' + encodeURIComponent(typeFilter);
+        if (search) url += '&search=' + encodeURIComponent(search);
+        const invRes = await fetch(url);
+        const invData = await invRes.json();
+        if (!invData.success) throw new Error(invData.error);
+        let items = invData.data || [];
+
+        // 2. 提取SKU列表
+        const skuNames = items.filter(i => i.name).map(i => i.name.trim()).slice(0, 200);
+        if (skuNames.length === 0) {
+            listEl.innerHTML = '<div style="text-align:center;padding:60px;color:#999;">🔍 未找到库存商品</div>';
+            updateReconStats(0, 0, 0, 0);
+            return;
+        }
+
+        // 3. 并行查聚水潭+生产
+        const [jstRes, prodRes] = await Promise.all([
+            fetch('/api/jst/batch-inventory', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({sku_ids: skuNames.join(',')})
+            }),
+            fetch('/api/production/sku-summary', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({sku_ids: skuNames})
+            })
+        ]);
+        const jstData = await jstRes.json();
+        const prodData = await prodRes.json();
+
+        const jstMap = {};
+        if (jstData.ok) {
+            (jstData.inventory || []).forEach(s => { jstMap[s.sku_id] = s.phy_qty || s.qty || 0; });
+        }
+        const prodMap = prodData.ok ? prodData.summary : {};
+
+        // 4. 合并渲染
+        let html = '';
+        let sanSum = 0, jstSum = 0, prodSum = 0, doneSum = 0;
+
+        items.forEach(item => {
+            const name = item.name.trim();
+            const sanQty = item.stock || 0;
+            const jstQty = jstMap[name] || 0;
+            const pi = prodMap[name] || {};
+            const inProd = pi.in_production || 0;
+            const comp = pi.completed || 0;
+
+            // 类型筛选：仅显示有差异
+            if (typeFilter === 'diff' && sanQty === jstQty && inProd === 0 && comp === 0) return;
+
+            sanSum += sanQty;
+            jstSum += jstQty;
+            prodSum += inProd;
+            doneSum += comp;
+
+            // 状态
+            const hasDiff = sanQty !== jstQty;
+            const statusIcon = hasDiff ? '⚠️' : '✅';
+            const statusColor = hasDiff ? '#d97706' : '#059669';
+            const statusText = hasDiff ? '库存差异' : '一致';
+
+            html += `
+            <div style="display:grid;grid-template-columns:2.5fr 1fr 1fr 1fr 1fr 0.8fr;gap:6px;padding:8px 12px;background:#fff;border-radius:6px;margin-bottom:3px;box-shadow:0 1px 2px rgba(0,0,0,0.04);align-items:center;font-size:13px;">
+                <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${name}</div>
+                <div style="text-align:center;font-weight:700;color:${sanQty > 0 ? '#2563eb' : '#999'};">${sanQty}</div>
+                <div style="text-align:center;font-weight:700;color:${jstQty > 0 ? '#059669' : '#999'};">${jstQty}</div>
+                <div style="text-align:center;font-weight:600;color:${inProd > 0 ? '#9333ea' : '#999'};">${inProd || '-'}</div>
+                <div style="text-align:center;font-weight:600;color:${comp > 0 ? '#d97706' : '#999'};">${comp || '-'}</div>
+                <div style="text-align:center;">
+                    <span style="background:${statusColor}15;color:${statusColor};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;">${statusIcon} ${statusText}</span>
+                </div>
+            </div>`;
+        });
+
+        if (!html) {
+            listEl.innerHTML = '<div style="text-align:center;padding:60px;color:#999;">✅ 全部一致，无差异</div>';
+        } else {
+            listEl.innerHTML = html;
+        }
+        updateReconStats(items.length, sanSum, jstSum, prodSum);
+
+    } catch(e) {
+        listEl.innerHTML = `<div style="text-align:center;padding:60px;color:#e94560;">❌ ${e.message}</div>`;
+    }
+}
+
+function updateReconStats(count, san, jst, prod) {
+    document.getElementById('reconTotalCount').textContent = count;
+    document.getElementById('reconSanSum').textContent = san;
+    document.getElementById('reconJstSum').textContent = jst;
+    document.getElementById('reconProdSum').textContent = prod;
 }
 </script>
 <script src="/static/prod_ui.js?v=20260607a"></script>
