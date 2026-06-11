@@ -6240,6 +6240,51 @@ def jst_sku_detail():
     })
 
 
+@app.route('/api/production/sku-summary', methods=['POST'])
+def production_sku_summary():
+    """按商品SKU汇总生产中订单的待产/已完工数量。"""
+    data = request.get_json(silent=True) or {}
+    sku_ids = data.get("sku_ids") or []
+    if not sku_ids:
+        return jsonify({"ok": True, "summary": {}})
+    
+    # 拉生产全量订单
+    _sync_order_extra_from_db()
+    process_tree = _permission_data.get("processes", [])
+    orders = ph.build_production_orders(
+        _orders_cache_path(),
+        DB_CONFIG,
+        process_tree,
+        _order_extra,
+    )
+    
+    # 按商品名汇总：生产中的总数量，已完成的工序数量
+    result = {}
+    for o in orders:
+        specs = o.get("specs") or []
+        flow = o.get("flow") or []
+        done_steps = [s for s in flow if s.get("done")]
+        for s in specs:
+            spec_name = s.get("spec", "").strip()
+            if not spec_name:
+                continue
+            if spec_name not in sku_ids:
+                continue
+            if spec_name not in result:
+                result[spec_name] = {"in_production": 0, "completed": 0}
+            qty = int(s.get("qty", 0))
+            # 如果所有工序都完成了，算已完成
+            if len(done_steps) >= len(flow) and len(flow) > 0:
+                result[spec_name]["completed"] += qty
+            else:
+                result[spec_name]["in_production"] += qty
+    
+    return jsonify({
+        "ok": True,
+        "summary": result,
+    })
+
+
 if __name__ == '__main__':
     print("🏭 飞机盒智能生产管理系统启动中...")
     print("📡 http://0.0.0.0:3002")

@@ -5581,7 +5581,7 @@
         const jstPanel = document.getElementById('invJstPanel');
         const jstBody = document.getElementById('invJstBody');
         jstPanel.style.display = 'block';
-        jstBody.innerHTML = '⏳ 查询聚水潭库存中...';
+        jstBody.innerHTML = '⏳ 查询三方数据中...';
 
         try {
             const res = await fetch(url);
@@ -5612,29 +5612,35 @@
                 });
                 resultEl.innerHTML = html;
 
-                // 并排查聚水潭库存 — 用商品名搜索聚水潭商品
-                const skuIds = [];
+                // 并排查聚水潭库存 + 三羊生产
+                const skuNames = [];
                 filtered.forEach(item => {
-                    if (item.name) skuIds.push(item.name.trim());
+                    if (item.name) skuNames.push(item.name.trim());
                 });
-                if (skuIds.length > 0) {
-                    try {
-                        const jstRes = await fetch('/api/jst/batch-inventory', {
+                
+                if (skuNames.length > 0) {
+                    // 并行查两个API
+                    const [jstRes, prodRes] = await Promise.all([
+                        fetch('/api/jst/batch-inventory', {
                             method: 'POST',
                             headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({sku_ids: skuIds.slice(0, 200).join(',')})
-                        });
-                        const jstData = await jstRes.json();
-                        if (jstData.ok && jstData.inventory) {
-                            renderJstInventory(jstData.inventory, filtered);
-                        } else {
-                            jstBody.innerHTML = '<div style="color:#888;">聚水潭无库存数据或未配置</div>';
-                        }
-                    } catch(e) {
-                        jstBody.innerHTML = `<div style="color:#e94560;">❌ 查询聚水潭失败: ${e.message}</div>`;
-                    }
+                            body: JSON.stringify({sku_ids: skuNames.slice(0, 200).join(',')})
+                        }),
+                        fetch('/api/production/sku-summary', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({sku_ids: skuNames.slice(0, 200)})
+                        })
+                    ]);
+                    const jstData = await jstRes.json();
+                    const prodData = await prodRes.json();
+                    renderThreeWayInventory(
+                        jstData.ok ? jstData.inventory : [],
+                        filtered,
+                        prodData.ok ? prodData.summary : {}
+                    );
                 } else {
-                    jstBody.innerHTML = '<div style="color:#888;">聚水潭无匹配商品</div>';
+                    jstBody.innerHTML = '<div style="color:#888;">无匹配商品</div>';
                 }
             } else {
                 resultEl.innerHTML = `<div style="text-align:center;padding:16px 0;">
@@ -5649,44 +5655,55 @@
         }
     }
 
-    // 渲染聚水潭库存对比
-    function renderJstInventory(jstInv, localItems) {
+    // 渲染三方数据对比
+    function renderThreeWayInventory(jstInv, localItems, prodSummary) {
         const jstBody = document.getElementById('invJstBody');
         const localMap = {};
         localItems.forEach(item => { localMap[item.name] = item; });
 
         let html = `<div style="margin-bottom:8px;font-size:11px;color:#666;display:flex;gap:6px;">
-            <span style="background:#2563eb;color:#fff;padding:1px 6px;border-radius:3px;">三羊本地</span>
+            <span style="background:#2563eb;color:#fff;padding:1px 6px;border-radius:3px;">三羊库存</span>
             <span style="background:#059669;color:#fff;padding:1px 6px;border-radius:3px;">聚水潭</span>
-            <span style="background:#4338ca;color:#fff;padding:1px 6px;border-radius:3px;">生产中</span>
+            <span style="background:#9333ea;color:#fff;padding:1px 6px;border-radius:3px;">生产中</span>
+            <span style="background:#d97706;color:#fff;padding:1px 6px;border-radius:3px;">已完成</span>
         </div>`;
 
-        // 按聚水潭结果展示
-        jstInv.forEach(sku => {
-            const skuId = sku.sku_id || '';
-            const qty = sku.phy_qty || sku.qty || 0;
+        // 建立合并SKU列表（三羊 + 聚水潭）
+        const allSkuNames = new Set();
+        localItems.forEach(item => { if (item.name) allSkuNames.add(item.name); });
+        jstInv.forEach(sku => { if (sku.sku_id) allSkuNames.add(sku.sku_id); });
+
+        allSkuNames.forEach(skuId => {
+            // 三羊
             const localItem = localMap[skuId];
             const localQty = localItem ? (localItem.stock || 0) : '—';
-            const inProd = localItem ? (localItem.in_production || 0) : 0;
-            const diff = (typeof localQty === 'number') ? (localQty - qty) : '—';
-            const diffColor = diff === 0 ? '#52c41a' : (diff > 0 ? '#1677ff' : '#e94560');
-            const diffIcon = diff === 0 ? '✅' : (diff > 0 ? '⬆️' : '⬇️');
+            // 聚水潭
+            const jstItem = jstInv.find(s => s.sku_id === skuId);
+            const jstQty = jstItem ? (jstItem.phy_qty || jstItem.qty || 0) : '—';
+            // 生产
+            const prodItem = prodSummary[skuId] || {};
+            const inProd = prodItem.in_production || 0;
+            const completed = prodItem.completed || 0;
 
             html += `
-            <div style="background:#fafafa;border:1px solid #eee;border-radius:8px;padding:10px;margin-bottom:6px;">
-                <div style="font-weight:600;font-size:13px;margin-bottom:6px;">${skuId}</div>
-                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;font-size:12px;">
-                    <div style="background:#eef2ff;padding:6px;border-radius:4px;text-align:center;">
-                        <div style="color:#666;font-size:10px;">三羊</div>
-                        <div style="font-size:18px;font-weight:800;color:#2563eb;">${localQty}</div>
+            <div style="background:#fafafa;border:1px solid #eee;border-radius:8px;padding:8px;margin-bottom:5px;">
+                <div style="font-weight:600;font-size:12px;margin-bottom:5px;">${skuId}</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:3px;font-size:11px;">
+                    <div style="background:#eef2ff;padding:4px;border-radius:4px;text-align:center;">
+                        <div style="color:#666;">三羊</div>
+                        <div style="font-size:16px;font-weight:800;color:#2563eb;">${localQty}</div>
                     </div>
-                    <div style="background:#ecfdf5;padding:6px;border-radius:4px;text-align:center;">
-                        <div style="color:#666;font-size:10px;">聚水潭</div>
-                        <div style="font-size:18px;font-weight:800;color:#059669;">${qty}</div>
+                    <div style="background:#ecfdf5;padding:4px;border-radius:4px;text-align:center;">
+                        <div style="color:#666;">聚水潭</div>
+                        <div style="font-size:16px;font-weight:800;color:#059669;">${jstQty}</div>
                     </div>
-                    <div style="background:${diff === 0 ? '#f0fdf4' : '#fff1f2'};padding:6px;border-radius:4px;text-align:center;">
-                        <div style="color:#666;font-size:10px;">差异</div>
-                        <div style="font-size:18px;font-weight:800;color:${diffColor};">${diffIcon} ${diff}</div>
+                    <div style="background:#f3e8ff;padding:4px;border-radius:4px;text-align:center;">
+                        <div style="color:#666;">生产中</div>
+                        <div style="font-size:16px;font-weight:800;color:#9333ea;">${inProd}</div>
+                    </div>
+                    <div style="background:#fef3c7;padding:4px;border-radius:4px;text-align:center;">
+                        <div style="color:#666;">已完成</div>
+                        <div style="font-size:16px;font-weight:800;color:#d97706;">${completed}</div>
                     </div>
                 </div>
             </div>`;
