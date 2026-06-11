@@ -6193,6 +6193,53 @@ def jst_shops():
     })
 
 
+@app.route('/api/jst/batch-inventory', methods=['POST'])
+def jst_batch_inventory():
+    """批量查聚水潭库存（按sku_ids逗号分隔）。"""
+    if not jst.configured():
+        return jsonify({"ok": False, "error": "聚水潭未配置"})
+    data = request.get_json(silent=True) or {}
+    sku_ids = (data.get("sku_ids") or "").strip()
+    if not sku_ids:
+        return jsonify({"ok": False, "error": "缺少sku_ids"})
+    # 聚水潭限制200条/次查询，分批
+    all_ids = [s.strip() for s in sku_ids.split(",") if s.strip()]
+    batch_size = 200
+    results = []
+    for i in range(0, len(all_ids), batch_size):
+        batch = ",".join(all_ids[i:i+batch_size])
+        inv = jst.inventory_query(sku_ids=batch)
+        results.extend(inv)
+    return jsonify({
+        "ok": True,
+        "inventory": results,
+        "total": len(results),
+    })
+
+
+@app.route('/api/jst/sku-detail', methods=['POST'])
+def jst_sku_detail():
+    """查聚水潭商品资料（按sku_ids逗号分隔）。"""
+    if not jst.configured():
+        return jsonify({"ok": False, "error": "聚水潭未配置"})
+    data = request.get_json(silent=True) or {}
+    sku_ids = (data.get("sku_ids") or "").strip()
+    if not sku_ids:
+        return jsonify({"ok": False, "error": "缺少sku_ids"})
+    all_ids = [s.strip() for s in sku_ids.split(",") if s.strip()]
+    batch_size = 200
+    results = []
+    for i in range(0, len(all_ids), batch_size):
+        batch = ",".join(all_ids[i:i+batch_size])
+        skus = jst.sku_query(sku_ids=batch)
+        results.extend(skus)
+    return jsonify({
+        "ok": True,
+        "skus": results,
+        "total": len(results),
+    })
+
+
 if __name__ == '__main__':
     print("🏭 飞机盒智能生产管理系统启动中...")
     print("📡 http://0.0.0.0:3002")

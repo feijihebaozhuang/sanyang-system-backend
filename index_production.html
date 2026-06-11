@@ -705,7 +705,7 @@
                     </div>
                 </div>
                 <!-- 入库/出库操作 -->
-                <div id="invFormArea" style="background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+                <div id="invFormArea" style="background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.06);margin-bottom:12px;">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
                         <div style="font-size:14px;font-weight:600;">📦 库存操作</div>
                         <div id="invFormMode" style="font-size:12px;color:#1677ff;">新增商品</div>
@@ -777,6 +777,14 @@
                         <button id="invCancelBtn" onclick="resetInvForm()" style="display:none;padding:8px 16px;background:#888;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">取消编辑</button>
                     </div>
                     <div id="invStatus" style="font-size:12px;color:#666;margin-top:8px;"></div>
+                </div>
+
+                <!-- 聚水潭库存对比 -->
+                <div id="invJstPanel" style="background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.06);display:none;">
+                    <div style="font-size:14px;font-weight:600;margin-bottom:12px;">🔄 聚水潭库存对比</div>
+                    <div id="invJstBody" style="font-size:13px;color:#666;min-height:60px;">
+                        查询聚水潭库存中...
+                    </div>
                 </div>
             </div>
         </div>
@@ -2024,6 +2032,25 @@
         window._prodData._urgent = data.urgent || false;
         window._orderDetailData = jd;
 
+        // 搜索订单中商品编码 → 查聚水潭库存
+        window._jstOrderInventory = null;
+        if (jd && jd.product) {
+            try {
+                const skuName = jd.product.trim();
+                const jstRes = await fetch('/api/jst/batch-inventory', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({sku_ids: skuName})
+                });
+                const jstData = await jstRes.json();
+                if (jstData.ok && jstData.inventory && jstData.inventory.length > 0) {
+                    window._jstOrderInventory = jstData.inventory[0];
+                }
+            } catch(e) {
+                console.error('查聚水潭库存失败:', e);
+            }
+        }
+
         document.getElementById('searchResults').classList.add('show');
     }
 
@@ -2078,6 +2105,7 @@
 
     function showOrderDetailModal() {
         const d = window._orderDetailData;
+        const jstInv = window._jstOrderInventory;
         if (!d) return;
         // 快麦ERP详情：有快麦ERP权限的人才能查看
         const canViewJST = _currentUser && hasPerm('快麦ERP');
@@ -2088,18 +2116,62 @@
                 </div>
             `;
         } else {
-            document.getElementById('orderDetailModalBody').innerHTML = `
+            // 订单基本信息（全宽）
+            let html = `
+            <div style="margin-bottom:12px;">
                 <div class="info-row"><span class="label">订单号</span><span>${d.order_id}</span></div>
                 <div class="info-row"><span class="label">店铺</span><span>${d.store}</span></div>
                 <div class="info-row"><span class="label">客户</span><span>${d.customer}</span></div>
                 <div class="info-row"><span class="label">产品</span><span>${d.product}</span></div>
-                <div class="info-row"><span class="label">数量</span><span>${d.qty}</span></div>
-                <div class="info-row"><span class="label">金额</span><span>¥${d.amount}</span></div>
+            </div>`;
+
+            // 并排：左边快麦，右边聚水潭
+            html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px;">`;
+
+            // 左边：快麦发货信息
+            html += `
+            <div style="background:#f6ffed;border:1px solid #b7eb8f;border-radius:8px;padding:12px;">
+                <div style="font-weight:600;font-size:13px;margin-bottom:8px;color:#389e0d;">📦 快麦发货信息</div>
+                <div class="info-row"><span class="label">数量</span><span style="font-weight:600;">${d.qty}</span></div>
+                <div class="info-row"><span class="label">金额</span><span style="font-weight:600;">¥${d.amount}</span></div>
                 <div class="info-row"><span class="label">下单日期</span><span>${d.order_date}</span></div>
                 <div class="info-row"><span class="label">交货日期</span><span>${d.delivery_date}</span></div>
+            </div>`;
+
+            // 右边：聚水潭库存
+            if (jstInv) {
+                const jstQty = jstInv.phy_qty || jstInv.qty || 0;
+                const orderQty = parseInt(d.qty) || 0;
+                const enough = jstQty >= orderQty;
+                html += `
+                <div style="background:${enough ? '#f0fdf4' : '#fff1f2'};border:1px solid ${enough ? '#86efac' : '#fecaca'};border-radius:8px;padding:12px;">
+                    <div style="font-weight:600;font-size:13px;margin-bottom:8px;color:${enough ? '#16a34a' : '#dc2626'};">🔄 聚水潭库存</div>
+                    <div class="info-row"><span class="label">SKU</span><span>${jstInv.sku_id || '—'}</span></div>
+                    <div class="info-row"><span class="label">库存数量</span><span style="font-size:18px;font-weight:800;color:${jstQty > 0 ? '#16a34a' : '#dc2626'};">${jstQty}</span></div>
+                    <div class="info-row"><span class="label">此单需要</span><span style="font-weight:600;">${orderQty}</span></div>
+                    <div style="margin-top:6px;padding:6px;border-radius:4px;background:${enough ? '#dcfce7' : '#fee2e2'};text-align:center;font-weight:600;font-size:13px;color:${enough ? '#16a34a' : '#dc2626'};">
+                        ${enough ? '✅ 库存充足' : '⚠️ 库存不足，差 ' + (orderQty - jstQty) + ' 个'}
+                    </div>
+                </div>`;
+            } else {
+                html += `
+                <div style="background:#fafafa;border:1px solid #eee;border-radius:8px;padding:12px;">
+                    <div style="font-weight:600;font-size:13px;margin-bottom:8px;color:#888;">🔄 聚水潭库存</div>
+                    <div style="text-align:center;padding:20px 0;color:#999;font-size:13px;">
+                        无库存数据<br><span style="font-size:11px;">商品未同步到聚水潭</span>
+                    </div>
+                </div>`;
+            }
+            html += `</div>`;
+
+            // 地址&物流（全宽）
+            html += `
+            <div style="margin-top:12px;">
                 <div class="info-row"><span class="label">收货地址</span><span>${(function(){let a=d.address||'';let m=a.match(/([^省]+省)([^市]+市)/);return m?m[1]+m[2]:a.slice(0,8);})()}</span></div>
                 <div class="info-row"><span class="label">物流</span><span>${d.logistics}</span></div>
-            `;
+            </div>`;
+
+            document.getElementById('orderDetailModalBody').innerHTML = html;
         }
         document.getElementById('orderDetailModal').classList.add('show');
     }
@@ -5481,12 +5553,18 @@
             return;
         }
 
-            url = '/api/inventory?tab=' + _invTab;
+        let url = '/api/inventory?tab=' + _invTab;
         if (ptype) url += '&type=' + encodeURIComponent(ptype);
         if (search) url += '&search=' + encodeURIComponent(search);
         if (l) url += '&length=' + encodeURIComponent(l);
         if (w) url += '&width=' + encodeURIComponent(w);
         if (h) url += '&height=' + encodeURIComponent(h);
+
+        // 显示聚水潭面板
+        const jstPanel = document.getElementById('invJstPanel');
+        const jstBody = document.getElementById('invJstBody');
+        jstPanel.style.display = 'block';
+        jstBody.innerHTML = '⏳ 查询聚水潭库存中...';
 
         try {
             const res = await fetch(url);
@@ -5504,27 +5582,98 @@
             }
 
             if (filtered.length > 0) {
-                    html = `<div style="color:#52c41a;font-weight:600;margin-bottom:8px;">✅ 找到${filtered.length}个结果` + (matVal ? `（材质筛选）` : '') + `</div>`;
+                    let html = `<div style="color:#52c41a;font-weight:600;margin-bottom:8px;">✅ 找到${filtered.length}个结果` + (matVal ? '（材质筛选）' : '') + `</div>`;
                 filtered.forEach(item => {
                     const stock = item.stock || 0;
                     const stockColor = stock <= 0 ? '#e94560' : (stock < 50 ? '#d48806' : '#52c41a');
                     html += `
                     <div style="background:#f6ffed;border:1px solid #b7eb8f;border-radius:8px;padding:10px;margin-bottom:6px;">
-                        <div style="font-weight:600;">${item.name} <span style="font-size:16px;font-weight:800;color:${stockColor};margin-left:8px;">${stock}</span><span style="font-size:11px;color:#999;">个</span></div>
+                        <div style="font-weight:600;">${item.name} <span style="font-size:22px;font-weight:800;color:${stockColor};margin-left:8px;">${stock}</span><span style="font-size:11px;color:#999;">个</span></div>
                         <div style="font-size:12px;color:#666;">${item.material || ''} ${item.length ? ('｜'+item.length+'×'+item.width+'×'+item.height+' cm') : ''}${item.location ? ' ｜ 📍'+item.location : ''}</div>
                         ${item.remark ? `<div style="font-size:11px;color:#999;">📝 ${item.remark}</div>` : ''}
                     </div>`;
                 });
                 resultEl.innerHTML = html;
+
+                // 并排查聚水潭库存 — 用商品名搜索聚水潭商品
+                const skuIds = [];
+                filtered.forEach(item => {
+                    if (item.name) skuIds.push(item.name.trim());
+                });
+                if (skuIds.length > 0) {
+                    try {
+                        const jstRes = await fetch('/api/jst/batch-inventory', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({sku_ids: skuIds.slice(0, 200).join(',')})
+                        });
+                        const jstData = await jstRes.json();
+                        if (jstData.ok && jstData.inventory) {
+                            renderJstInventory(jstData.inventory, filtered);
+                        } else {
+                            jstBody.innerHTML = '<div style="color:#888;">聚水潭无库存数据或未配置</div>';
+                        }
+                    } catch(e) {
+                        jstBody.innerHTML = `<div style="color:#e94560;">❌ 查询聚水潭失败: ${e.message}</div>`;
+                    }
+                } else {
+                    jstBody.innerHTML = '<div style="color:#888;">聚水潭无匹配商品</div>';
+                }
             } else {
                 resultEl.innerHTML = `<div style="text-align:center;padding:16px 0;">
                     <div style="font-size:32px;margin-bottom:8px;">🔍</div>
                     <div style="font-size:14px;color:#666;">未找到匹配的库存</div>
                 </div>`;
+                jstBody.innerHTML = '<div style="color:#888;">三羊本地无此商品</div>';
             }
         } catch(e) {
             resultEl.innerHTML = `<div style="color:#e94560;">❌ 查询失败: ${e.message}</div>`;
+            jstBody.innerHTML = '<div style="color:#888;">查询失败</div>';
         }
+    }
+
+    // 渲染聚水潭库存对比
+    function renderJstInventory(jstInv, localItems) {
+        const jstBody = document.getElementById('invJstBody');
+        const localMap = {};
+        localItems.forEach(item => { localMap[item.name] = item; });
+
+        let html = `<div style="display:flex;gap:6px;margin-bottom:10px;">
+            <span style="font-size:11px;background:#2563eb;color:#fff;padding:2px 8px;border-radius:4px;">三羊本地</span>
+            <span style="font-size:11px;background:#059669;color:#fff;padding:2px 8px;border-radius:4px;">聚水潭</span>
+        </div>`;
+
+        // 按聚水潭结果展示
+        jstInv.forEach(sku => {
+            const skuId = sku.sku_id || '';
+            const qty = sku.phy_qty || sku.qty || 0;
+            const localItem = localMap[skuId];
+            const localQty = localItem ? (localItem.stock || 0) : '—';
+            const diff = (typeof localQty === 'number') ? (localQty - qty) : '—';
+            const diffColor = diff === 0 ? '#52c41a' : (diff > 0 ? '#1677ff' : '#e94560');
+            const diffIcon = diff === 0 ? '✅' : (diff > 0 ? '⬆️' : '⬇️');
+
+            html += `
+            <div style="background:#fafafa;border:1px solid #eee;border-radius:8px;padding:10px;margin-bottom:6px;">
+                <div style="font-weight:600;font-size:13px;margin-bottom:6px;">${skuId}</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;font-size:12px;">
+                    <div style="background:#eef2ff;padding:6px;border-radius:4px;text-align:center;">
+                        <div style="color:#666;">三羊</div>
+                        <div style="font-size:20px;font-weight:800;color:#2563eb;">${localQty}</div>
+                    </div>
+                    <div style="background:#ecfdf5;padding:6px;border-radius:4px;text-align:center;">
+                        <div style="color:#666;">聚水潭</div>
+                        <div style="font-size:20px;font-weight:800;color:#059669;">${qty}</div>
+                    </div>
+                    <div style="background:${diff === 0 ? '#f0fdf4' : '#fff1f2'};padding:6px;border-radius:4px;text-align:center;">
+                        <div style="color:#666;">差异</div>
+                        <div style="font-size:20px;font-weight:800;color:${diffColor};">${diffIcon} ${diff}</div>
+                    </div>
+                </div>
+            </div>`;
+        });
+
+        jstBody.innerHTML = html;
     }
 
     // ===== 出入库操作 =====
