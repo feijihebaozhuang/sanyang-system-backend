@@ -320,9 +320,9 @@ def do_sanyang():
 
     # [8] 特硬牛皮色【长*宽】N*N;【高】NcmN个一组 → 外径-特硬
     CONFIG['特硬牛皮色【长*宽】N*N;【高】NcmN个一组'] = ('外径', '特硬',
-        lambda s: (extract_num(s.split('【高】')[1]),
-                   extract_num(s.split('【长*宽】')[1].split('*')[0]),
-                   extract_num(s.split('*')[1].split(';')[0].split('）')[0].split(')')[0])))
+        lambda s: (extract_num(s.split('【长*宽】')[1].split('*')[0]),
+                   extract_num(s.split('*')[1].split(';')[0]),
+                   extract_num(s.split('【高】')[1])))
 
     # [9] 宽高N*N（牛皮色）;长NcmSN级硬度 → 外径-特硬
     CONFIG['宽高N*N（牛皮色）;长NcmSN级硬度'] = ('外径', '特硬',

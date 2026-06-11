@@ -1,0 +1,209 @@
+﻿diff --git a/app_production.py b/app_production.py
+index ce1c1d9..a6c3831 100644
+--- a/app_production.py
++++ b/app_production.py
+@@ -815,7 +815,14 @@ def scan_order_detail(order_id):
+     )
+     if not order:
+         return jsonify({"success": False, "error": f"鏈壘鍒拌鍗?{query}"})
+-    return jsonify({"success": True, "order": order})
++    # 闄勫姞宸ュ簭瀛楁瀹氫箟锛堟瘡涓伐搴忕殑棰濆濉啓瀛楁锛?
++    step_fields = {}
++    step_fields_raw = ph.get_all_step_fields(process_tree)
++    for s in (order.get("flow") or []):
++        name = s.get("step") or s.get("name") or ""
++        if name in step_fields_raw:
++            step_fields[name] = step_fields_raw[name]
++    return jsonify({"success": True, "order": order, "step_fields": step_fields})
+ 
+ 
+ # ==================== 鎵爜鎶ュ伐 ====================
+@@ -875,6 +882,7 @@ def scan_report():
+         step,
+         worker,
+         _orders_cache_path(),
++        extra_fields=data.get('extra_fields'),
+     )
+     if not result.get("success"):
+         return jsonify({"success": False, "message": result.get("msg", "鎶ュ伐澶辫触")})
+@@ -4441,6 +4449,22 @@ body {{ font-family:-apple-system,sans-serif; background:#f5f6fa; min-height:100
+ .result.ok {{ display:block; background:#f6ffed; border:1px solid #b7eb8f; color:#52c41a; }}
+ .result.err {{ display:block; background:#fff2f0; border:1px solid #ffccc7; color:#e94560; }}
+ .back-btn {{ display:inline-block; margin-top:16px; padding:8px 24px; background:#f0f0f0; border:none; border-radius:8px; font-size:13px; color:#666; cursor:pointer; text-decoration:none; }}
++/* 瀛楁濉啓寮圭獥 */
++.modal-overlay {{ display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:1000; justify-content:center; align-items:center; }}
++.modal-overlay.show {{ display:flex; }}
++.modal-box {{ background:#fff; border-radius:16px; padding:24px; width:90%; max-width:380px; max-height:80vh; overflow-y:auto; text-align:left; }}
++.modal-title {{ font-size:17px; font-weight:700; color:#1a1a2e; margin-bottom:16px; text-align:center; }}
++.field-group {{ margin-bottom:14px; }}
++.field-label {{ display:block; font-size:13px; color:#666; margin-bottom:4px; font-weight:500; }}
++.field-label .required {{ color:#e94560; margin-left:2px; }}
++.field-input {{ width:100%; padding:10px 12px; border:1.5px solid #d9d9d9; border-radius:8px; font-size:15px; outline:none; transition:border 0.2s; }}
++.field-input:focus {{ border-color:#1677ff; }}
++.modal-actions {{ display:flex; gap:10px; margin-top:20px; }}
++.modal-actions button {{ flex:1; padding:12px; border:none; border-radius:10px; font-size:15px; font-weight:600; cursor:pointer; }}
++.modal-cancel {{ background:#f0f0f0; color:#666; }}
++.modal-confirm {{ background:#1677ff; color:#fff; }}
++.modal-confirm:active {{ transform:scale(0.97); }}
++.field-hint {{ font-size:11px; color:#bbb; margin-top:2px; }}
+ </style>
+ </head>
+ <body>
+@@ -4453,9 +4477,25 @@ body {{ font-family:-apple-system,sans-serif; background:#f5f6fa; min-height:100
+     <div style="font-size:11px;color:#bbb;margin-top:12px;">璇烽€夋嫨瑕佹姤宸ョ殑宸ュ簭</div>
+ </div>
+ <a class="back-btn" href="javascript:history.back()">鈫?杩斿洖</a>
++
++<!-- 瀛楁濉啓寮圭獥 -->
++<div id="fieldModal" class="modal-overlay">
++  <div class="modal-box">
++    <div class="modal-title" id="modalTitle">濉啓鎶ュ伐鏁版嵁</div>
++    <div id="modalFields"></div>
++    <div class="modal-actions">
++      <button class="modal-cancel" onclick="closeFieldModal()">鍙栨秷</button>
++      <button class="modal-confirm" onclick="confirmFieldSubmit()">纭鎶ュ伐</button>
++    </div>
++  </div>
++</div>
++
+ <script>
+ const ORDER_ID = "{order_id}";
+ let WORKER = "";
++let CURRENT_STEP = "";
++let CURRENT_FIELDS = [];
++let STEP_FIELDS_MAP = {{}};
+ 
+ // 鍏堣幏鍙栧彲閫夋搷浣滀汉鍒楄〃
+ fetch('/api/scan_workers?step=').then(r=>r.json()).then(data => {{
+@@ -4477,11 +4517,15 @@ fetch('/api/scan_workers?step=').then(r=>r.json()).then(data => {{
+ function loadSteps() {{
+ if (!WORKER) {{ document.body.innerHTML = '<div style="text-align:center;padding:40px;color:#e94560;">鉂?闇€瑕佸鍚嶆墠鑳芥姤宸?/div>'; return; }}
+ 
+-// 鑾峰彇璁㈠崟宸ュ簭
+-fetch('/api/production_orders').then(r=>r.json()).then(data => {{
+-    const orders = data.orders || [];
+-    const order = orders.find(o => o.inner_id === ORDER_ID);
+-    const steps = order ? (order.flow || []) : [];
++// 浣跨敤 scan_order API锛堝惈 step_fields锛?
++fetch('/api/scan_order/' + encodeURIComponent(ORDER_ID)).then(r=>r.json()).then(data => {{
++    if (!data.success) {{
++        document.getElementById('stepList').innerHTML = '<div class="info">' + (data.error || '鏈壘鍒拌鍗?) + '</div>';
++        return;
++    }}
++    const order = data.order || {{}};
++    const steps = order.flow || [];
++    STEP_FIELDS_MAP = data.step_fields || {{}};
+     const container = document.getElementById('stepList');
+     if (steps.length === 0) {{
+         container.innerHTML = '<div class="info">璇ヨ鍗曟殏鏃犲伐搴忔暟鎹?/div>';
+@@ -4489,39 +4533,103 @@ fetch('/api/production_orders').then(r=>r.json()).then(data => {{
+     }}
+     steps.forEach((s, i) => {{
+         const done = s.done;
++        const name = s.step || s.name || '';
+         const btn = document.createElement('button');
+         btn.className = 'step-btn ' + (done ? 'btn-gray' : 'btn-primary');
+-        btn.textContent = (done ? '鉁?' : '') + s.step + (done ? ' (宸插畬鎴?' : '');
++        btn.textContent = (done ? '鉁?' : '') + name + (done ? ' (宸插畬鎴?' : '');
+         btn.disabled = done;
+         if (!done) {{
+-            btn.onclick = () => submitReport(i, s.step);
++            btn.onclick = () => openStepSubmit(name);
+         }}
+         container.appendChild(btn);
+     }});
+ }}).catch(e => {{
+     document.getElementById('stepList').innerHTML = '<div class="info">鍔犺浇澶辫触: ' + e.message + '</div>';
+ }});
++}}
+ 
+-async function submitReport(stepIndex, stepName) {{
++function openStepSubmit(stepName) {{
++    CURRENT_STEP = stepName;
++    const fields = STEP_FIELDS_MAP[stepName] || [];
++    CURRENT_FIELDS = fields;
++
++    if (fields.length === 0) {{
++        // 娌℃湁棰濆瀛楁锛岀洿鎺ユ彁浜?
++        doSubmit(stepName, {{}});
++        return;
++    }}
++
++    // 鏄剧ず寮圭獥
++    document.getElementById('modalTitle').textContent = stepName + ' - 濉啓鏁版嵁';
++    const container = document.getElementById('modalFields');
++    container.innerHTML = '';
++    fields.forEach((f, i) => {{
++        const key = f.key || 'field_' + i;
++        const label = f.label || key;
++        const required = f.required ? '<span class="required">*</span>' : '';
++        const type = f.type || 'text';
++        const inputType = type === 'number' ? 'number' : (type === 'text' ? 'text' : type);
++        const hint = f.hint ? '<div class="field-hint">' + f.hint + '</div>' : '';
++        container.innerHTML +=
++            '<div class="field-group">' +
++            '<label class="field-label" for="fld_' + key + '">' + label + required + '</label>' +
++            '<input class="field-input" id="fld_' + key + '" type="' + inputType + '" data-key="' + key + '" placeholder="璇疯緭鍏? + label + '" step="any">' +
++            hint +
++            '</div>';
++    }});
++    document.getElementById('fieldModal').classList.add('show');
++}}
++
++function closeFieldModal() {{
++    document.getElementById('fieldModal').classList.remove('show');
++}}
++
++function confirmFieldSubmit() {{
++    const extra = {{}};
++    let valid = true;
++    CURRENT_FIELDS.forEach(f => {{
++        const el = document.getElementById('fld_' + f.key);
++        if (!el) return;
++        const val = el.value.trim();
++        if (f.required && !val) {{
++            valid = false;
++            el.style.borderColor = '#e94560';
++        }} else {{
++            el.style.borderColor = '';
++            if (val) extra[f.key] = val;
++        }}
++    }});
++    if (!valid) {{
++        alert('璇峰～鍐欐墍鏈夊繀濉瓧娈?);
++        return;
++    }}
++    closeFieldModal();
++    doSubmit(CURRENT_STEP, extra);
++}}
++
++async function doSubmit(stepName, extraFields) {{
+     const resultEl = document.getElementById('result');
+     resultEl.className = 'result';
+     resultEl.textContent = '鎻愪氦涓?..';
+     resultEl.style.display = 'block';
+     try {{
++        const body = {{order_id: ORDER_ID, step: stepName, worker: WORKER}};
++        if (Object.keys(extraFields).length > 0) {{
++            body.extra_fields = extraFields;
++        }}
+         const res = await fetch('/api/scan_report', {{
+             method: 'POST',
+             headers: {{'Content-Type': 'application/json'}},
+-            body: JSON.stringify({{order_id: ORDER_ID, step: stepName, worker: WORKER}})
++            body: JSON.stringify(body)
+         }});
+         const data = await res.json();
+         if (data.success) {{
+             resultEl.className = 'result ok';
+             resultEl.textContent = '鉁?' + (data.message || '鎶ュ伐鎴愬姛');
+-            // 鍒锋柊椤甸潰
+             setTimeout(() => location.reload(), 1500);
+         }} else {{
+             resultEl.className = 'result err';
+-            resultEl.textContent = '鉂?' + (data.error || '鎶ュ伐澶辫触');
++            resultEl.textContent = '鉂?' + (data.message || data.error || '鎶ュ伐澶辫触');
+         }}
+     }} catch(e) {{
+         resultEl.className = 'result err';
+

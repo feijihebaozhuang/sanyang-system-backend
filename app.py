@@ -1009,8 +1009,36 @@ def employees():
             real_emp_names.add(emp_name)
     # 只过滤掉纯system用户的员工名
     exclude_names = system_emp_names - real_emp_names
-    filtered = [e for e in _employees_master_list if e["name"] not in exclude_names]
-    return jsonify({"employees": filtered})
+    raw_list = [e for e in _employees_master_list if e["name"] not in exclude_names]
+
+    # 构建主管映射表：同一 dept+group 下找到 position 含"主管"的员工
+    supervisor_map = {}  # (dept, group) -> {name, phone}
+    for emp in _employees_master_list:
+        if '主管' in (emp.get('position', '') or ''):
+            key = (emp.get('dept', ''), emp.get('group', ''))
+            supervisor_map[key] = {'name': emp['name'], 'phone': emp.get('phone', '')}
+
+    # 给每个员工加上主管信息
+    for emp in raw_list:
+        dept = emp.get('dept', '')
+        group = emp.get('group', '')
+        # 先找同组主管
+        sup = supervisor_map.get((dept, group))
+        # 如果自己就是主管，不设主管（或设为上级主管）
+        if sup and sup['name'] == emp['name']:
+            # 找同 dept 的管理层主管
+            sup = supervisor_map.get((dept, '管理层'))
+        # 如果还没找到，找同 dept 的管理层主管
+        if not sup:
+            sup = supervisor_map.get((dept, '管理层'))
+        if sup:
+            emp['supervisor_name'] = sup['name']
+            emp['supervisor_phone'] = sup['phone']
+        else:
+            emp['supervisor_name'] = ''
+            emp['supervisor_phone'] = ''
+
+    return jsonify({"employees": raw_list})
 
 
 # ==================== 员工编辑API ====================
@@ -4288,9 +4316,6 @@ def _sync_orders_task():
 import threading as _th
 _sync_thread = _th.Thread(target=_sync_orders_task, daemon=True)
 _sync_thread.start()
-print('[订单同步] 后台同步线程已启动（每5分钟同步一次）')
 
 if __name__ == '__main__':
-    print("🏭 飞机盒智能生产管理系统启动中...")
-    print("📡 http://0.0.0.0:3001")
     app.run(host='0.0.0.0', port=3005, threaded=True)

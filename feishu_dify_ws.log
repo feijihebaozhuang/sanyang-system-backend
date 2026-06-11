@@ -1,0 +1,70 @@
+Starting Feishu-Dify WS bridge...
+Workdir: D:\Desktop\sanyang-system
+App ID: cli_a96c15d3dcf8dbcd
+Dify API: http://127.0.0.1/v1
+[info]: [ 'client ready' ]
+[feishu] Bot open_id 获取成功 { openId: 'ou_209d7e86c8e05a7dc9b7badaa6e3fe3d' }
+[info]: [ 'event-dispatch is ready' ]
+[feishu] [lark.ws] {
+  msg: [
+    [
+      '[ws]',
+      'receive events or callbacks through persistent connection only available in self-build & Feishu app, Configured in:\n' +
+        '        Developer Console(开发者后台)\n' +
+        '          ->\n' +
+        '        Events and Callbacks(事件与回调)\n' +
+        '          ->\n' +
+        '        Mode of event/callback subscription(订阅方式)\n' +
+        '          ->\n' +
+        '        Receive events/callbacks through persistent connection(使用 长连接 接收事件/回调)'
+    ]
+  ]
+}
+[feishu] 飞书 WebSocket 长连接已启动 { appIdPrefix: 'cli_a96c...' }
+[feishu] 飞书侧请选择「使用长连接接收事件」，无需配置请求地址 
+[feishu] 飞书服务已初始化 {
+  appId: 'cli_a96c...',
+  botOpenId: 'ou_209d7e86c8e05a7dc9b7badaa6e3fe3d',
+  transport: 'ws'
+}
+Bridge entered running state.
+[feishu] [lark.ws] { msg: [ [ '[ws]', 'ws client ready' ] ] }
+[2026-05-29T03:21:11.044Z] Starting Feishu-Dify WS bridge...
+[2026-05-29T03:21:11.045Z] Workdir: D:\Desktop\sanyang-system
+[2026-05-29T03:21:11.047Z] App ID: cli_a96c15d3dcf8dbcd
+[2026-05-29T03:21:11.048Z] Dify API: http://127.0.0.1/v1
+[2026-05-29T03:21:11.436Z] Bridge entered running state.
+[2026-05-29T03:28:20.042Z] Starting Feishu-Dify WS bridge...
+[2026-05-29T03:28:20.044Z] Workdir: D:\Desktop\sanyang-system
+[2026-05-29T03:28:20.045Z] WARN: cannot load config: Unexpected token '﻿', "﻿{
+    "a"... is not valid JSON
+[2026-05-29T03:28:53.216Z] Starting Feishu-Dify WS bridge...
+[2026-05-29T03:28:53.218Z] Workdir: D:\Desktop\sanyang-system
+[2026-05-29T03:28:53.219Z] Config loaded from: D:\Desktop\sanyang-system/scripts/feishu_cursor/feishu-dify-config.json
+[2026-05-29T03:28:53.220Z] App ID: cli_a96c15d3dcf8dbcd
+[2026-05-29T03:29:47.902Z] Starting Feishu-Dify WS bridge...
+[2026-05-29T03:29:47.903Z] Workdir: D:\Desktop\sanyang-system
+[2026-05-29T03:29:47.904Z] Config loaded from: D:\Desktop\sanyang-system/scripts/feishu_cursor/feishu-dify-config.json
+[2026-05-29T03:29:47.905Z] App ID: cli_a96c15d3dcf8dbcd
+[2026-05-29T03:30:06.821Z] Starting Feishu-Dify WS bridge...
+[2026-05-29T03:30:06.824Z] Workdir: D:\Desktop\sanyang-system
+[2026-05-29T03:30:06.826Z] Config loaded from: D:\Desktop\sanyang-system/scripts/feishu_cursor/feishu-dify-config.json
+[2026-05-29T03:30:06.827Z] App ID: cli_a96c15d3dcf8dbcd
+[2026-05-29T03:30:06.828Z] Dify API: http://127.0.0.1/v1
+[2026-05-29T03:30:07.330Z] Bridge entered running state.
+[2026-05-29T03:39:35.296Z] Starting Feishu-Dify WS bridge...
+[2026-05-29T03:39:35.297Z] Workdir: D:\Desktop\sanyang-system
+[2026-05-29T03:39:35.298Z] Config loaded from: D:\Desktop\sanyang-system/scripts/feishu_cursor/feishu-dify-config.json
+[2026-05-29T03:39:35.299Z] App ID: cli_a96c15d3dcf8dbcd
+[2026-05-29T03:39:35.300Z] Dify API: http://127.0.0.1/v1
+[2026-05-29T03:39:35.751Z] Bridge entered running state.
+[2026-05-29T08:59:50.927Z] WS msg from=? chat=oc_c61b0501cc3fb6fbffd96a7b6b1fb8d9 preview=我 配置好了
+[2026-05-29T08:59:51.869Z] Result: {"success":true,"reply":"发送失败：HTTP 400: {\"code\":99992351,\"msg\":\"The request you send is not a valid {open_id} or not exists, and the example value is {ou_da5****************dfe}. Invalid ids: [unknown] . Please see field_viol"}
+[2026-05-29T10:56:23.396Z] WS msg from=? chat=oc_c61b0501cc3fb6fbffd96a7b6b1fb8d9 preview=帮我看看  三羊系统
+[2026-05-29T10:56:24.378Z] Result: {"success":true,"reply":"发送失败：HTTP 400: {\"code\":99992351,\"msg\":\"The request you send is not a valid {open_id} or not exists, and the example value is {ou_da5****************dfe}. Invalid ids: [unknown] . Please see field_viol"}
+[2026-05-29T11:01:10.909Z] WS msg from=? chat=oc_c61b0501cc3fb6fbffd96a7b6b1fb8d9 preview=我还是觉得 这个系统   速度与同步性 太差   点进页面没有秒开 0加载 也没有实时同步快麦订单。 怎么样才能像快麦聚
+[2026-05-29T11:01:11.616Z] Result: {"success":true,"reply":"发送失败：HTTP 400: {\"code\":99992351,\"msg\":\"The request you send is not a valid {open_id} or not exists, and the example value is {ou_da5****************dfe}. Invalid ids: [unknown] . Please see field_viol"}
+[2026-05-29T11:08:44.624Z] WS msg from=? chat=oc_c61b0501cc3fb6fbffd96a7b6b1fb8d9 preview=咋不回话
+[2026-05-29T11:08:46.615Z] Result: {"success":true,"reply":"发送失败：HTTP 400: {\"code\":99992351,\"msg\":\"The request you send is not a valid {open_id} or not exists, and the example value is {ou_da5****************dfe}. Invalid ids: [unknown] . Please see field_viol"}
+[2026-05-29T11:31:50.489Z] WS msg from=? chat=oc_c61b0501cc3fb6fbffd96a7b6b1fb8d9 preview=？
+[2026-05-29T11:31:51.157Z] Result: {"success":true,"reply":"发送失败：HTTP 400: {\"code\":99992351,\"msg\":\"The request you send is not a valid {open_id} or not exists, and the example value is {ou_da5****************dfe}. Invalid ids: [unknown] . Please see field_viol"}

@@ -1,0 +1,4 @@
+飞书-Dify 本机桥接 http://127.0.0.1:5099/api/webhook/feishu
+enabled=True  dify=http://127.0.0.1/v1
+ * Serving Flask app 'feishu_dify_local'
+ * Debug mode: off

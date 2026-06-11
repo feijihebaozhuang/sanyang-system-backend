@@ -1,0 +1,12 @@
+---
+description: 配置 JSON 与部署铁律——admin 管 JSON，代码管逻辑，部署不覆盖 JSON
+alwaysApply: true
+---
+
+# 配置 JSON 铁律
+
+- **材料映射、报价参数、员工/权限、生产工序、店铺配置** 等：admin 在页面修改 → 持久化到服务器上的 **JSON**（如 `data.json`、`quote_data.json`、`shop_config.json`）。
+- **Python 代码**：只读 JSON；启动时仅 `merge_missing_keys` 补缺失键，**禁止**用硬编码或默认值覆盖 JSON 里已有内容。
+- **禁止** `hardcoded_config.apply_hardcoded_permission_data` 或等价逻辑在启动/`persist` 时覆盖 `permission_data`。
+- **部署**（`deploy.sh`）：只同步 `.py`（及 `requirements.txt`），**不同步、不删除** 服务器上的 `*.json`。
+- 材料映射 API 必须读写 `data.json` 的 `permission_data.production_material_mapping`，不得返回 400「请改代码」。
