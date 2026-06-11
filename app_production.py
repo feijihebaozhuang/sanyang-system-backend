@@ -6285,6 +6285,226 @@ def production_sku_summary():
     })
 
 
+@app.route('/api/recon/summary')
+def recon_summary():
+    """三方对账全量聚合：三羊库存+刀模 vs 聚水潭库存 vs 快麦商品"""
+    from collections import defaultdict
+    
+    # 1. 三羊库存
+    inv_data = load_inventory_cached()
+    inv_items = inv_data.get('finished', [])
+    
+    san_map = {}
+    for item in inv_items:
+        name = (item.get('name') or '').strip()
+        if not name:
+            continue
+        san_map[name] = {
+            'stock': item.get('stock', 0) or 0,
+            'stock_qty': item.get('qty', 0) or 0,
+            'product_type': item.get('product_type', ''),
+            'material': item.get('material', ''),
+            'spec': item.get('spec', ''),
+            'location': item.get('location', ''),
+        }
+    
+    # 2. 刀模库
+    dm_data = load_dimoldb(force=False)
+    dm_map = {}
+    for dm in dm_data:
+        name = (dm.get('name') or '').strip()
+        if not name:
+            continue
+        dm_map[name] = {
+            'has_dimoldb': True,
+            'dm_id': dm.get('id', ''),
+            'dm_type': dm.get('product_type', ''),
+            'dm_spec': dm.get('production_spec', ''),
+            'dm_stock': dm.get('stock', 0) or 0,
+        }
+    
+    # 合并三羊数据
+    all_names = set(san_map.keys()) | set(dm_map.keys())
+    san_full = {}
+    for name in all_names:
+        s = san_map.get(name, {})
+        d = dm_map.get(name, {})
+        san_full[name] = {
+            'stock': s.get('stock', 0),
+            'stock_qty': s.get('stock_qty', 0),
+            'product_type': s.get('product_type', d.get('dm_type', '')),
+            'material': s.get('material', ''),
+            'spec': s.get('spec', d.get('dm_spec', '')),
+            'location': s.get('location', ''),
+            'has_dimoldb': d.get('has_dimoldb', False),
+            'dm_id': d.get('dm_id', ''),
+        }
+    
+    # 3. 快麦商品（从km_sku_map）
+    try:
+        import km_sku_map_store as kms
+        km_rows = kms.load_all()
+    except Exception:
+        km_rows = {}
+    
+    km_map = {}
+    for outer_id, row in km_rows.items():
+        name = (row.get('product_name') or row.get('sku_name') or outer_id or '').strip()
+        if not name:
+            continue
+        km_map[name] = {
+            'km_outer_id': outer_id,
+            'km_spec': row.get('spec', ''),
+            'km_product_type': row.get('product_type', ''),
+            'km_weight': row.get('weight', ''),
+        }
+    
+    # 4. 聚水潭库存（分批查询，最多前5000个SKU）
+    jst_map = {}
+    all_sku_ids = list(san_full.keys())[:2000]
+    jst_configured = False
+    try:
+        jst_configured = jst.configured()
+    except Exception:
+        jst_configured = False
+    
+    if jst_configured and all_sku_ids:
+        try:
+            batch_size = 200
+            for i in range(0, len(all_sku_ids), batch_size):
+                batch = ','.join(all_sku_ids[i:i+batch_size])
+                inv = jst.inventory_query(sku_ids=batch)
+                for item in inv:
+                    sku = (item.get('sku_id') or '').strip()
+                    if sku:
+                        jst_map[sku] = {
+                            'jst_qty': item.get('qty', 0) or 0,
+                            'jst_phy_qty': item.get('phy_qty', 0) or 0,
+                            'jst_lock': item.get('order_lock', 0) or 0,
+                            'jst_sku_name': item.get('sku_name', ''),
+                        }
+        except Exception:
+            pass
+    
+    # 5. 生产中数量（从production_data表）
+    prod_map = {}
+    try:
+        cur = get_db().cursor()
+        cur.execute("""
+            SELECT 产品名称, SUM(数量) as total_qty, 状态
+            FROM production_data
+            WHERE 状态 NOT IN ('已完成','已取消')
+            GROUP BY 产品名称, 状态
+        """)
+        for row in cur.fetchall():
+            name = (row.get('产品名称') or '').strip()
+            if not name:
+                continue
+            if name not in prod_map:
+                prod_map[name] = {'in_production': 0, 'pending': 0}
+            status = (row.get('状态') or '').strip()
+            qty = row.get('total_qty', 0) or 0
+            if status in ('生产中', '生产'):
+                prod_map[name]['in_production'] += qty
+            else:
+                prod_map[name]['pending'] += qty
+    except Exception:
+        pass
+    
+    # 6. 快麦待发货订单量（从 order_json 里的 items 解析 outer_id）
+    km_order_map = {}
+    try:
+        cur = get_db().cursor()
+        cur.execute("""
+            SELECT order_json
+            FROM order_cache_orders
+            WHERE order_status IN ('WAIT_EXPRESS_PRINT','WAIT_SELLER_SEND','WAIT_BUYER_PAY','WAIT_CONFIRM')
+        """)
+        for row in cur.fetchall():
+            try:
+                j = json.loads(row['order_json'])
+            except Exception:
+                continue
+            items = j.get('items', [])
+            for item in items:
+                oid = (item.get('skuOuterId') or '').strip()
+                if not oid:
+                    continue
+                qty = item.get('qty', 0) or 0
+                km_order_map[oid] = km_order_map.get(oid, 0) + qty
+    except Exception:
+        pass
+    
+    # 7. 合并最终结果
+    all_keys = set(san_full.keys()) | set(km_order_map.keys()) | set(prod_map.keys()) | set(jst_map.keys())
+    result = []
+    for key in all_keys:
+        s = san_full.get(key, {})
+        k = km_map.get(key, {})
+        p = prod_map.get(key, {})
+        ko = km_order_map.get(key, 0)
+        j = jst_map.get(key, {})
+        ko_val = ko if isinstance(ko, int) else 0
+        has_data = any([
+            s.get('stock', 0) > 0,
+            s.get('has_dimoldb', False),
+            p.get('in_production', 0) > 0,
+            p.get('pending', 0) > 0,
+            ko_val > 0,
+            j.get('jst_qty', 0) > 0,
+            j.get('jst_phy_qty', 0) > 0,
+        ])
+        if not has_data:
+            continue
+        
+        result.append({
+            'name': key,
+            # 三羊
+            'stock': s.get('stock', 0),
+            'has_dimoldb': s.get('has_dimoldb', False),
+            'product_type': s.get('product_type', ''),
+            'spec': s.get('spec', ''),
+            'material': s.get('material', ''),
+            'location': s.get('location', ''),
+            # 快麦
+            'km_outer_id': k.get('km_outer_id', ''),
+            'km_spec': k.get('km_spec', ''),
+            'km_product_type': k.get('km_product_type', ''),
+            'km_weight': k.get('km_weight', ''),
+            # 聚水潭
+            'jst_qty': j.get('jst_qty', 0),
+            'jst_phy_qty': j.get('jst_phy_qty', 0),
+            # 生产
+            'in_production': p.get('in_production', 0),
+            'pending': p.get('pending', 0),
+            # 快麦订单
+            'km_order_qty': ko if isinstance(ko, int) else ko.get('km_order_qty', 0),
+        })
+    
+    # 按名称排序
+    result.sort(key=lambda x: x['name'])
+    
+    # 汇总统计
+    total_items = len(result)
+    total_stock = sum(r['stock'] for r in result)
+    total_jst = sum(r['jst_qty'] for r in result)
+    total_prod = sum(r['in_production'] for r in result)
+    total_km_order = sum(r['km_order_qty'] for r in result)
+    
+    return jsonify({
+        'ok': True,
+        'total': total_items,
+        'data': result,
+        'stats': {
+            'items': total_items,
+            'san_stock': total_stock,
+            'jst_stock': total_jst,
+            'in_production': total_prod,
+            'km_orders': total_km_order,
+        }
+    })
+
+
 if __name__ == '__main__':
     print("🏭 飞机盒智能生产管理系统启动中...")
     print("📡 http://0.0.0.0:3002")
