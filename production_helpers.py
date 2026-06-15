@@ -551,6 +551,7 @@ def build_production_orders(
         orders_data.append(
             {
                 "inner_id": oid,
+                "tid": o.get("tid") or o.get("platform_tid") or "",
                 "store": o.get("shop_name") or "",
                 "province": o.get("receiver_province") or (parts[0] if parts else ""),
                 "city": o.get("receiver_city") or (parts[1] if len(parts) > 1 else ""),
@@ -596,6 +597,7 @@ def build_production_order_one(
     ex = order_extra.get(oid, {})
     return {
         "inner_id": oid,
+        "tid": o.get("tid") or o.get("platform_tid") or "",
         "store": o.get("shop_name") or "",
         "province": o.get("receiver_province") or (parts[0] if parts else ""),
         "city": o.get("receiver_city") or (parts[1] if len(parts) > 1 else ""),
