@@ -1115,16 +1115,18 @@
                 <span style="background:#fff;padding:4px 12px;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,0.05);">三羊库存: <strong id="reconSanSum" style="color:#2563eb;">0</strong></span>
                 <span style="background:#fff;padding:4px 12px;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,0.05);">聚水潭: <strong id="reconJstSum" style="color:#059669;">0</strong></span>
                 <span style="background:#fff;padding:4px 12px;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,0.05);">生产中: <strong id="reconProdSum" style="color:#9333ea;">0</strong></span>
+                <span style="background:#fff;padding:4px 12px;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,0.05);">快麦待发: <strong id="reconKmSum" style="color:#d97706;">0</strong></span>
             </div>
 
             <!-- 表头 -->
-            <div style="display:grid;grid-template-columns:2.5fr 1fr 1fr 1fr 1fr 0.8fr;gap:6px;padding:8px 12px;background:#fff;border-radius:8px 8px 0 0;box-shadow:0 1px 3px rgba(0,0,0,0.05);font-size:11px;font-weight:600;color:#666;border-bottom:2px solid #e0e7ff;margin-bottom:4px;">
-                <div>商品</div>
+            <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr 1fr 0.8fr;gap:4px;padding:8px 10px;background:#fff;border-radius:8px 8px 0 0;box-shadow:0 1px 3px rgba(0,0,0,0.05);font-size:10px;font-weight:600;color:#666;border-bottom:2px solid #e0e7ff;margin-bottom:4px;">
+                <div>商品 <span style="color:#999;font-weight:400;">/ 规格</span></div>
                 <div style="text-align:center;">三羊 <span style="color:#999;font-weight:400;">库存</span></div>
                 <div style="text-align:center;">聚水潭 <span style="color:#999;font-weight:400;">库存</span></div>
                 <div style="text-align:center;">三羊 <span style="color:#999;font-weight:400;">生产中</span></div>
-                <div style="text-align:center;">三羊 <span style="color:#999;font-weight:400;">已完成</span></div>
+                <div style="text-align:center;">快麦 <span style="color:#999;font-weight:400;">待发</span></div>
                 <div style="text-align:center;">状态</div>
+                <div style="text-align:center;color:#999;font-weight:400;">规格</div>
             </div>
             <div id="reconList" style="min-height:200px;">
                 <div style="text-align:center;padding:60px 0;color:#999;">输入商品名，点查询</div>
@@ -1825,11 +1827,12 @@
             Promise.all([
                 loadPermissions().catch(e => console.error('权限加载失败:', e)),
                 new Promise(r => { restorePageAfterLogin(); r(); }),
-            }]).catch(e => console.error('登录后初始化失败:', e));
+            ]).catch(e => console.error('登录后初始化失败:', e));
         } catch (e) {
             console.error('checkLogin:', e);
             overlay.style.display = 'flex';
         }
+    }
 
     // ===== 加载权限数据（通过 /api/my_permissions 一次获取，localStorage 缓存 60s）=====
     const _PERM_CACHE_KEY = '_sanyang_perm_cache';
@@ -2753,11 +2756,11 @@
         const orderId = input.value.trim();
         if (!orderId) { alert('请输入内部单号'); return; }
         
-        // 查找订单的下一道工序
-        const order = allProdOrders.find(o => o.inner_id === orderId);
+        // 查找订单的下一道工序 —— 支持 so_id 或 tid
+        const order = allProdOrders.find(o => o.inner_id === orderId || o.tid === orderId);
         if (!order) {
-            document.getElementById('scanResult').style.display = 'block';
-            document.getElementById('scanResult').innerHTML = `<div style="padding:16px;background:#fff2f0;border:1px solid #ffccc7;border-radius:8px;color:#e94560;">❌ 未找到订单 ${orderId}</div>`;
+            // 没找到时再尝试调后端查询（兼容旧数据）
+            findOrderFallback(orderId);
             return;
         }
         const nextStep = order.flow.find(s => !s.done);
@@ -2790,6 +2793,22 @@
         loadScanWorkers();
         // 检查该工序是否有字段
         checkStepFields('${nextStep.step}');
+    }
+
+    // 回退查询：前端找不到时调后端查
+    async function findOrderFallback(orderId) {
+        try {
+            const res = await fetch('/api/scan_order/' + encodeURIComponent(orderId));
+            const data = await res.json();
+            if (data.success && data.order && data.order.inner_id) {
+                // 用查到的 so_id 再匹配一次
+                document.getElementById('scanInput').value = data.order.inner_id;
+                scanOrder();
+                return;
+            }
+        } catch(e) {}
+        document.getElementById('scanResult').style.display = 'block';
+        document.getElementById('scanResult').innerHTML = `<div style="padding:16px;background:#fff2f0;border:1px solid #ffccc7;border-radius:8px;color:#e94560;">❌ 未找到订单 ${orderId}</div>`;
     }
 
     async function checkStepFields(stepName) {
@@ -2864,7 +2883,7 @@
         const data = await res.json();
         
         // 标记当前工序为已完成（前端本地更新）
-        const order = allProdOrders.find(o => o.inner_id === orderId);
+        const order = allProdOrders.find(o => o.inner_id === orderId || o.tid === orderId);
         let allDone = false;
         if (order) {
             const stepObj = order.flow.find(s => s.step === step);
@@ -6909,99 +6928,87 @@ async function loadRecon() {
     listEl.innerHTML = '<div style="text-align:center;padding:40px;color:#999;">⏳ 加载中...</div>';
 
     try {
-        // 1. 拉三羊所有库存
-        let url = '/api/inventory?tab=finished';
-        if (typeFilter && typeFilter !== 'diff') url += '&type=' + encodeURIComponent(typeFilter);
-        if (search) url += '&search=' + encodeURIComponent(search);
-        const invRes = await fetch(url);
-        const invData = await invRes.json();
-        if (!invData.success) throw new Error(invData.error);
-        let items = invData.data || [];
-
-        // 2. 提取SKU列表
-        const skuNames = items.filter(i => i.name).map(i => i.name.trim()).slice(0, 200);
-        if (skuNames.length === 0) {
-            listEl.innerHTML = '<div style="text-align:center;padding:60px;color:#999;">🔍 未找到库存商品</div>';
-            updateReconStats(0, 0, 0, 0);
+        const res = await fetch('/api/recon/summary');
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || '请求失败');
+        
+        let items = data.data || [];
+        const stats = data.stats || {};
+        
+        // 搜索过滤
+        if (search) {
+            const q = search.toLowerCase();
+            items = items.filter(i => i.name.toLowerCase().includes(q));
+        }
+        
+        // 类型过滤
+        if (typeFilter && typeFilter !== 'diff') {
+            items = items.filter(i => i.product_type === typeFilter || i.km_product_type === typeFilter);
+        }
+        
+        if (items.length === 0) {
+            listEl.innerHTML = '<div style="text-align:center;padding:60px;color:#999;">🔍 未找到匹配商品</div>';
+            updateReconStats(0, 0, 0, 0, 0);
             return;
         }
-
-        // 3. 并行查聚水潭+生产
-        const [jstRes, prodRes] = await Promise.all([
-            fetch('/api/jst/batch-inventory', {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({sku_ids: skuNames.join(',')})
-            }),
-            fetch('/api/production/sku-summary', {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({sku_ids: skuNames})
-            })
-        ]);
-        const jstData = await jstRes.json();
-        const prodData = await prodRes.json();
-
-        const jstMap = {};
-        if (jstData.ok) {
-            (jstData.inventory || []).forEach(s => { jstMap[s.sku_id] = s.phy_qty || s.qty || 0; });
-        }
-        const prodMap = prodData.ok ? prodData.summary : {};
-
-        // 4. 合并渲染
+        
+        // 渲染
         let html = '';
-        let sanSum = 0, jstSum = 0, prodSum = 0, doneSum = 0;
-
+        let sanSum = 0, jstSum = 0, prodSum = 0, kmOrderSum = 0;
+        
         items.forEach(item => {
-            const name = item.name.trim();
-            const sanQty = item.stock || 0;
-            const jstQty = jstMap[name] || 0;
-            const pi = prodMap[name] || {};
-            const inProd = pi.in_production || 0;
-            const comp = pi.completed || 0;
-
-            // 类型筛选：仅显示有差异
-            if (typeFilter === 'diff' && sanQty === jstQty && inProd === 0 && comp === 0) return;
-
-            sanSum += sanQty;
-            jstSum += jstQty;
-            prodSum += inProd;
-            doneSum += comp;
-
-            // 状态
-            const hasDiff = sanQty !== jstQty;
-            const statusIcon = hasDiff ? '⚠️' : '✅';
-            const statusColor = hasDiff ? '#d97706' : '#059669';
-            const statusText = hasDiff ? '库存差异' : '一致';
-
+            sanSum += item.stock || 0;
+            jstSum += item.jst_qty || 0;
+            prodSum += item.in_production || 0;
+            kmOrderSum += item.km_order_qty || 0;
+            
+            const hasDiff = (item.stock || 0) !== (item.jst_qty || 0);
+            const hasOrder = (item.km_order_qty || 0) > 0;
+            const statusIcon = hasDiff ? '⚠️' : (hasOrder ? '📦' : '✅');
+            const statusColor = hasDiff ? '#d97706' : (hasOrder ? '#2563eb' : '#059669');
+            const statusText = hasDiff ? '库存差异' : (hasOrder ? '有订单' : '一致');
+            const dmIcon = item.has_dimoldb ? '🔪' : '';
+            
             html += `
-            <div style="display:grid;grid-template-columns:2.5fr 1fr 1fr 1fr 1fr 0.8fr;gap:6px;padding:8px 12px;background:#fff;border-radius:6px;margin-bottom:3px;box-shadow:0 1px 2px rgba(0,0,0,0.04);align-items:center;font-size:13px;">
-                <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${name}</div>
-                <div style="text-align:center;font-weight:700;color:${sanQty > 0 ? '#2563eb' : '#999'};">${sanQty}</div>
-                <div style="text-align:center;font-weight:700;color:${jstQty > 0 ? '#059669' : '#999'};">${jstQty}</div>
-                <div style="text-align:center;font-weight:600;color:${inProd > 0 ? '#9333ea' : '#999'};">${inProd || '-'}</div>
-                <div style="text-align:center;font-weight:600;color:${comp > 0 ? '#d97706' : '#999'};">${comp || '-'}</div>
+            <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr 1fr 0.8fr;gap:4px;padding:6px 10px;background:#fff;border-radius:6px;margin-bottom:2px;box-shadow:0 1px 2px rgba(0,0,0,0.04);align-items:center;font-size:12px;">
+                <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;">
+                    ${dmIcon} ${item.name}
+                    ${item.material ? `<span style="color:#999;font-weight:400;font-size:10px;"> ${item.material}</span>` : ''}
+                </div>
+                <div style="text-align:center;font-weight:700;color:${(item.stock||0) > 0 ? '#2563eb' : '#999'};">${item.stock || '-'}</div>
+                <div style="text-align:center;font-weight:700;color:${(item.jst_qty||0) > 0 ? '#059669' : '#999'};">${item.jst_qty || '-'}</div>
+                <div style="text-align:center;font-weight:600;color:${(item.in_production||0) > 0 ? '#9333ea' : '#999'};">${item.in_production || '-'}</div>
+                <div style="text-align:center;font-weight:600;color:${(item.km_order_qty||0) > 0 ? '#d97706' : '#999'};">${item.km_order_qty || '-'}</div>
                 <div style="text-align:center;">
-                    <span style="background:${statusColor}15;color:${statusColor};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;">${statusIcon} ${statusText}</span>
+                    <span style="background:${statusColor}15;color:${statusColor};padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;white-space:nowrap;">${statusIcon} ${statusText}</span>
+                </div>
+                <div style="text-align:center;color:#999;font-size:10px;">
+                    ${item.spec || item.km_spec || '-'}
                 </div>
             </div>`;
         });
-
-        if (!html) {
-            listEl.innerHTML = '<div style="text-align:center;padding:60px;color:#999;">✅ 全部一致，无差异</div>';
-        } else {
-            listEl.innerHTML = html;
+        
+        if (typeFilter === 'diff') {
+            // 仅差异模式：过滤掉完全一致的
+            // 已经在上面做了筛选
         }
-        updateReconStats(items.length, sanSum, jstSum, prodSum);
-
+        
+        listEl.innerHTML = html;
+        updateReconStats(items.length, sanSum, jstSum, prodSum, kmOrderSum);
+        
     } catch(e) {
-        listEl.innerHTML = `<div style="text-align:center;padding:60px;color:#e94560;">❌ ${e.message}</div>`;
+        listEl.innerHTML = '<div style="text-align:center;padding:60px;color:#e94560;">❌ ' + e.message + '</div>';
     }
 }
 
-function updateReconStats(count, san, jst, prod) {
+function updateReconStats(count, san, jst, prod, km) {
     document.getElementById('reconTotalCount').textContent = count;
     document.getElementById('reconSanSum').textContent = san;
     document.getElementById('reconJstSum').textContent = jst;
     document.getElementById('reconProdSum').textContent = prod;
+    if (document.getElementById('reconKmSum')) {
+        document.getElementById('reconKmSum').textContent = km || 0;
+    }
 }
 </script>
 <script src="/static/prod_ui.js?v=20260607a"></script>

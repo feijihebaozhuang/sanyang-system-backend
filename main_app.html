@@ -2012,7 +2012,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!orderId) { alert('请输入内部单号'); return; }
         
         // 查找订单的下一道工序
-        const order = allProdOrders.find(o => o.inner_id === orderId);
+        const order = allProdOrders.find(o => o.inner_id === orderId || o.tid === orderId);
         if (!order) {
             document.getElementById('scanResult').style.display = 'block';
             document.getElementById('scanResult').innerHTML = `<div style="padding:16px;background:#fff2f0;border:1px solid #ffccc7;border-radius:8px;color:#e94560;">❌ 未找到订单 ${orderId}</div>`;
@@ -2059,7 +2059,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const data = await res.json();
         
         // 标记当前工序为已完成（前端本地更新）
-        const order = allProdOrders.find(o => o.inner_id === orderId);
+        const order = allProdOrders.find(o => o.inner_id === orderId || o.tid === orderId);
         let allDone = false;
         if (order) {
             const stepObj = order.flow.find(s => s.step === step);

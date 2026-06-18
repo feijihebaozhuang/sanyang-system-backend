@@ -2068,7 +2068,19 @@ def km_sku_record_to_map_row(
     alias = (
         (sku.get("propertiesAlias") or sku.get("propertiesName") or "").strip()
     )
-    title = (sku.get("shortTitle") or item_title or sku.get("title") or "").strip()
+    title = (item_title or sku.get("title") or sku.get("shortTitle") or "").strip()
+    short_title = (sku.get("shortTitle") or "").strip()
+
+    # 获取分类名
+    cats = sku.get("sellerCats") or []
+    category_name = ""
+    if isinstance(cats, list) and cats:
+        for c in cats:
+            if isinstance(c, dict) and c.get("name"):
+                category_name = c["name"]
+                break
+    elif isinstance(cats, dict) and cats.get("name"):
+        category_name = cats["name"]
     if dims:
         l, w, h = dims["length"], dims["width"], dims["height"]
         product_type = dims.get("product_type") or "juxing"
@@ -2100,6 +2112,10 @@ def km_sku_record_to_map_row(
         "dim_kind": dim_kind,
         "material": material,
         "km_title": title,
+        "exec_standard": sku.get("shortTitle") or "",
+        "remark": sku.get("remark") or sku.get("memo") or sku.get("note") or "",
+        "km_short_name": short_title,
+        "category": category_name,
     }
 
 

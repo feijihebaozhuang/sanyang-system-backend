@@ -42,6 +42,10 @@ _SELECT_COLS = (
     "dim_kind",
     "material",
     "km_title",
+    "km_short_name",
+    "exec_standard",
+    "remark",
+    "category",
     "updated_at",
 )
 
@@ -93,6 +97,10 @@ def _row_to_dict(r: dict) -> dict[str, Any]:
         "dim_kind": (r.get("dim_kind") or "").strip().lower(),
         "material": (r.get("material") or "").strip(),
         "km_title": (r.get("km_title") or "").strip(),
+        "km_short_name": (r.get("km_short_name") or "").strip(),
+        "exec_standard": (r.get("exec_standard") or "").strip(),
+        "remark": (r.get("remark") or "").strip(),
+        "category": (r.get("category") or "").strip(),
         "updated_at": r.get("updated_at"),
     }
 
@@ -175,12 +183,13 @@ def upsert_rows(rows: list[dict[str, Any]], *, batch_size: int = 500) -> int:
     n = 0
     sql = (
         f"INSERT INTO `{_TABLE}` "
-        "(outer_id, spec_alias, product_type, length, width, height, dim_kind, material, km_title) "
-        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+        "(outer_id, spec_alias, product_type, length, width, height, dim_kind, material, km_title, km_short_name, exec_standard, remark, category) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
         "ON DUPLICATE KEY UPDATE "
         "spec_alias=VALUES(spec_alias), product_type=VALUES(product_type), "
         "length=VALUES(length), width=VALUES(width), height=VALUES(height), "
-        "dim_kind=VALUES(dim_kind), material=VALUES(material), km_title=VALUES(km_title)"
+        "dim_kind=VALUES(dim_kind), material=VALUES(material), km_title=VALUES(km_title), "
+        "km_short_name=VALUES(km_short_name), exec_standard=VALUES(exec_standard), remark=VALUES(remark), category=VALUES(category)"
     )
     buf: list[tuple] = []
     for r in rows:
@@ -198,6 +207,10 @@ def upsert_rows(rows: list[dict[str, Any]], *, batch_size: int = 500) -> int:
                 (r.get("dim_kind") or "").strip().lower(),
                 (r.get("material") or "").strip(),
                 (r.get("km_title") or "").strip(),
+                (r.get("km_short_name") or "").strip(),
+                (r.get("exec_standard") or "").strip(),
+                (r.get("remark") or "").strip(),
+                (r.get("category") or "").strip(),
             )
         )
         if len(buf) >= batch_size:

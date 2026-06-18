@@ -148,43 +148,62 @@ def upload_items_batch(items: list[dict]) -> dict[str, Any]:
 def km_map_row_to_jst_item(
     row: dict[str, Any],
     *,
-    i_id_prefix: str = "KM_",
+    i_id_prefix: str = "",  # 默认去掉前缀，直接用outer_id
 ) -> dict[str, Any] | None:
-    """将 km_sku_map 的一条记录转为聚水潭上传格式。"""
+    """将 km_sku_map 的一条记录转为聚水潭上传格式。
+
+    字段映射（根据快麦导出表 vs 聚水潭商品资料导出表）：
+      快麦主商家编码 → 聚水潭商品编码(sku_id)
+      快麦商品名称 → 聚水潭款式编码(i_id)
+      快麦商品简称 → 聚水潭商品简称(short_name)
+      快麦执行标准 → 聚水潭商品名称(name)
+      快麦商品备注 → 聚水潭备注(remark)
+      快麦重量/长/宽/高 → 对应字段
+    """
     outer_id = (row.get("outer_id") or "").strip()
     if not outer_id:
         return None
-    spec_alias = (row.get("spec_alias") or "").strip()
-    km_title = (row.get("km_title") or "").strip()
-    name = km_title or spec_alias or outer_id
 
-    l = float(row.get("length") or 0)
-    w = float(row.get("width") or 0)
-    h = float(row.get("height") or 0)
-    mat = (row.get("material") or "").strip()
-    pt = (row.get("product_type") or "juxing").strip()
+    # 快麦字段取值
+    km_title = (row.get("km_title") or "").strip()       # 快麦商品名称
+    km_short_name = (row.get("km_short_name") or "").strip()  # 快麦商品简称
+    exec_std = (row.get("exec_standard") or "").strip()  # 快麦执行标准
+    remark = (row.get("remark") or "").strip()            # 快麦商品备注
 
-    # 构建规格数组
+    l = float(row.get("x") or row.get("length") or 0)
+    w = float(row.get("y") or row.get("width") or 0)
+    h = float(row.get("z") or row.get("height") or 0)
+    wt = float(row.get("weight") or 0)
+
+    # 聚水潭款式编码(i_id) = 快麦商品名称
+    i_id_val = km_title or outer_id
+
+    # 聚水潭商品名称(name) = 快麦执行标准
+    name_val = exec_std or km_title or outer_id
+
+    # 聚水潭商品简称(short_name) = 快麦商品简称
+    short_val = km_short_name or ""
+
+    # 构建规格数组（商品备注/尺寸等作为规格展示，但对于聚水潭来说不是必要）
     spec: list[dict] = []
-    if l and w:
-        size_str = f"{l}x{w}"
-        if h:
-            size_str += f"x{h}"
-        spec.append({"name": "尺寸", "value": size_str})
+    mat = (row.get("material") or "").strip()
     if mat:
         spec.append({"name": "材质", "value": mat})
+    pt = (row.get("product_type") or "juxing").strip()
     if pt:
         type_label = {"zhengsquare": "正方形", "juxing": "长方形", "daikou": "带扣"}.get(pt, pt)
         spec.append({"name": "类型", "value": type_label})
+    spec_alias = (row.get("spec_alias") or "").strip()
     if spec_alias:
         spec.append({"name": "规格别名", "value": spec_alias})
 
-    i_id = f"{i_id_prefix}{outer_id}"[:50]
+    i_id = f"{i_id_prefix}{i_id_val}"[:50]
 
-    return {
+    result = {
         "i_id": i_id,
         "sku_id": outer_id,
-        "name": name[:200],
+        "name": name_val[:200],
+        "short_name": short_val[:100],
         "item_type": "成品",
         "unit": "个",
         "category_id": 0,
@@ -192,5 +211,16 @@ def km_map_row_to_jst_item(
         "spec": spec,
         "cost_price": 0,
         "sale_price": 0,
-        "weight": 0,
+        "weight": wt,
     }
+    if remark:
+        result["remark"] = remark[:200]
+    # 长宽高（聚水潭字段名：长/宽/高）
+    if l:
+        result["pkg_length"] = l
+    if w:
+        result["pkg_width"] = w
+    if h:
+        result["pkg_height"] = h
+
+    return result

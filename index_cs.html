@@ -2271,7 +2271,7 @@
 
     async function toggleProdUrgent(orderId, ev) {
         if (ev && ev.stopPropagation) ev.stopPropagation();
-        const listO = typeof allProdOrders !== 'undefined' && allProdOrders.find(x => x.inner_id === orderId);
+        const listO = typeof allProdOrders !== 'undefined' && allProdOrders.find(x => x.inner_id === orderId || x.tid === orderId);
         const ps = window._prodData;
         let newUrgent;
         if (listO) {
@@ -2296,13 +2296,13 @@
         if (listO) {
             listO.urgent = newUrgent;
             if (typeof _allProdOrdersFull !== 'undefined') {
-                const full = _allProdOrdersFull.find(x => x.inner_id === orderId);
+                const full = _allProdOrdersFull.find(x => x.inner_id === orderId || x.tid === orderId);
                 if (full) full.urgent = newUrgent;
             }
             if (typeof renderProdTable === 'function') renderProdTable(allProdOrders);
             const pm = document.getElementById('prodModal');
             if (pm && pm.classList.contains('show') && typeof allProdOrders !== 'undefined') {
-                const idx = allProdOrders.findIndex(x => x.inner_id === orderId);
+                const idx = allProdOrders.findIndex(x => x.inner_id === orderId || x.tid === orderId);
                 if (idx >= 0 && typeof showProdFlowByIndex === 'function') showProdFlowByIndex(idx);
             }
         }
