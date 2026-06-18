@@ -11,3 +11,25 @@ weapp/
 alibaba_shops.json
 __pycache__/
 *.pyc
+NUL
+
+# 临时/备份/调试产物（勿入库）
+temp_*
+tmp_*
+*_backup_*
+old_*.html
+commit_msg.txt
+diff_app_prod.txt
+stats.txt
+*.tar.gz
+chi_sim.traineddata
+*.zip
+handoff_*.txt
+agent
+# 日志
+*.err
+feishu_dify.log
+feishu_dify_ws.log
+# 大体积 Excel（模板除外）
+/*.xlsx
+!/static/**/*.xlsx
