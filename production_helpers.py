@@ -551,6 +551,7 @@ def build_production_orders(
         orders_data.append(
             {
                 "inner_id": oid,
+                "km_sid": o.get("km_sid") or o.get("sid") or oid,
                 "tid": o.get("tid") or o.get("platform_tid") or "",
                 "store": o.get("shop_name") or "",
                 "province": o.get("receiver_province") or (parts[0] if parts else ""),
@@ -561,6 +562,8 @@ def build_production_orders(
                 "buyer_memo": o.get("buyer_memo") or "",
                 "qty": sum(i.get("qty", 0) for i in (o.get("items") or [])),
                 "type": order_type,
+                "status": o.get("order_status") or o.get("status") or "",
+                "status_label": o.get("status_label") or "",
                 "urgent": bool(ex.get("urgent")),
                 "flow": flow,
             }
@@ -597,6 +600,7 @@ def build_production_order_one(
     ex = order_extra.get(oid, {})
     return {
         "inner_id": oid,
+        "km_sid": o.get("km_sid") or o.get("sid") or oid,
         "tid": o.get("tid") or o.get("platform_tid") or "",
         "store": o.get("shop_name") or "",
         "province": o.get("receiver_province") or (parts[0] if parts else ""),
@@ -607,6 +611,56 @@ def build_production_order_one(
         "buyer_memo": o.get("buyer_memo") or "",
         "qty": sum(i.get("qty", 0) for i in (o.get("items") or [])),
         "type": order_type,
+        "status": o.get("order_status") or o.get("status") or "",
+        "status_label": o.get("status_label") or "",
+        "urgent": bool(ex.get("urgent")),
+        "flow": flow,
+    }
+
+
+def build_single_order_from_dict(
+    raw: dict,
+    db_config: dict,
+    process_tree: list,
+    order_extra: dict,
+) -> dict | None:
+    """从构造好的订单dict构建生产订单工序（扫码报工缓存找不到时的备用路径）。"""
+    oid = internal_order_id(raw)
+    if not oid:
+        return None
+    order_type = infer_order_type(raw)
+    flow = get_or_create_flow_steps(db_config, process_tree, oid, order_type)
+    specs = []
+    contains_miandian = False
+    for item in raw.get("items") or []:
+        spec = (item.get("spec") or "").strip()
+        qty = int(item.get("qty") or 0)
+        specs.append({"spec": spec, "qty": qty})
+        if "棉" in spec or "棉" in (item.get("name") or ""):
+            contains_miandian = True
+    if contains_miandian and order_type != "纸箱":
+        order_type = "综合（含棉）"
+    product_parts = []
+    for item in raw.get("items") or []:
+        label = (item.get("spec") or "") or (item.get("name") or "")[:40]
+        if label:
+            product_parts.append(f"{label} x{item.get('qty', 0)}")
+    ex = order_extra.get(oid, {})
+    return {
+        "inner_id": oid,
+        "km_sid": raw.get("so_id") or raw.get("km_sid") or oid,
+        "tid": raw.get("tid") or raw.get("platform_tid") or "",
+        "store": raw.get("shop_name") or "",
+        "province": raw.get("receiver_province") or "",
+        "city": raw.get("receiver_city") or "",
+        "specs": specs,
+        "product": "; ".join(product_parts[:3]) or "?",
+        "seller_memo": raw.get("seller_memo") or "",
+        "buyer_memo": raw.get("buyer_memo") or "",
+        "qty": sum(i.get("qty", 0) for i in (raw.get("items") or [])),
+        "type": order_type,
+        "status": raw.get("order_status") or raw.get("status") or "",
+        "status_label": raw.get("status_label") or "",
         "urgent": bool(ex.get("urgent")),
         "flow": flow,
     }

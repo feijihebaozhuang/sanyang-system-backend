@@ -815,6 +815,60 @@ def scan_order_detail(order_id):
         query,
     )
     if not order:
+        # 缓存找不到，从快麦API实时查（已完成/已关闭等订单不一定会同步到缓存）
+        try:
+            import km_api as _km
+            km_res = _km.km_outstock_simple_page(
+                start_time="2025-06-01 00:00:00",
+                end_time=datetime.datetime.now().strftime("%Y-%m-%d 23:59:59"),
+                page_no=1, page_size=1,
+                tid=query,
+            )
+            km_list = km_res.get("list") or []
+            if km_list:
+                raw_o = km_list[0]
+                # 构造标准订单格式
+                order_hack = {"items": []}
+                items_raw = raw_o.get("orders") or []
+                for it in items_raw:
+                    order_hack["items"].append({
+                        "name": it.get("title", ""),
+                        "spec": it.get("skuPropertiesName", ""),
+                        "qty": int(it.get("num", 0)),
+                        "price": str(it.get("price", "0")),
+                    })
+                order_hack["so_id"] = str(raw_o.get("sid") or "")
+                order_hack["tid"] = query
+                # 快麦状态映射
+                _km_status = raw_o.get("status") or raw_o.get("sysStatus") or ""
+                _km_status_map = {
+                    "WAIT_BUYER_PAY": "待付款",
+                    "WAIT_AUDIT": "待审核",
+                    "WAIT_FINANCE_AUDIT": "待财审",
+                    "FINISHED_AUDIT": "审核完成",
+                    "WAIT_EXPRESS_PRINT": "待打印",
+                    "WAIT_PACKAGE": "待打包",
+                    "WAIT_WEIGHT": "待称重",
+                    "WAIT_SEND_GOODS": "待发货",
+                    "WAIT_DEST_SEND_GOODS": "待供销发货",
+                    "SELLER_SEND_GOODS": "已发货",
+                    "confirm_goods_but_not_fund": "已收款待发货",
+                    "FINISHED": "已完成",
+                    "CLOSED": "已关闭",
+                }
+                order_hack["order_status"] = _km_status
+                order_hack["status_label"] = _km_status_map.get(_km_status, _km_status)
+                order_hack["shop_name"] = (raw_o.get("warehouseName") or "").replace("仓库", "")
+                order_hack["receiver_address"] = ""
+                order_hack["seller_memo"] = ""
+                order_hack["buyer_memo"] = ""
+                order_hack["receiver_province"] = ""
+                order_hack["receiver_city"] = ""
+                order = ph.build_single_order_from_dict(order_hack, DB_CONFIG, process_tree, _order_extra)
+        except Exception as e:
+            print(f"[scan_order_detail] KM API 实时查失败: {e}")
+
+    if not order:
         return jsonify({"success": False, "error": f"未找到订单 {query}"})
     # 附加工序字段定义（每个工序的额外填写字段）
     step_fields = {}
