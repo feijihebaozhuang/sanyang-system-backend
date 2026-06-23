@@ -168,9 +168,143 @@ def merge_flow_with_tree(
     return merged
 
 
+def resolve_km_sid(o: dict) -> str:
+    """快麦 ERP 内部短单号（sid），勿把平台 tid 当内部单号。"""
+    tid = str(o.get("tid") or o.get("platform_tid") or "").strip()
+    for key in ("km_sid", "sid"):
+        v = str(o.get(key) or "").strip()
+        if v and v != tid and len(v) <= 14:
+            return v
+    so = str(o.get("so_id") or "").strip()
+    if so and so != tid and len(so) <= 14:
+        return so
+    try:
+        import km_api as _km
+
+        r = _km.km_resolve_internal_so_id(o)
+        if r and r != tid and len(r) <= 14:
+            return r
+    except ImportError:
+        pass
+    return ""
+
+
 def internal_order_id(o: dict) -> str:
-    """快麦内部单号优先使用 so_id。"""
+    """快麦内部单号；优先短 sid，避免旧缓存把平台 tid 写在 so_id。"""
+    try:
+        import km_api as _km
+
+        _km.km_normalize_so_id_fields(o)
+    except ImportError:
+        pass
+    sid = resolve_km_sid(o)
+    if sid:
+        return sid
     return str(o.get("so_id") or o.get("km_sid") or "").strip()
+
+
+def km_sid_needs_km_refresh(o: dict) -> bool:
+    """内部单号缺失或误用平台 tid 时需实时查快麦。"""
+    tid = str(o.get("tid") or o.get("platform_tid") or "").strip()
+    sid = resolve_km_sid(o)
+    if not sid:
+        return True
+    if tid and sid == tid:
+        return True
+    if len(sid) > 14:
+        return True
+    return False
+
+
+def fetch_km_trade_for_scan(query: str) -> dict | None:
+    """扫码报工：按平台 tid 或内部 sid 实时查快麦（已完成/已发货单常不在待发货缓存）。"""
+    q = (query or "").strip()
+    if not q:
+        return None
+    try:
+        import km_api as _km
+        from datetime import datetime, timedelta
+
+        end = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        start = (datetime.now() - timedelta(days=400)).strftime("%Y-%m-%d %H:%M:%S")
+        base = {
+            "start_time": start,
+            "end_time": end,
+            "page_no": 1,
+            "page_size": 1,
+            "time_type": "upd_time",
+        }
+        tries: list[dict] = []
+        if len(q) > 14:
+            tries.append({**base, "tid": q})
+        else:
+            tries.append({**base, "sid": q})
+            tries.append({**base, "tid": q})
+        for kw in tries:
+            res = _km.km_outstock_simple_page(**kw)
+            batch = res.get("list") or []
+            if batch:
+                return batch[0]
+    except Exception as e:
+        print(f"[fetch_km_trade_for_scan] {e}")
+    return None
+
+
+def order_dict_from_km_trade(raw_o: dict, query: str) -> dict:
+    """快麦 trade → 扫码报工用订单 dict。"""
+    import km_api as _km
+
+    sid = _km.km_resolve_internal_so_id(raw_o) or str(raw_o.get("sid") or "").strip()
+    tid = str(raw_o.get("tid") or "").strip()
+    if not tid and len((query or "").strip()) > 14:
+        tid = (query or "").strip()
+    items = []
+    for it in raw_o.get("orders") or []:
+        items.append(
+            {
+                "name": it.get("title", ""),
+                "spec": it.get("skuPropertiesName", ""),
+                "qty": int(it.get("num") or 0),
+                "price": str(it.get("price") or "0"),
+            }
+        )
+    sys_status = str(raw_o.get("sysStatus") or raw_o.get("status") or "").strip()
+    label = _km.KM_SYS_STATUS_LABEL.get(sys_status, sys_status) or sys_status
+    return {
+        "items": items,
+        "so_id": sid,
+        "km_sid": sid,
+        "tid": tid,
+        "order_status": sys_status,
+        "status_label": label,
+        "shop_name": (raw_o.get("warehouseName") or raw_o.get("shopName") or "").replace("仓库", ""),
+        "receiver_address": "",
+        "seller_memo": "",
+        "buyer_memo": "",
+        "receiver_province": "",
+        "receiver_city": "",
+    }
+
+
+def merge_scan_order_sources(km_hack: dict, cache_o: dict | None) -> dict:
+    """快麦实时数据优先 sid/状态；缓存补商品行与备注。"""
+    out = dict(km_hack)
+    if not cache_o:
+        return out
+    if not out.get("items") and cache_o.get("items"):
+        out["items"] = cache_o["items"]
+    for key in (
+        "seller_memo",
+        "buyer_memo",
+        "receiver_address",
+        "receiver_province",
+        "receiver_city",
+        "refund_status",
+        "refund_detail",
+    ):
+        if not out.get(key) and cache_o.get(key):
+            out[key] = cache_o[key]
+    return out
 
 
 def load_cache_orders(cache_file: str | None = None, *, finalize: bool = True) -> list[dict]:
@@ -551,7 +685,7 @@ def build_production_orders(
         orders_data.append(
             {
                 "inner_id": oid,
-                "km_sid": o.get("km_sid") or o.get("sid") or oid,
+                "km_sid": resolve_km_sid(o) or oid,
                 "tid": o.get("tid") or o.get("platform_tid") or "",
                 "store": o.get("shop_name") or "",
                 "province": o.get("receiver_province") or (parts[0] if parts else ""),
@@ -577,13 +711,18 @@ def build_production_order_one(
     process_tree: list,
     order_extra: dict,
     query: str,
+    *,
+    raw: dict | None = None,
 ) -> dict | None:
     """按单号查一条生产订单（扫码报工小程序用，避免拉全量列表）。"""
-    orders = load_cache_orders(cache_file)
-    o = find_order_in_cache(orders, query)
+    o = raw
+    if o is None:
+        orders = load_cache_orders(cache_file)
+        o = find_order_in_cache(orders, query)
     if not o:
         return None
     oid = internal_order_id(o)
+    km_sid = resolve_km_sid(o) or oid
     order_type = infer_order_type(o)
     flow = get_or_create_flow_steps(db_config, process_tree, oid, order_type)
     specs = []
@@ -600,7 +739,7 @@ def build_production_order_one(
     ex = order_extra.get(oid, {})
     return {
         "inner_id": oid,
-        "km_sid": o.get("km_sid") or o.get("sid") or oid,
+        "km_sid": km_sid,
         "tid": o.get("tid") or o.get("platform_tid") or "",
         "store": o.get("shop_name") or "",
         "province": o.get("receiver_province") or (parts[0] if parts else ""),
@@ -646,9 +785,10 @@ def build_single_order_from_dict(
         if label:
             product_parts.append(f"{label} x{item.get('qty', 0)}")
     ex = order_extra.get(oid, {})
+    km_sid = resolve_km_sid(raw) or oid
     return {
         "inner_id": oid,
-        "km_sid": raw.get("so_id") or raw.get("km_sid") or oid,
+        "km_sid": km_sid,
         "tid": raw.get("tid") or raw.get("platform_tid") or "",
         "store": raw.get("shop_name") or "",
         "province": raw.get("receiver_province") or "",
