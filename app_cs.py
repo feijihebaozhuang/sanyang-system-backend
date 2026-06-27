@@ -440,6 +440,11 @@ def persist():
     _order_extra_store.mirror_order_extra_to_data_json(_order_extra)
     save_data(data)
 
+# ==================== 健康检查 ====================
+@app.route('/api/health')
+def health_check_3001():
+    return jsonify({"status": "ok"})
+
 # ==================== 登录API ====================
 @app.route('/api/login', methods=['POST'])
 @rate_limit(limit=5, window=60)
