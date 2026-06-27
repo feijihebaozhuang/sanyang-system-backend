@@ -183,15 +183,14 @@ def find_user_by_employee_name(name: str) -> dict | None:
 
 
 def verify_user_password(username: str, password: str) -> dict | None:
-    import hashlib as _hl
-
     username = (username or "").strip()
     if not username or not password:
         return None
     row = _load_user_row(username)
     if not row or not row.get("enabled", 1):
         return None
-    if row.get("password") != _hl.sha256(password.encode()).hexdigest():
+    from password_utils import verify_password
+    if not verify_password(password, row.get("password") or ""):
         return None
     return dict(row)
 

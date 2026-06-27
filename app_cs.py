@@ -12,6 +12,7 @@ from datetime import timedelta
 from pypinyin import lazy_pinyin
 import pymysql
 
+from rate_limiter import rate_limit
 import dimoldb_store as _dimoldb_store
 import dimoldb_inventory_api as _dim_inv_api
 from settings import (
@@ -441,6 +442,7 @@ def persist():
 
 # ==================== 登录API ====================
 @app.route('/api/login', methods=['POST'])
+@rate_limit(limit=5, window=60)
 def login():
     data = request.get_json()
     username = data.get('username', '').strip()
@@ -456,8 +458,8 @@ def login():
     user = _perm_resolve_login.normalize_user_record(username, user)
     USERS[username] = user
 
-    pwd_hash = hashlib.sha256(password.encode()).hexdigest()
-    if user['password'] != pwd_hash:
+    from password_utils import verify_password
+    if not verify_password(password, user['password']):
         return jsonify({"success": False, "message": "账号或密码错误"})
     
     # 检查员工是否被禁用
@@ -3558,7 +3560,8 @@ def api_employee_update():
             if new_password:
                 if len(new_password) < 4:
                     return jsonify({"success": False, "message": "密码至少4位"})
-                u['password'] = hashlib.sha256(new_password.encode()).hexdigest()
+                from password_utils import hash_password as _hp
+                u['password'] = _hp(new_password)
             user_updated = True
             break
     if not user_updated and username and username in USERS:
@@ -3568,7 +3571,8 @@ def api_employee_update():
         if new_password:
             if len(new_password) < 4:
                 return jsonify({"success": False, "message": "密码至少4位"})
-            u['password'] = hashlib.sha256(new_password.encode()).hexdigest()
+            from password_utils import hash_password as _hp
+            u['password'] = _hp(new_password)
 
     try:
         db = get_db()

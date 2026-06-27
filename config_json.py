@@ -141,22 +141,21 @@ def write_quote_json_partial(
     *,
     base_dir: str | Path | None = None,
 ) -> bool:
-    """只更新 quote_data.json 中的若干键（不覆盖整文件其它字段）。"""
+    """只更新 quote_data.json 中的若干键（加锁防并发覆盖）。"""
     if not isinstance(updates, dict) or not updates:
         return False
     path = quote_json_path(base_dir)
-    existing = read_json_file(path, {})
-    if not isinstance(existing, dict):
-        existing = {}
-    for key, val in updates.items():
-        existing[key] = copy.deepcopy(val)
-    try:
-        with path.open("w", encoding="utf-8") as f:
-            json.dump(existing, f, ensure_ascii=False, indent=2)
-        return True
-    except OSError as e:
-        print(f"[config_json] write_quote_json_partial 失败 {path}: {e}")
-        return False
+    from lock_utils import file_lock, safe_write_json
+    with file_lock(path, timeout=8.0) as acquired:
+        if not acquired:
+            print(f"[config_json] 写锁超时 {path}")
+            return False
+        existing = read_json_file(path, {})
+        if not isinstance(existing, dict):
+            existing = {}
+        for key, val in updates.items():
+            existing[key] = copy.deepcopy(val)
+        return safe_write_json(path, existing, timeout=0)
 
 
 def shop_config_json_path(base_dir: str | Path | None = None) -> Path:
@@ -360,22 +359,21 @@ def write_data_json_partial(
     *,
     base_dir: str | Path | None = None,
 ) -> bool:
-    """写入 data.json 顶层键（如 employees_master、resigned_employees），不覆盖其它键。"""
+    """写入 data.json 顶层键（加锁防并发覆盖）。"""
     if not updates:
         return True
     path = data_json_path(base_dir)
-    existing: dict[str, Any] = read_json_file(path, {})
-    if not isinstance(existing, dict):
-        existing = {}
-    for key, val in updates.items():
-        existing[key] = copy.deepcopy(val)
-    try:
-        with path.open("w", encoding="utf-8") as f:
-            json.dump(existing, f, ensure_ascii=False, indent=2)
-        return True
-    except OSError as e:
-        print(f"[config_json] write_data_json_partial 失败 {path}: {e}")
-        return False
+    from lock_utils import file_lock
+    with file_lock(path, timeout=8.0) as acquired:
+        if not acquired:
+            print(f"[config_json] 写锁超时 {path}")
+            return False
+        existing: dict[str, Any] = read_json_file(path, {})
+        if not isinstance(existing, dict):
+            existing = {}
+        for key, val in updates.items():
+            existing[key] = copy.deepcopy(val)
+    return safe_write_json(path, existing, timeout=0)
 
 
 def _write_permission_data_local(
@@ -385,13 +383,18 @@ def _write_permission_data_local(
     keys: frozenset[str] = PERMISSION_JSON_KEYS,
 ) -> bool:
     path = data_json_path(base_dir)
-    existing: dict[str, Any] = {}
-    if path.is_file():
-        try:
-            with path.open("r", encoding="utf-8") as f:
-                existing = json.load(f)
-        except (OSError, json.JSONDecodeError):
-            existing = {}
+    from lock_utils import file_lock, safe_write_json
+    with file_lock(path, timeout=8.0) as acquired:
+        if not acquired:
+            print(f"[config_json] 写锁超时 {path}")
+            return False
+        existing: dict[str, Any] = {}
+        if path.is_file():
+            try:
+                with path.open("r", encoding="utf-8") as f:
+                    existing = json.load(f)
+            except (OSError, json.JSONDecodeError):
+                existing = {}
     if not isinstance(existing, dict):
         existing = {}
     pd = existing.setdefault("permission_data", {})
@@ -401,13 +404,7 @@ def _write_permission_data_local(
     for key in keys:
         if key in permission_data:
             pd[key] = copy.deepcopy(permission_data[key])
-    local_ok = True
-    try:
-        with path.open("w", encoding="utf-8") as f:
-            json.dump(existing, f, ensure_ascii=False, indent=2)
-    except OSError as e:
-        print(f"[config_json] 写入失败 {path}: {e}")
-        local_ok = False
+    local_ok = safe_write_json(path, existing, timeout=0)
     # 同步写入 RDS（失败不阻断，data.json 兜底）
     _write_permission_to_rds(permission_data, keys=keys)
     return local_ok

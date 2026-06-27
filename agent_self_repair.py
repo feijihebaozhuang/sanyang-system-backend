@@ -89,12 +89,17 @@ def repair_sync_code() -> dict[str, Any]:
         return {"sync": False, "reason": "无 GITEE_TOKEN（请在 .env 或 /home/admin/.hermes/env 配置）"}
     url = (
         "https://gitee.com/api/v5/repos/feijihesanyan/sanyang-system/"
-        f"tarball/main?access_token={token}"
+        "tarball/main"
     )
     tmp = Path(tempfile.mkdtemp(prefix="sanyang-sync-"))
     try:
         arc = tmp / "repo.tar.gz"
-        urllib.request.urlretrieve(url, arc)
+        # 用 Authorization header 传 token，避免 token 暴露在 URL（服务器日志/bash history）
+        headers = {"Authorization": f"token {token}"}
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            with open(arc, "wb") as f:
+                f.write(resp.read())
         with tarfile.open(arc, "r:gz") as tf:
             tf.extractall(tmp)
         sub = next(p for p in tmp.iterdir() if p.is_dir())

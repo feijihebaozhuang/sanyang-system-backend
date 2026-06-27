@@ -83,7 +83,9 @@ def connect():
 
 
 def password_hash(plain: str) -> str:
-    return hashlib.sha256((plain or "").encode()).hexdigest()
+    """生成加盐密码哈希（兼容旧的无盐哈希验证）。"""
+    from password_utils import hash_password as _hp
+    return _hp(plain or "")
 
 
 def is_account_enabled(val: Any) -> bool:

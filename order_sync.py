@@ -77,6 +77,7 @@ def _is_pending_cache_order(o: dict) -> bool:
 
 
 def _dedupe_merge(existing: dict[str, dict], new_list: list[dict]) -> None:
+    """合并去重：1688 直连数据优先，其次是含 items+地址的完整数据，避免快麦旧数据覆盖 1688 新数据。"""
     for o in new_list:
         if not o.get("so_id"):
             continue
@@ -85,9 +86,17 @@ def _dedupe_merge(existing: dict[str, dict], new_list: list[dict]) -> None:
         if not prev:
             existing[key] = o
             continue
-        if o.get("sync_source") == "1688_api" and o.get("receiver_address"):
+        # 1688 API 直连数据始终优先（最权威）
+        if o.get("sync_source") == "1688_api":
             existing[key] = o
-        elif prev.get("sync_source") != "1688_api" and o.get("items"):
+        elif prev.get("sync_source") == "1688_api":
+            # 已有 1688 数据，不让快麦/其他来源覆盖
+            continue
+        elif o.get("items") and o.get("receiver_address"):
+            # 新数据有完整 items + 地址
+            existing[key] = o
+        elif o.get("items") and not prev.get("items"):
+            # 新数据有 items 而旧数据没有
             existing[key] = o
 
 

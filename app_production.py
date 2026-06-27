@@ -21,6 +21,7 @@ from quote_config_merge import merge_quote_config
 import employee_perm_store as emp_store
 import config_json
 import jushuitan_store as jst
+from rate_limiter import rate_limit
 
 
 def _auth_token_for(username: str) -> str:
@@ -497,6 +498,7 @@ def _login_success_payload(username: str, user: dict) -> dict:
 
 
 @app.route('/api/login', methods=['POST'])
+@rate_limit(limit=5, window=60)
 def login():
     data = request.get_json()
     username = data.get('username', '').strip()
@@ -514,8 +516,8 @@ def login():
     user = _pr_login.normalize_user_record(username, user)
     USERS[username] = user
 
-    pwd_hash = hashlib.sha256(password.encode()).hexdigest()
-    if user['password'] != pwd_hash:
+    from password_utils import verify_password
+    if not verify_password(password, user['password']):
         return jsonify({"success": False, "message": "账号或密码错误"})
     
     payload = _login_success_payload(username, user)
@@ -1331,7 +1333,8 @@ def add_employee():
     
     # 默认密码 = 姓名拼音 + "123"
     default_pwd = f"{username}123"
-    pwd_hash = hashlib.sha256(default_pwd.encode()).hexdigest()
+    from password_utils import hash_password as _hp
+    pwd_hash = _hp(default_pwd)
     
     # 根据部门确定默认角色
     if dept == '洋坑塘运营部':

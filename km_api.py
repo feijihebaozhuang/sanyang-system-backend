@@ -98,10 +98,17 @@ def _credential_fields(src: dict) -> dict[str, Any]:
     return out
 
 
-def _write_token_file(data: dict) -> None:
-    prev = _read_token_file()
-    out = {**prev, **data}
-    out.update(_credential_fields(prev))
+def _write_token_file(data: dict) -> bool:
+    """加锁写 km_token.json，防止多 worker 并发覆盖。返回 True=写入成功。"""
+    from lock_utils import file_lock
+
+    with file_lock(KM_TOKEN_FILE, timeout=8.0) as acquired:
+        if not acquired:
+            print(f"[km_api] 写 token 超时（文件被占用）")
+            return False
+        prev = _read_token_file()
+        out = {**prev, **data}
+        out.update(_credential_fields(prev))
     out.update(_credential_fields(data))
     # 去掉误写入的 API 包装字段
     for junk in (
@@ -122,9 +129,10 @@ def _write_token_file(data: dict) -> None:
         refresh = sess.get("refreshToken") or sess.get("refresh_token")
         if refresh and not out.get("refresh_token"):
             out["refresh_token"] = refresh
-    Path(KM_TOKEN_FILE).write_text(
-        json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+        Path(KM_TOKEN_FILE).write_text(
+            json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    return True
 
 
 def km_session() -> str:

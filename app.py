@@ -383,8 +383,8 @@ def login():
     if not user:
         return jsonify({"success": False, "message": "账号或密码错误"})
     
-    pwd_hash = hashlib.sha256(password.encode()).hexdigest()
-    if user['password'] != pwd_hash:
+    from password_utils import verify_password
+    if not verify_password(password, user['password']):
         return jsonify({"success": False, "message": "账号或密码错误"})
     
     # 检查员工是否被禁用
