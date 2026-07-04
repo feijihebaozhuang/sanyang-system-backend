@@ -1,0 +1,10 @@
+#!/usr/bin/expect -f
+set timeout 20
+spawn ssh -o StrictHostKeyChecking=accept-new root@8.163.107.156
+expect {
+    "password:" { send "Jiangduoduo2012\r" }
+    timeout { exit 1 }
+}
+expect "#" { send "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIACf2ujdgrgGVjcgft7/tOKecjpMm2kaXn6aMV6D6LBi root@iZ7xv0aeodcpqg820gp3ebZ' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && echo SSH_KEY_DONE\r" }
+expect "SSH_KEY_DONE" { send "exit\r" }
+expect eof

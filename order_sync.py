@@ -16,6 +16,20 @@ import km_api
 import order_cache_store as ocs
 
 _sync_lock = threading.Lock()
+import contextlib as _contextlib
+
+_SYNC_LOCK_TIMEOUT = 300
+
+
+@_contextlib.contextmanager
+def _sync_lock_with_timeout(timeout: int = _SYNC_LOCK_TIMEOUT):
+    """带超时的 _sync_lock，超时自动放弃防死锁。"""
+    acquired = _sync_lock.acquire(timeout=timeout)
+    try:
+        yield acquired
+    finally:
+        if acquired:
+            _sync_lock.release()
 
 SHOP_NAME_ALIAS = {
     "友尚包装": "友尚",
@@ -215,7 +229,10 @@ def _sync_orders_to_cache_impl(
         "errors": [],
     }
 
-    with _sync_lock:
+    if not _sync_lock.acquire(timeout=300):
+        report["errors"].append({"msg": "线程锁超时（5分钟），放弃本次同步"})
+        return report
+    try:
         merged: dict[str, dict] = {}
         shops: dict[str, dict] = {}
 
@@ -228,6 +245,7 @@ def _sync_orders_to_cache_impl(
             _set_sync_phase("outstock", f"近{days_back}天待发货（全平台）")
             raw_out, err_out = km_api.km_fetch_trades_outstock(
                 days_back,
+                hours_back=hours_back,
                 time_type="upd_time",
                 status=km_api.KM_PENDING_STATUSES,
                 source_filter=None,
@@ -266,6 +284,8 @@ def _sync_orders_to_cache_impl(
                     _dedupe_merge(merged, direct_fmt)
                 else:
                     print("[订单同步] 未配置 ALIBABA_SHOPS，跳过 1688 直连")
+            except ImportError:
+                print("[订单同步] 1688 SDK 未安装，跳过 1688 直连")
             except Exception as e:
                 report["errors"].append({"msg": f"1688直连异常: {e}"})
                 print(f"[订单同步] 1688直连异常: {e}")
@@ -286,13 +306,20 @@ def _sync_orders_to_cache_impl(
             f"[订单同步] 完成: 待发货 {n_pending} 条 "
             f"(快麦={report['km_outstock_count']})"
         )
-        return report
+    except Exception:
+        pass
+    finally:
+        try:
+            _sync_lock.release()
+        except RuntimeError:
+            pass
+    return report
 
 
 def sync_orders_incremental(
     cache_file: str | Path | None = None,
     *,
-    hours_back: int = 6,
+    hours_back: int | None = None,
     days_back: int | None = None,
     memo_getter: Callable[[str], str] | None = None,
     include_1688_direct: bool = False,
@@ -303,7 +330,7 @@ def sync_orders_incremental(
     """
     del cache_file
     if days_back is None:
-        days_back = max(1, int(os.getenv("ORDER_SYNC_INCREMENTAL_DAYS", "14")))
+        days_back = max(1, int(os.getenv("ORDER_SYNC_INCREMENTAL_DAYS", "3")))
     from order_sync_coordinator import order_sync_cluster_lock
 
     with order_sync_cluster_lock() as acquired:
@@ -325,7 +352,7 @@ def sync_orders_incremental(
 
 def _sync_orders_incremental_impl(
     *,
-    hours_back: int,
+    hours_back: int | None = None,
     days_back: int,
     memo_getter: Callable[[str], str] | None = None,
     include_1688_direct: bool = False,
@@ -343,7 +370,10 @@ def _sync_orders_incremental_impl(
         report["errors"].append({"msg": "MySQL 不可用"})
         return report
 
-    with _sync_lock:
+    if not _sync_lock.acquire(timeout=300):
+        report["errors"].append({"msg": "线程锁超时（5分钟），放弃本次同步"})
+        return report
+    try:
         existing = ocs.read_orders_as_map(finalize=False)
         merged: dict[str, dict] = {}
         km_seen: set[str] = set()
@@ -354,6 +384,7 @@ def _sync_orders_incremental_impl(
             shops = km_api.km_shop_lookup(refresh=False)
             raw_out, err_out = km_api.km_fetch_trades_outstock(
                 days_back,
+                hours_back=hours_back,
                 time_type="upd_time",
                 status=km_api.KM_PENDING_STATUSES,
                 source_filter=None,
@@ -395,11 +426,20 @@ def _sync_orders_incremental_impl(
                     for o in direct_fmt:
                         o["shop_name"] = normalize_shop_display(o.get("shop_name") or "")
                     _dedupe_merge(merged, direct_fmt)
+            except ImportError:
+                pass
             except Exception as e:
                 report["errors"].append({"msg": str(e)})
 
         report["pending_count"] = _write_mysql_snapshot(merged, report, shops, partial=False)
-        return report
+    except Exception:
+        pass
+    finally:
+        try:
+            _sync_lock.release()
+        except RuntimeError:
+            pass
+    return report
 
 
 def read_realtime_cache_payload(

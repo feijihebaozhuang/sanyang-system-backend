@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from typing import Iterator
 
 _LOCK_NAME = (os.getenv("ORDER_SYNC_MYSQL_LOCK") or "sanyang_km_order_sync").strip()[:64]
-_LOCK_WAIT_SEC = max(0, int(os.getenv("ORDER_SYNC_LOCK_WAIT_SEC", "2") or 2))
+_LOCK_WAIT_SEC = max(0, int(os.getenv("ORDER_SYNC_LOCK_WAIT_SEC", "60") or 60))
 
 
 def _connect():

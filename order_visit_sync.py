@@ -19,7 +19,8 @@ _state: dict[str, Any] = {
 
 DEBOUNCE_SEC = int(os.getenv("VISIT_SYNC_DEBOUNCE_SEC", "8"))
 STALE_FORCE_SEC = int(os.getenv("ORDER_SYNC_STALE_SEC", "45"))
-INCREMENTAL_DAYS = int(os.getenv("ORDER_SYNC_INCREMENTAL_DAYS", "14"))
+INCREMENTAL_DAYS = int(os.getenv("ORDER_SYNC_INCREMENTAL_DAYS", "3"))
+VISIT_SYNC_HOURS = int(os.getenv("VISIT_SYNC_HOURS", "6"))
 
 
 def cache_updated_ago_sec() -> int | None:
@@ -44,7 +45,7 @@ def visit_sync_status() -> dict[str, Any]:
             "last_finished": _state["last_finished"],
             "last_error": _state["last_error"],
             "updated_ago_sec": ago,
-            "incremental_days": INCREMENTAL_DAYS,
+            "incremental_hours": VISIT_SYNC_HOURS,
             "stale_force_sec": STALE_FORCE_SEC,
             "debounce_sec": DEBOUNCE_SEC,
         }
@@ -82,7 +83,7 @@ def schedule_incremental_sync(
             path = cache_file or osync.default_cache_path()
             rep = osync.sync_orders_incremental(
                 path,
-                days_back=INCREMENTAL_DAYS,
+                hours_back=VISIT_SYNC_HOURS,
                 memo_getter=memo_getter,
                 include_1688_direct=include_1688_direct,
             )

@@ -1,0 +1,55 @@
+﻿#,Company,Website,Country,Purchasing Email,Backup Email,Notes
+1,Uline,https://www.uline.com,USA,purchasing@uline.com,"procurement@uline.com, suppliers@uline.com",北美最大包装分销商，通过官网供应商注册系统
+2,The Boxery,https://www.theboxery.com,USA,purchasing@theboxery.com,info@theboxery.com,母公司Associated Bag，可通过母公司联系
+3,Value Mailers,https://www.valuemailers.com,USA,purchasing@valuemailers.com,info@valuemailers.com,专业飞机盒分销商，高度依赖中国进口
+4,PackagingSupplies.com,https://www.packagingsupplies.com,USA,purchasing@packagingsupplies.com,info@packagingsupplies.com,线上包装分销商，主要从中国进货
+5,Grainger,https://www.grainger.com,USA,vendorsupport@grainger.com,supplierdiversity@grainger.com,工业品MRO巨头，有供应商注册门户
+6,McMaster-Carr,https://www.mcmaster.com,USA,chi.sales@mcmaster.com,,已有供应商体系，较难进入
+7,Global Industrial,https://www.globalindustrial.com,USA,vendors@globalindustrial.com,customerservice@globalindustrial.com,工业品分销，有纸箱品类
+8,Packaging Price,https://www.packagingprice.com,USA,sales@packagingprice.com,info@packagingprice.com,在线纸箱批发，小公司
+9,Box Up,https://www.boxup.com,USA,info@boxup.com,,在线纸箱分销
+10,Paper Mart,https://www.papermart.com,USA,sales@papermart.com,info@papermart.com,包装在线零售商
+11,BoxGenie,https://www.boxgenie.com,USA,hello@boxgenie.com,,在线定制纸箱平台
+12,Crystal Distribution,https://www.crystal-distribution.com,USA,info@crystal-distribution.com,,纸箱分销商
+13,Bags and Bows,https://www.bagsandbowsonline.com,USA,sales@bagsandbowsonline.com,,包装在线零售商
+14,Nashville Wraps,https://www.nashvillewraps.com,USA,info@nashvillewraps.com,,包装分销商
+15,Nefab Canada,https://www.nefab.com,Canada,info.canada@nefab.com,info@nefab.com,全球工业包装，加拿大有分部
+16,IPL Packaging,https://www.iplpackaging.com,Canada,info@iplpackaging.com,,加拿大包装分销
+17,Atlantic Packaging,https://www.atlanticpkg.com,Canada,info@atlanticpkg.com,,加拿大纸箱和包装分销
+18,Canpak,https://www.canpak.com,Canada,info@canpak.com,,加拿大包装物料分销
+19,DS Smith,https://www.dssmith.com,UK,enquiries@dssmith.com,procurement@dssmith.com,欧洲最大瓦楞纸箱制造商，需要供应商注册
+20,Smurfit Kappa,https://www.smurfitkappa.com,UK/IE,info@smurfitkappa.com,procurement@smurfitkappa.com,全球瓦楞包装巨头，通过官网供应商门户
+21,Rajapack UK,https://www.rajapack.co.uk,UK,export@raja.fr,info@rajapack.co.uk,Raja集团，欧洲最大包装分销商
+22,Kite Packaging,https://www.kitepackaging.co.uk,UK,enquiries@kitepackaging.co.uk,purchasing@kitepackaging.co.uk,英国包装在线分销
+23,Davpack,https://www.davpack.co.uk,UK,sales@davpack.co.uk,,英国包装物料分销
+24,Boxes Direct UK,https://www.boxesdirect.co.uk,UK,info@boxesdirect.co.uk,,英国纸箱在线分销
+25,Presto Packaging,https://www.prestopackaging.co.uk,UK,info@prestopackaging.co.uk,,英国包装分销
+26,Raja Germany,https://www.raja.de,Germany,info@raja.de,export@raja.fr,Raja集团德国站
+27,Storopack,https://www.storopack.com,Germany,info@storopack.com,,德国包装方案，有供应商注册
+28,Packaging24,https://www.packaging24.de,Germany,info@packaging24.de,,德国在线包装分销
+29,Schumacher Packaging,https://www.schumacher-packaging.com,Germany,info@schumacher-packaging.com,einkauf@schumacher-packaging.com,德国瓦楞包装制造商，采购(einkauf)
+30,Kartonagen Direkt,https://www.kartonagen-direkt.de,Germany,info@kartonagen-direkt.de,,德国纸箱在线直销
+31,Wellpappen Shop,https://www.wellpappen-shop.de,Germany,info@wellpappen-shop.de,,德国瓦楞纸箱网店
+32,Raja France,https://www.raja.fr,France,export@raja.fr,info@raja.fr,法国包装分销龙头
+33,CG17,https://www.cg17.com,France,contact@cg17.com,,法国纸箱包装分销
+34,ECM Packaging,https://www.ecm-packaging.com,France,info@ecm-packaging.com,,法国包装方案
+35,Boites Carton,https://www.boites-carton.com,France,contact@boites-carton.com,,法国纸箱在线销售
+36,Detpak,https://www.detpak.com,Australia,marketing@detpak.com,enquiries@detpak.com,澳洲最大纸箱包装
+37,Packaging Supplies AU,https://www.packagingsupplies.com.au,Australia,sales@packagingsupplies.com.au,,澳洲包装在线分销
+38,Box Mart AU,https://www.boxmart.com.au,Australia,info@boxmart.com.au,,澳洲纸箱在线批发
+39,Zipbox,https://www.zipbox.com.au,Australia,sales@zipbox.com.au,,澳洲纸箱分销
+40,The Box Man AU,https://www.theboxman.com.au,Australia,sales@theboxman.com.au,,澳洲纸箱在线商店
+41,Rengo,https://www.rengo.co.jp,Japan,info@rengo.co.jp,,日本最大瓦楞纸箱制造商
+42,Nippon Paper,https://www.nipponpapergroup.com,Japan,info@nipponpapergroup.com,,日本造纸及纸箱
+43,Oji Holdings,https://www.oji-holdings.com,Japan,info@oji-holdings.com,,日本纸业巨头
+44,TGI Packaging,https://www.tgi-packaging.com.sg,Singapore,sales@tgi-packaging.com.sg,,新加坡纸箱包装
+45,United Bags SG,https://www.unitedbag.com.sg,Singapore,info@unitedbag.com.sg,,新加坡包装分销
+46,SCG Packaging,https://www.scgpkg.com,Thailand,info@scgpkg.com,procurement@scgpkg.com,泰国最大包装集团
+47,Al Bayader International,https://www.albayader.com,UAE,info@albayader.com,,迪拜餐饮及包装分销
+48,Falcon Pack,https://www.falconpack.com,UAE,info@falconpack.com,sales@falconpack.com,中东包装分销商
+49,Arabian Packaging,https://www.arabianpackaging.com,UAE,info@arabianpackaging.com,,阿联酋纸箱包装
+50,Packman Packaging,https://www.packmanpackaging.com,UAE,info@packmanpackaging.com,,迪拜包装分销
+51,Saudi Packaging Co.,https://www.saudipackaging.com,Saudi Arabia,info@saudipackaging.com,,沙特包装制造与分销
+52,Viking Packaging NL,https://www.viking-packaging.com,Netherlands,info@viking-packaging.com,,荷兰包装分销
+53,Elk Packaging IT,https://www.elkpackaging.com,Italy,info@elkpackaging.com,,意大利包装分销
+54,Temafa DE,https://www.temafa.de,Germany,info@temafa.de,,德国工业包装

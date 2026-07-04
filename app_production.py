@@ -106,12 +106,11 @@ import embed_frame_policy as _embed_frame_policy
 
 _embed_frame_policy.register_embed_parents(app)
 
-# 小程序 API 同时挂到 3002（feijihe.top 证书可用；guanli 子域 SSL 未配时走此入口）
+# 小程序 API（可选：当 _external/wechat/mp_api.py 不存在时跳过）
 try:
     from mp_api import mp_bp as _mp_bp
-
     app.register_blueprint(_mp_bp)
-except ImportError:  # pragma: no cover
+except ImportError:
     pass
 
 
@@ -369,13 +368,17 @@ def save_data(data):
 # 初始化数据
 persistent_data = load_data()
 
-import hermes_boot_fix as _hermes_fix
+try:
+    import hermes_boot_fix as _hermes_fix
+    _hermes_fix.auto_fix_hermes_local_backend()
+except ImportError:
+    pass
 
-_hermes_fix.auto_fix_hermes_local_backend()
-
-import agent_self_repair as _agent_repair
-
-_agent_repair.run_boot_repair()
+try:
+    import agent_self_repair as _agent_repair
+    _agent_repair.run_boot_repair()
+except ImportError:
+    pass
 
 # 从data.json加载所有用户（覆盖并扩展USERS字典）
 import permission_resolve as _perm_resolve_boot
@@ -447,9 +450,27 @@ def persist():
 
 def _sync_user_from_mysql(username: str) -> dict | None:
     """3003 MySQL 登录账号同步到内存 USERS（员工账号常在 MySQL 不在 data.json）。"""
-    import mp_auth as _mp_auth
+    try:
+        import pymysql
+        from settings import get_db_config
 
-    row = _mp_auth.find_user_by_username(username)
+        username = (username or "").strip()
+        if not username:
+            return None
+        cfg = dict(get_db_config())
+        db = pymysql.connect(**cfg, cursorclass=pymysql.cursors.DictCursor)
+        try:
+            cur = db.cursor()
+            cur.execute(
+                "SELECT username, password, display_name, role, employee_name, enabled "
+                "FROM users WHERE username=%s LIMIT 1",
+                (username,),
+            )
+            row = cur.fetchone()
+        finally:
+            db.close()
+    except Exception:
+        row = None
     if not row or not row.get("enabled", 1):
         return None
     import permission_resolve as _pr
@@ -529,8 +550,11 @@ def login():
 @app.route('/api/scan/wx/login', methods=['POST'])
 def scan_wx_login():
     """生产报工小程序：微信一键登录（已绑定账号）。"""
-    import mp_auth as _mp_auth
-    import scan_mp_store as _sms
+    try:
+        import mp_auth as _mp_auth
+        import scan_mp_store as _sms
+    except ImportError:
+        return jsonify({"success": False, "error": "微信小程序模块未安装"}), 503
 
     data = request.get_json(silent=True) or {}
     code = (data.get("code") or "").strip()
@@ -566,8 +590,11 @@ def scan_wx_login():
 @app.route('/api/scan/wx/bind', methods=['POST'])
 def scan_wx_bind():
     """生产报工小程序：首次微信登录绑定三羊账号。"""
-    import mp_auth as _mp_auth
-    import scan_mp_store as _sms
+    try:
+        import mp_auth as _mp_auth
+        import scan_mp_store as _sms
+    except ImportError:
+        return jsonify({"success": False, "error": "微信小程序模块未安装"}), 503
 
     data = request.get_json(silent=True) or {}
     code = (data.get("code") or "").strip()
@@ -5109,7 +5136,7 @@ _order_sched.start_background_order_sync(
     include_1688_direct=False,
     full_days_back=30,
     incremental_days_back=int(os.getenv("ORDER_SYNC_INCREMENTAL_DAYS", "14")),
-    interval_sec=int(os.getenv("ORDER_SYNC_INTERVAL_SEC", "45")),
+        interval_sec=int(os.getenv("ORDER_SYNC_INTERVAL_SEC", "60")),
     on_after_sync=_on_background_sync_done,
 )
 

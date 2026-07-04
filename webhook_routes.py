@@ -25,37 +25,13 @@ def register_webhook_routes(app: Flask) -> None:
         code = 200 if report.get("success", True) else 400
         return jsonify(report), code
 
-    @app.route("/api/webhook/feishu", methods=["GET", "POST"], endpoint="api_webhook_feishu")
-    def api_webhook_feishu():
-        if request.method == "GET":
-            import feishu_dify as fd
-
-            return jsonify(
-                {
-                    "success": True,
-                    "msg": "feishu-dify webhook",
-                    "enabled": fd.is_enabled(),
-                }
-            )
-        import feishu_dify as fd
-
-        raw = request.get_data(cache=False) or b""
-        hdrs = {}
-        for key in (
-            "X-Lark-Request-Timestamp",
-            "X-Lark-Request-Nonce",
-            "X-Lark-Signature",
-        ):
-            v = request.headers.get(key)
-            if v:
-                hdrs[key] = v
-        body, code = fd.handle_webhook(raw, hdrs)
-        return jsonify(body), code
-
     @app.route("/api/internal/self-repair", methods=["GET", "POST"])
     def api_internal_self_repair():
         """小马哥本机自救：修 Hermes、关 vault、拉 Gitee 代码。仅 127.0.0.1 或带令牌。"""
-        import agent_self_repair as asr
+        try:
+            import agent_self_repair as asr
+        except ImportError:
+            return jsonify({"success": False, "error": "自修复模块未安装"}), 503
 
         if request.method == "GET":
             return jsonify(

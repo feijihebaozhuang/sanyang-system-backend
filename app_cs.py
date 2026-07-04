@@ -372,13 +372,17 @@ def save_data(data):
 # 初始化数据
 persistent_data = load_data()
 
-import hermes_boot_fix as _hermes_fix
+try:
+    import hermes_boot_fix as _hermes_fix
+    _hermes_fix.auto_fix_hermes_local_backend()
+except ImportError:
+    pass
 
-_hermes_fix.auto_fix_hermes_local_backend()
-
-import agent_self_repair as _agent_repair
-
-_agent_repair.run_boot_repair()
+try:
+    import agent_self_repair as _agent_repair
+    _agent_repair.run_boot_repair()
+except ImportError:
+    pass
 
 # 从data.json加载所有用户（覆盖并扩展USERS字典）
 import permission_resolve as _perm_resolve_boot
@@ -3428,7 +3432,7 @@ _order_sched.start_background_order_sync(
     include_1688_direct=False,
     full_days_back=30,
     incremental_days_back=7,
-    interval_sec=180,
+    interval_sec=60,
 )
 
 # ==================== 缺失API补充（客服端）====================
