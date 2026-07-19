@@ -32,6 +32,8 @@ jobs:
             set -e
             echo "===== 开始自动部署 ====="
             cd /www/feijihe/repo
+            # CI 模式下跳过 git pull（代码已通过 rsync 同步）
+            touch .skip_git
             echo "代码已同步，执行部署脚本..."
             bash deploy.sh stable
             echo "===== 自动部署完成 ====="
