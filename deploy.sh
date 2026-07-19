@@ -94,9 +94,13 @@ log "  备份完成"
 # ========== 拉取代码 ==========
 log "[1/5] Git pull..."
 cd "$REPO_DIR"
-git fetch $REMOTE 2>&1 || { err "fetch failed"; exit 1; }
-git checkout "$BRANCH" 2>&1 || { err "checkout failed"; exit 1; }
-git pull $REMOTE "$BRANCH" 2>&1 || { err "pull failed"; exit 1; }
+if [ -f ".skip_git" ]; then
+  log "  CI mode - skip git pull"
+else
+  git fetch $REMOTE 2>&1 || { err "fetch failed"; exit 1; }
+  git checkout "$BRANCH" 2>&1 || { err "checkout failed"; exit 1; }
+  git pull $REMOTE "$BRANCH" 2>&1 || { err "pull failed"; exit 1; }
+fi
 COMMIT=$(git rev-parse --short HEAD)
 log "  Commit: $COMMIT ($BRANCH)"
 
